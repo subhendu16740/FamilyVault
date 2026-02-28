@@ -1,53 +1,143 @@
-> Edited for use in IDX on 07/09/12
+# FamilyVault
 
-# Welcome to your Expo app 👋
+A secure, AI-powered family document vault built with React Native. FamilyVault helps families organize, store, and instantly retrieve important documents using natural language search.
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+## Vision
 
-## Get started
+Every family manages dozens of critical documents — passports, insurance policies, property deeds, medical records, tax filings. These documents are scattered across drawers, folders, email attachments, and phone galleries. When you need one urgently, finding it becomes stressful and time-consuming.
 
-#### Android
+FamilyVault brings all your family's important documents into one secure, shared vault. Upload a document, and the app automatically extracts key details — names, dates, policy numbers, expiry dates. Need something? Just ask: *"Show me Dad's passport"* or *"When does Mom's health insurance expire?"* — and get instant answers powered by AI.
 
-Android previews are defined as a `workspace.onStart` hook and started as a vscode task when the workspace is opened/started.
+## Key Features
 
-Note, if you can't find the task, either:
-- Rebuild the environment (using command palette: `IDX: Rebuild Environment`), or
-- Run `npm run android -- --tunnel` command manually run android and see the output in your terminal. The device should pick up this new command and switch to start displaying the output from it.
+### Implemented
 
-In the output of this command/task, you'll find options to open the app in a
+- **Family Vault Creation** — Create a private family vault and invite members by email
+- **Role-Based Access** — Admins manage members, invitations, and roles; viewers have read access
+- **Member Management** — Invite members, promote to admin, remove members, revoke pending invitations
+- **Secure Authentication** — Email/password sign-up, Google OAuth, biometric login UI
+- **Home Dashboard** — At-a-glance stats (documents, members, categories), recent documents, quick actions
+- **Document Viewer** — View document details with metadata, category, and owner info
+- **Search Interface** — Category-based browsing and keyword search across documents
+- **Upload Flow** — Multi-step upload with source selection, metadata tagging, and owner assignment
+- **Profile Drawer** — Slide-out navigation for family management, settings, and sign out
+- **23 Document Categories** — Pre-configured categories including Passport, Driving License, Health Insurance, Property Deed, Tax Return, Birth Certificate, and more
+- **In-App Confirmation Dialogs** — Custom modal dialogs for destructive actions
+- **Onboarding Flow** — 3-slide introduction explaining the app's value
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+### Planned
 
-You'll also find options to open the app's developer menu, reload the app, and more.
+- **Document Upload to Cloud** — Upload files to Supabase Storage with per-family isolation
+- **OCR Text Extraction** — Automatically extract text from scanned documents and photos
+- **AI Metadata Detection** — Auto-detect passport numbers, expiry dates, policy numbers from document content
+- **RAG-Powered Search** — Natural language search using document embeddings and vector similarity
+- **Alias Resolution** — Search using family nicknames ("Dad", "Mom") mapped to actual members
+- **Expiry Alerts** — Automatic notifications 90, 30, and 7 days before document expiration
+- **Document Sharing & Export** — Share documents securely with family members or export as PDF
+- **Offline Support** — Access recently viewed documents without internet
+- **Biometric Authentication** — Fingerprint and Face ID unlock
+- **Dark Mode** — Full dark theme support
+- **Audit Logs** — Track who uploaded, viewed, or modified documents
+- **Voice Search** — Search your vault using voice commands
 
-#### Web
+## Tech Stack
 
-Web previews will be started and managred automatically. Use the toolbar to manually refresh.
+| Layer | Technology |
+|-------|-----------|
+| **Framework** | Expo SDK 55 + expo-router |
+| **Language** | TypeScript (React Native) |
+| **Backend** | Supabase (PostgreSQL + Auth + Storage) |
+| **Navigation** | expo-router (Stack + Tabs) |
+| **Styling** | React Native StyleSheet |
+| **Icons** | @expo/vector-icons (Feather) |
+| **Gradients** | expo-linear-gradient |
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+## Architecture
 
-## Get a fresh project
+### Three-Layer Database Design
 
-When you're ready, run:
+FamilyVault uses a unique three-layer database architecture that provides complete data isolation between families:
 
-```bash
-npm run reset-project
+**Layer 1 — Common Database** (Public PostgreSQL Schema)
+Shared tables for user accounts, family records, memberships, invitations, document categories, notifications, and audit logs. Protected by Row-Level Security (RLS) policies ensuring users only access their own data.
+
+**Layer 2 — Private Database** (Per-Family PostgreSQL Schemas)
+Each family gets its own isolated database schema (`family_{uuid}`). Contains documents, extracted metadata, text chunks, expiry alerts, and family relationships. No cross-family data leakage is possible.
+
+**Layer 3 — Vector Database** (Per-Family Namespace)
+Each family gets an isolated namespace for document embeddings. Enables semantic search with metadata filtering — search by content meaning, not just keywords.
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 18+
+- npm or yarn
+- Expo CLI (`npx expo`)
+- A Supabase project
+
+### Setup
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/subhendu16740/FamilyVault.git
+   cd FamilyVault
+   ```
+
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+3. Configure environment variables:
+   ```bash
+   cp .env.example .env
+   ```
+   Edit `.env` and add your Supabase project URL and anon key (found in your Supabase dashboard under Settings > API).
+
+4. Set up the database:
+   Run the SQL migrations in order (`supabase/migrations/001_*.sql` through `009_*.sql`) in your Supabase SQL Editor.
+
+5. Start the development server:
+   ```bash
+   npx expo start
+   ```
+
+6. Open the app on web, iOS simulator, or Android emulator using the Expo dev tools.
+
+## Project Structure
+
+```
+src/
+├── app/
+│   ├── _layout.tsx           # Root layout with auth gate
+│   ├── index.tsx             # Entry point / redirect
+│   ├── onboarding.tsx        # Onboarding slides
+│   ├── login.tsx             # Authentication screen
+│   ├── setup-family.tsx      # First-time family creation
+│   ├── family.tsx            # Family member management
+│   ├── settings.tsx          # User settings
+│   ├── (tabs)/
+│   │   ├── _layout.tsx       # Tab bar with custom styling
+│   │   ├── home.tsx          # Dashboard
+│   │   ├── search.tsx        # Document search
+│   │   └── upload.tsx        # Document upload flow
+│   └── document/
+│       └── [id].tsx          # Document viewer
+├── components/
+│   └── ProfileDrawer.tsx     # Slide-out profile menu
+└── lib/
+    ├── api.ts                # Supabase query layer
+    ├── auth.tsx              # Auth context provider
+    ├── family-context.tsx    # Family data context
+    ├── drawer-context.tsx    # Drawer state context
+    ├── supabase.ts           # Supabase client init
+    └── database.types.ts     # TypeScript DB types
+
+supabase/
+└── migrations/               # SQL migrations (001-009)
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+## License
 
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+This project is private and not licensed for public use.
