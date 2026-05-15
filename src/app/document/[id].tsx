@@ -1,13 +1,19 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator,
+  Image, Platform, Alert, Modal, Pressable, TextInput,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as WebBrowser from 'expo-web-browser';
 import { useFamily } from '../../lib/family-context';
-import { fetchDocumentById } from '../../lib/api';
+import {
+  fetchDocumentById, getDocumentSignedUrl, deleteDocument,
+  updateDocument, fetchCategories, fetchFamilyMembers,
+} from '../../lib/api';
+import { supabase } from '../../lib/supabase';
 import type { FamilyDocumentDetailRow } from '../../lib/database.types';
 
 const actions = [
@@ -16,6 +22,11 @@ const actions = [
   { icon: 'edit-3', label: 'Edit', bg: '#FFFBEB', color: '#D97706' },
   { icon: 'trash-2', label: 'Delete', bg: '#FEF2F2', color: '#DC2626' },
 ] as const;
+
+const IMAGE_TYPES = ['jpg', 'jpeg', 'png', 'heic', 'webp'];
+function isImageType(fileType: string): boolean {
+  return IMAGE_TYPES.includes(fileType.toLowerCase());
+}
 
 function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('en-US', {
@@ -35,6 +46,18 @@ export default function DocumentViewerScreen() {
   const { currentFamily } = useFamily();
   const [doc, setDoc] = useState<FamilyDocumentDetailRow | null>(null);
   const [loading, setLoading] = useState(true);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
+
+  // Edit modal state
+  const [editVisible, setEditVisible] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editCategoryId, setEditCategoryId] = useState<string | null>(null);
+  const [editMemberId, setEditMemberId] = useState<string | null>(null);
+  const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
+  const [members, setMembers] = useState<{ id: string; name: string }[]>([]);
 
   useEffect(() => {
     if (!currentFamily || !id) return;
@@ -44,6 +67,140 @@ export default function DocumentViewerScreen() {
       .catch((err) => console.error('Doc fetch error:', err))
       .finally(() => setLoading(false));
   }, [currentFamily?.id, id]);
+
+  useEffect(() => {
+    if (!doc?.storage_path) return;
+    setPreviewLoading(true);
+    setPreviewError(false);
+    getDocumentSignedUrl(doc.storage_path)
+      .then(setPreviewUrl)
+      .catch(() => setPreviewError(true))
+      .finally(() => setPreviewLoading(false));
+  }, [doc?.storage_path]);
+
+  // ─── Action Handlers ───────────────────────────────────────────
+
+  const handleShare = useCallback(async () => {
+    if (!previewUrl || !doc) return;
+    if (Platform.OS === 'web') {
+      if (navigator.share) {
+        try {
+          await navigator.share({ title: doc.file_name, url: previewUrl });
+        } catch { /* user cancelled */ }
+      } else {
+        await navigator.clipboard.writeText(previewUrl);
+        Alert.alert('Link copied', 'Document link copied to clipboard.');
+      }
+    } else {
+      // On native, open share sheet via expo-sharing (falls back to web browser)
+      try {
+        const Sharing = await import('expo-sharing');
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(previewUrl);
+        } else {
+          Alert.alert('Sharing unavailable', 'Sharing is not supported on this device.');
+        }
+      } catch {
+        Alert.alert('Error', 'Could not share this document.');
+      }
+    }
+  }, [previewUrl, doc]);
+
+  const handleDownload = useCallback(async () => {
+    if (!previewUrl || !doc) return;
+    if (Platform.OS === 'web') {
+      const a = document.createElement('a');
+      a.href = previewUrl;
+      a.download = doc.file_name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } else {
+      // On native, open in browser to trigger download
+      await WebBrowser.openBrowserAsync(previewUrl);
+    }
+  }, [previewUrl, doc]);
+
+  const handleDelete = useCallback(() => {
+    if (!doc || !currentFamily) return;
+    const doDelete = async () => {
+      setActionLoading(true);
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('Not authenticated');
+        await deleteDocument(currentFamily.id, doc.id, user.id, doc.storage_path);
+        router.back();
+      } catch (err: any) {
+        Alert.alert('Delete failed', err.message || 'Could not delete document.');
+      } finally {
+        setActionLoading(false);
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (confirm(`Delete "${doc.file_name}"? This cannot be undone.`)) doDelete();
+    } else {
+      Alert.alert(
+        'Delete Document',
+        `Delete "${doc.file_name}"? This cannot be undone.`,
+        [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: doDelete }],
+      );
+    }
+  }, [doc, currentFamily]);
+
+  const openEditModal = useCallback(async () => {
+    if (!doc || !currentFamily) return;
+    setEditName(doc.file_name);
+    setEditCategoryId(doc.category_id);
+    setEditMemberId(doc.belongs_to_member);
+
+    // Load categories and members for the pickers
+    try {
+      const [cats, mems] = await Promise.all([
+        fetchCategories(),
+        fetchFamilyMembers(currentFamily.id),
+      ]);
+      setCategories(cats.map((c) => ({ id: c.id, name: c.name })));
+      setMembers(mems.map((m) => ({
+        id: m.id,
+        name: m.alias || (m.users as any)?.display_name || (m.users as any)?.email || 'Member',
+      })));
+    } catch { /* use empty lists */ }
+
+    setEditVisible(true);
+  }, [doc, currentFamily]);
+
+  const handleEditSave = useCallback(async () => {
+    if (!doc || !currentFamily) return;
+    setActionLoading(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+      const updates: { fileName?: string; categoryId?: string; belongsToMember?: string } = {};
+      if (editName && editName !== doc.file_name) updates.fileName = editName;
+      if (editCategoryId && editCategoryId !== doc.category_id) updates.categoryId = editCategoryId;
+      if (editMemberId && editMemberId !== doc.belongs_to_member) updates.belongsToMember = editMemberId;
+
+      if (Object.keys(updates).length > 0) {
+        await updateDocument(currentFamily.id, doc.id, user.id, updates);
+        // Refresh document
+        const updated = await fetchDocumentById(currentFamily.id, doc.id);
+        if (updated) setDoc(updated);
+      }
+      setEditVisible(false);
+    } catch (err: any) {
+      Alert.alert('Update failed', err.message || 'Could not update document.');
+    } finally {
+      setActionLoading(false);
+    }
+  }, [doc, currentFamily, editName, editCategoryId, editMemberId]);
+
+  const actionHandlers: Record<string, () => void> = {
+    Share: handleShare,
+    Download: handleDownload,
+    Edit: openEditModal,
+    Delete: handleDelete,
+  };
 
   if (loading) {
     return (
@@ -122,13 +279,56 @@ export default function DocumentViewerScreen() {
       >
         {/* Document Preview */}
         <View style={styles.previewCard}>
-          <View style={styles.previewBody}>
-            <View style={styles.previewIconWrap}>
-              <Feather name="file-text" size={48} color="#9CA3AF" />
+          {previewLoading ? (
+            <View style={styles.previewBody}>
+              <ActivityIndicator size="large" color="#2A3D66" />
+              <Text style={styles.previewSub}>Loading preview…</Text>
             </View>
-            <Text style={styles.previewTitle}>Document Preview</Text>
-            <Text style={styles.previewSub}>{doc.file_name}</Text>
-          </View>
+          ) : previewError || !previewUrl ? (
+            <View style={styles.previewBody}>
+              <View style={styles.previewIconWrap}>
+                <Feather name="file-text" size={48} color="#9CA3AF" />
+              </View>
+              <Text style={styles.previewTitle}>Preview unavailable</Text>
+              <Text style={styles.previewSub}>{doc.file_name}</Text>
+            </View>
+          ) : isImageType(doc.file_type) ? (
+            <Image
+              source={{ uri: previewUrl }}
+              style={styles.previewImage}
+              resizeMode="contain"
+            />
+          ) : doc.file_type === 'pdf' ? (
+            <View style={styles.previewBody}>
+              <View style={styles.previewIconWrap}>
+                <Feather name="file-text" size={48} color="#DC2626" />
+              </View>
+              <Text style={styles.previewTitle}>PDF Document</Text>
+              <Text style={styles.previewSub}>{doc.file_name}</Text>
+              <TouchableOpacity
+                style={styles.viewPdfBtn}
+                onPress={() => {
+                  if (!previewUrl) return;
+                  if (Platform.OS === 'web') {
+                    window.open(previewUrl, '_blank');
+                  } else {
+                    WebBrowser.openBrowserAsync(previewUrl);
+                  }
+                }}
+              >
+                <Feather name="external-link" size={16} color="#FFFFFF" />
+                <Text style={styles.viewPdfBtnText}>Open PDF</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.previewBody}>
+              <View style={styles.previewIconWrap}>
+                <Feather name="file" size={48} color="#9CA3AF" />
+              </View>
+              <Text style={styles.previewTitle}>Document Preview</Text>
+              <Text style={styles.previewSub}>{doc.file_name}</Text>
+            </View>
+          )}
         </View>
 
         {/* Document Info */}
@@ -174,7 +374,12 @@ export default function DocumentViewerScreen() {
       {/* Sticky Action Bar */}
       <View style={styles.actionBar}>
         {actions.map((action, idx) => (
-          <TouchableOpacity key={idx} style={styles.actionItem}>
+          <TouchableOpacity
+            key={idx}
+            style={styles.actionItem}
+            onPress={actionHandlers[action.label]}
+            disabled={actionLoading}
+          >
             <View style={[styles.actionIconWrap, { backgroundColor: action.bg }]}>
               <Feather name={action.icon} size={20} color={action.color} />
             </View>
@@ -182,6 +387,92 @@ export default function DocumentViewerScreen() {
           </TouchableOpacity>
         ))}
       </View>
+
+      {/* Loading overlay */}
+      {actionLoading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color="#FFFFFF" />
+        </View>
+      )}
+
+      {/* Edit Modal */}
+      <Modal visible={editVisible} animationType="slide" transparent>
+        <Pressable style={styles.modalOverlay} onPress={() => setEditVisible(false)}>
+          <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalTitle}>Edit Document</Text>
+
+            {/* File name */}
+            <Text style={styles.fieldLabel}>File Name</Text>
+            <TextInput
+              style={styles.textInput}
+              value={editName}
+              onChangeText={setEditName}
+              placeholder="Document name"
+              placeholderTextColor="#9CA3AF"
+            />
+
+            {/* Category picker */}
+            {categories.length > 0 && (
+              <>
+                <Text style={styles.fieldLabel}>Category</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
+                  {categories.map((cat) => (
+                    <TouchableOpacity
+                      key={cat.id}
+                      style={[styles.chip, editCategoryId === cat.id && styles.chipActive]}
+                      onPress={() => setEditCategoryId(cat.id)}
+                    >
+                      <Text style={[styles.chipText, editCategoryId === cat.id && styles.chipTextActive]}>
+                        {cat.name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </>
+            )}
+
+            {/* Member picker */}
+            {members.length > 0 && (
+              <>
+                <Text style={styles.fieldLabel}>Belongs To</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
+                  {members.map((mem) => (
+                    <TouchableOpacity
+                      key={mem.id}
+                      style={[styles.chip, editMemberId === mem.id && styles.chipActive]}
+                      onPress={() => setEditMemberId(mem.id)}
+                    >
+                      <Text style={[styles.chipText, editMemberId === mem.id && styles.chipTextActive]}>
+                        {mem.name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </>
+            )}
+
+            {/* Save / Cancel */}
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={() => setEditVisible(false)}
+              >
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.saveBtn}
+                onPress={handleEditSave}
+                disabled={actionLoading}
+              >
+                <Text style={styles.saveBtnText}>
+                  {actionLoading ? 'Saving…' : 'Save Changes'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -229,10 +520,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 24,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
+    boxShadow: '0px 4px 12px rgba(0, 0, 0, 0.08)',
     elevation: 4,
   },
   previewBody: {
@@ -249,22 +537,33 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
+    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.08)',
     elevation: 3,
   },
+  previewImage: {
+    width: '100%',
+    aspectRatio: 3 / 4,
+    borderRadius: 24,
+    backgroundColor: '#F3F4F6',
+  },
+  viewPdfBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#2A3D66',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginTop: 16,
+  },
+  viewPdfBtnText: { fontSize: 14, fontWeight: '600', color: '#FFFFFF' },
   previewTitle: { fontSize: 17, fontWeight: '600', color: '#374151', marginBottom: 4 },
   previewSub: { fontSize: 13, color: '#9CA3AF' },
   infoCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
     padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
+    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.06)',
     elevation: 3,
   },
   cardTitle: { fontSize: 15, fontWeight: '600', color: '#1F2937', marginBottom: 16 },
@@ -303,4 +602,86 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   actionLabel: { fontSize: 11, color: '#374151' },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    maxHeight: '80%',
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#D1D5DB',
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1F2937',
+    marginBottom: 20,
+  },
+  fieldLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6B7280',
+    marginBottom: 8,
+    marginTop: 16,
+  },
+  textInput: {
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    padding: 12,
+    fontSize: 15,
+    color: '#1F2937',
+    backgroundColor: '#F9FAFB',
+  },
+  chipScroll: { flexGrow: 0, marginBottom: 4 },
+  chip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#F3F4F6',
+    marginRight: 8,
+  },
+  chipActive: { backgroundColor: '#2A3D66' },
+  chipText: { fontSize: 13, color: '#374151' },
+  chipTextActive: { color: '#FFFFFF', fontWeight: '600' },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 24,
+  },
+  cancelBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    alignItems: 'center',
+  },
+  cancelBtnText: { fontSize: 15, fontWeight: '600', color: '#6B7280' },
+  saveBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: '#2A3D66',
+    alignItems: 'center',
+  },
+  saveBtnText: { fontSize: 15, fontWeight: '600', color: '#FFFFFF' },
 });

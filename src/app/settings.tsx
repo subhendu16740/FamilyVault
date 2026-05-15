@@ -120,10 +120,7 @@ const styles = StyleSheet.create({
     margin: 20,
     padding: 20,
     borderRadius: 24,
-    shadowColor: '#2A3D66',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
+    boxShadow: '0px 4px 12px rgba(42, 61, 102, 0.3)',
     elevation: 6,
   },
   avatarWrap: {
@@ -159,10 +156,7 @@ const styles = StyleSheet.create({
   groupCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
+    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.06)',
     elevation: 3,
   },
   settingRow: {

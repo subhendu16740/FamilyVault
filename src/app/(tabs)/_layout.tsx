@@ -117,10 +117,7 @@ const styles = StyleSheet.create({
     borderRadius: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#2A3D66',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
+    boxShadow: '0px 4px 8px rgba(42, 61, 102, 0.35)',
     elevation: 8,
   },
 });

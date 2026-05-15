@@ -117,14 +117,89 @@ export async function fetchFamilyStats(
 
 // ─── Search ──────────────────────────────────────────────────────
 
+/**
+ * Resolve family member aliases in a query.
+ * E.g. "Dad's passport" → if "Dad" is an alias for "Ramesh Kumar",
+ * returns the expanded query with the member's real name for better search.
+ */
+function resolveAliases(
+  query: string,
+  members: { alias: string | null; relationship: string | null; users: { display_name: string } }[],
+): string {
+  if (!members.length) return query;
+
+  const lowerQuery = query.toLowerCase();
+  let expanded = query;
+
+  for (const m of members) {
+    const aliases = [
+      m.alias,
+      m.relationship,
+      m.users.display_name,
+    ].filter(Boolean) as string[];
+
+    for (const alias of aliases) {
+      // Check if query contains this alias (case-insensitive, word boundary)
+      const re = new RegExp(`\\b${alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:'s?)?\\b`, 'i');
+      if (re.test(lowerQuery)) {
+        // Append the real name to boost relevance
+        const realName = m.users.display_name;
+        if (!lowerQuery.includes(realName.toLowerCase())) {
+          expanded = `${expanded} ${realName}`;
+        }
+        break; // Only match one alias per member
+      }
+    }
+  }
+
+  return expanded;
+}
+
+// ─── RAG Search (AI-powered answers) ─────────────────────────────
+
+export interface RagSearchResult {
+  answer: string;
+  sources: { id: string; file_name: string; file_type: string; category_name: string | null }[];
+}
+
+export async function ragSearch(familyId: string, query: string): Promise<RagSearchResult> {
+  const { data, error } = await supabase.functions.invoke('rag-search', {
+    body: { family_id: familyId, query },
+  });
+
+  if (error) throw error;
+  return data as RagSearchResult;
+}
+
 export async function searchDocuments(
   familyId: string,
   query: string,
   limit = 20,
+  members: { alias: string | null; relationship: string | null; users: { display_name: string } }[] = [],
 ): Promise<FamilySearchResultRow[]> {
+  // Resolve aliases: "Dad's passport" → "Dad's passport Ramesh Kumar"
+  const expandedQuery = resolveAliases(query, members);
+
+  // Try hybrid search first (vector + full-text)
+  try {
+    const { data, error } = await supabase.rpc('hybrid_search_documents', {
+      p_family_id: familyId,
+      p_query: expandedQuery,
+      p_query_embedding: null,  // Text-only until client-side embedding is added
+      p_limit: limit,
+    });
+
+    if (!error && data) {
+      return (data ?? []) as FamilySearchResultRow[];
+    }
+  } catch {
+    // Hybrid search RPC not yet deployed — fall through
+  }
+
+  // Fallback to original search RPC
   const { data, error } = await supabase.rpc('search_family_documents', {
     p_family_id: familyId,
-    p_query: query,
+    p_query: expandedQuery,
     p_limit: limit,
   });
 
@@ -231,6 +306,122 @@ export async function revokeInvitation(invitationId: string): Promise<void> {
   if (error) throw error;
 }
 
+// ─── Document Upload ────────────────────────────────────────────
+
+export interface UploadDocumentParams {
+  familyId: string;
+  storageNamespace: string;
+  userId: string;
+  fileName: string;
+  fileType: string;
+  fileBlob: Blob;
+  fileSizeBytes: number;
+  categoryId?: string;
+  belongsToMemberId?: string;
+  ocrText?: string; // Pre-extracted OCR text from client-side processing
+}
+
+export async function uploadDocument(params: UploadDocumentParams): Promise<string> {
+  const {
+    familyId, storageNamespace, userId, fileName,
+    fileType, fileBlob, fileSizeBytes, categoryId, belongsToMemberId, ocrText,
+  } = params;
+
+  // 1. Upload to Supabase Storage
+  const storagePath = `${storageNamespace}/${Date.now()}_${fileName}`;
+  const mimeType = fileType === 'pdf' ? 'application/pdf' : `image/${fileType}`;
+
+  const { error: storageErr } = await supabase.storage
+    .from('documents')
+    .upload(storagePath, fileBlob, { contentType: mimeType, upsert: false });
+
+  if (storageErr) throw new Error(`Storage upload failed: ${storageErr.message}`);
+
+  // 2. Insert document record via RPC (into family schema)
+  const { data, error: insertErr } = await supabase.rpc('insert_family_document', {
+    p_family_id: familyId,
+    p_uploaded_by: userId,
+    p_file_name: fileName,
+    p_file_type: fileType,
+    p_file_size_bytes: fileSizeBytes,
+    p_storage_path: storagePath,
+    p_category_id: categoryId ?? null,
+    p_belongs_to_member: belongsToMemberId ?? null,
+  });
+
+  if (insertErr) throw new Error(`Document insert failed: ${insertErr.message}`);
+
+  const docId = data as string;
+
+  // 3. Trigger ingestion (async — Edge Function)
+  try {
+    await supabase.functions.invoke('ingest-document', {
+      body: {
+        family_id: familyId,
+        document_id: docId,
+        storage_path: storagePath,
+        ...(ocrText ? { ocr_text: ocrText } : {}),
+      },
+    });
+  } catch {
+    // Ingestion runs async — failure here is non-blocking
+    console.warn('Ingestion trigger failed — document saved, will process later.');
+  }
+
+  return docId;
+}
+
+// ─── Document Actions ──────────────────────────────────────────
+
+export async function deleteDocument(
+  familyId: string,
+  documentId: string,
+  userId: string,
+  storagePath: string,
+): Promise<void> {
+  // 1. Delete DB record via RPC (validates permissions)
+  const { error } = await supabase.rpc('delete_family_document', {
+    p_family_id: familyId,
+    p_document_id: documentId,
+    p_user_id: userId,
+  });
+  if (error) throw new Error(`Delete failed: ${error.message}`);
+
+  // 2. Remove file from storage (best-effort)
+  await supabase.storage.from('documents').remove([storagePath]);
+}
+
+export async function updateDocument(
+  familyId: string,
+  documentId: string,
+  userId: string,
+  updates: { fileName?: string; categoryId?: string; belongsToMember?: string },
+): Promise<void> {
+  const { error } = await supabase.rpc('update_family_document', {
+    p_family_id: familyId,
+    p_document_id: documentId,
+    p_user_id: userId,
+    p_file_name: updates.fileName ?? null,
+    p_category_id: updates.categoryId ?? null,
+    p_belongs_to_member: updates.belongsToMember ?? null,
+  });
+  if (error) throw new Error(`Update failed: ${error.message}`);
+}
+
+// ─── Document Signed URLs ──────────────────────────────────────
+
+export async function getDocumentSignedUrl(
+  storagePath: string,
+  expiresIn = 3600,
+): Promise<string> {
+  const { data, error } = await supabase.storage
+    .from('documents')
+    .createSignedUrl(storagePath, expiresIn);
+
+  if (error) throw new Error(`Signed URL failed: ${error.message}`);
+  return data.signedUrl;
+}
+
 // ─── Notifications ───────────────────────────────────────────────
 
 export async function fetchUnreadNotificationCount(userId: string): Promise<number> {
@@ -242,4 +433,48 @@ export async function fetchUnreadNotificationCount(userId: string): Promise<numb
 
   if (error) throw error;
   return count ?? 0;
+}
+
+export interface NotificationRow {
+  id: string;
+  family_id: string;
+  type: string;
+  title: string;
+  message: string;
+  document_ref: string | null;
+  is_read: boolean;
+  created_at: string;
+}
+
+export async function fetchNotifications(
+  userId: string,
+  limit = 20,
+  offset = 0,
+): Promise<NotificationRow[]> {
+  const { data, error } = await supabase.rpc('get_user_notifications', {
+    p_user_id: userId,
+    p_limit: limit,
+    p_offset: offset,
+  });
+
+  if (error) throw error;
+  return (data ?? []) as NotificationRow[];
+}
+
+export async function markNotificationRead(notificationId: string, userId: string): Promise<void> {
+  const { error } = await supabase.rpc('mark_notification_read', {
+    p_notification_id: notificationId,
+    p_user_id: userId,
+  });
+
+  if (error) throw error;
+}
+
+export async function checkExpiryNotifications(familyId: string): Promise<number> {
+  const { data, error } = await supabase.rpc('check_expiry_notifications', {
+    p_family_id: familyId,
+  });
+
+  if (error) throw error;
+  return (data ?? 0) as number;
 }

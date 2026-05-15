@@ -1,8 +1,10 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, ActivityIndicator, StyleSheet, Platform } from 'react-native';
+import * as Font from 'expo-font';
+import { Feather } from '@expo/vector-icons';
 import { AuthProvider, useAuth } from '../lib/auth';
-import { FamilyProvider, useFamily } from '../lib/family-context';
+import { FamilyProvider } from '../lib/family-context';
 
 function AuthGate() {
   const { session, loading: authLoading } = useAuth();
@@ -13,8 +15,7 @@ function AuthGate() {
     if (authLoading) return;
 
     const seg = segments[0] as string | undefined;
-    const inProtectedRoute = seg === '(tabs)' || seg === 'document' || seg === 'family' || seg === 'settings' || seg === 'setup-family';
-    const inAuthRoute = seg === 'login' || seg === 'onboarding';
+    const inProtectedRoute = seg === '(tabs)' || seg === 'document' || seg === 'family' || seg === 'settings' || seg === 'setup-family' || seg === 'notifications';
 
     if (!session && inProtectedRoute) {
       router.replace('/login' as any);
@@ -27,6 +28,22 @@ function AuthGate() {
 }
 
 export default function RootLayout() {
+  const [fontsLoaded, setFontsLoaded] = useState(false);
+
+  useEffect(() => {
+    Feather.loadFont()
+      .then(() => setFontsLoaded(true))
+      .catch(() => setFontsLoaded(true));
+  }, []);
+
+  if (!fontsLoaded) {
+    return (
+      <View style={styles.loader}>
+        <ActivityIndicator size="large" color="#2A3D66" />
+      </View>
+    );
+  }
+
   return (
     <AuthProvider>
       <FamilyProvider>
@@ -40,6 +57,7 @@ export default function RootLayout() {
           <Stack.Screen name="family" />
           <Stack.Screen name="settings" />
           <Stack.Screen name="document/[id]" />
+          <Stack.Screen name="notifications" />
         </Stack>
       </FamilyProvider>
     </AuthProvider>

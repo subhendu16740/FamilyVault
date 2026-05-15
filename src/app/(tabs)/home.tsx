@@ -1,16 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView,
   StyleSheet, useColorScheme, ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../lib/auth';
 import { useFamily } from '../../lib/family-context';
 import { useDrawer } from '../../lib/drawer-context';
-import { fetchRecentDocuments, fetchFamilyStats } from '../../lib/api';
+import { fetchRecentDocuments, fetchFamilyStats, fetchUnreadNotificationCount, checkExpiryNotifications } from '../../lib/api';
 import type { FamilyDocumentRow } from '../../lib/database.types';
 
 
@@ -59,6 +59,7 @@ export default function HomeScreen() {
   const [recentDocs, setRecentDocs] = useState<FamilyDocumentRow[]>([]);
   const [stats, setStats] = useState({ doc_count: 0, member_count: 0, category_count: 0 });
   const [loading, setLoading] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   const displayName =
     user?.user_metadata?.display_name ||
@@ -66,8 +67,8 @@ export default function HomeScreen() {
     user?.email?.split('@')[0] || 'User';
   const initial = displayName.charAt(0).toUpperCase();
 
-  useEffect(() => {
-    if (!currentFamily) {
+  const loadData = useCallback(() => {
+    if (!currentFamily || !user) {
       setLoading(false);
       return;
     }
@@ -75,14 +76,24 @@ export default function HomeScreen() {
     Promise.all([
       fetchRecentDocuments(currentFamily.id, 5),
       fetchFamilyStats(currentFamily.id),
+      fetchUnreadNotificationCount(user.id),
+      checkExpiryNotifications(currentFamily.id).catch(() => 0),
     ])
-      .then(([docs, s]) => {
+      .then(([docs, s, unread]) => {
         setRecentDocs(docs);
         setStats(s);
+        setUnreadCount(unread);
       })
-      .catch(() => {})
+      .catch((err) => console.error('[Home] fetch error:', err))
       .finally(() => setLoading(false));
-  }, [currentFamily?.id]);
+  }, [currentFamily?.id, user?.id]);
+
+  // Re-fetch when screen gains focus (e.g. after deleting a document)
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [loadData])
+  );
 
   return (
     <View style={[styles.container, isDark && styles.containerDark]}>
@@ -105,8 +116,18 @@ export default function HomeScreen() {
                   <Text style={styles.headerTitle}>{displayName}</Text>
                 </View>
               </View>
-              <TouchableOpacity style={styles.bellBtn}>
+              <TouchableOpacity
+                style={styles.bellBtn}
+                onPress={() => router.push('/notifications' as any)}
+              >
                 <Feather name="bell" size={20} color="#FFFFFF" />
+                {unreadCount > 0 && (
+                  <View style={styles.bellBadge}>
+                    <Text style={styles.bellBadgeText}>
+                      {unreadCount > 9 ? '9+' : unreadCount}
+                    </Text>
+                  </View>
+                )}
               </TouchableOpacity>
             </View>
 
@@ -236,6 +257,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  bellBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    backgroundColor: '#DC2626',
+    borderRadius: 10,
+    minWidth: 18,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 2,
+    borderColor: '#2A3D66',
+  },
+  bellBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
+  },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -282,10 +322,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 16,
     minHeight: 80,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
+    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.06)',
     elevation: 3,
   },
   docCardDark: {
