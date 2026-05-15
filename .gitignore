@@ -61,5 +61,8 @@ Files/
 # Supabase local
 supabase/.temp/
 
+# SQL migrations (applied directly in Supabase dashboard)
+supabase/migrations/*.sql
+
 # App example
 app-example
