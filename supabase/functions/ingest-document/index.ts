@@ -9,7 +9,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const HF_API_TOKEN = Deno.env.get('HF_API_TOKEN') ?? ''; // Optional — works without for low volume
-const OCR_SPACE_API_KEY = Deno.env.get('OCR_SPACE_API_KEY') ?? 'K85695508188957'; // Free tier key
+const OCR_SPACE_API_KEY = Deno.env.get('OCR_SPACE_API_KEY') ?? ''; // supabase secrets set OCR_SPACE_API_KEY=...
 
 // Embedding model: all-MiniLM-L6-v2 (384 dims, free on HuggingFace)
 const EMBEDDING_MODEL = 'sentence-transformers/all-MiniLM-L6-v2';
@@ -253,6 +253,11 @@ async function extractTextFromImage(blob: Blob): Promise<string> {
 // ─── OCR.space API (free tier: 25K requests/month) ─────────────
 
 async function ocrWithOcrSpace(blob: Blob, type: 'pdf' | 'image'): Promise<string> {
+  if (!OCR_SPACE_API_KEY) {
+    console.warn('[ingest] OCR_SPACE_API_KEY is not set — skipping server-side OCR fallback');
+    return '';
+  }
+
   try {
     const formData = new FormData();
     const filename = type === 'pdf' ? 'document.pdf' : 'image.jpg';
