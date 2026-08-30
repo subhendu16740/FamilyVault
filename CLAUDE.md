@@ -69,7 +69,7 @@ until the command below is run.
 | Changed | Deployed by | How |
 |---|---|---|
 | `src/**`, `app.config.ts`, `vercel.json` | **Vercel**, automatically on merge to `main` | nothing to do |
-| `supabase/functions/**` | **you** | `functions deploy` |
+| `supabase/functions/**` | **GitHub Actions**, on merge to `main` | nothing to do (DEV); PROD is a manual `workflow_dispatch` |
 | `supabase/migrations/**` | **you** | paste into the SQL editor |
 | Edge Function secrets | **you** | `secrets set` |
 | Storage buckets | **you** | dashboard only — no CLI, no migration |
@@ -83,6 +83,12 @@ until the command below is run.
 | PROD | `yrcmdixqgvmhqxejvlor` |
 
 ### The commands
+
+Edge Functions deploy themselves via
+`.github/workflows/deploy-edge-functions.yml` — merge to `main` ships them to
+DEV, and PROD is a manual run of that workflow from the Actions tab. The
+commands below are for everything else, or for deploying by hand when the
+workflow is unavailable.
 
 No install needed — `npx` fetches the CLI. Log in once per machine.
 
