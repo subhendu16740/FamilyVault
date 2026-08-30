@@ -58,6 +58,72 @@ Verification today means: `npm run typecheck` (error count must not grow past
 
 ---
 
+## What merging deploys — and what it doesn't
+
+**Merging to `main` deploys the web bundle and nothing else.** Vercel builds
+`src/` into static files. Every server-side change ships by hand, from a
+machine with the Supabase CLI. This is the single easiest thing to get wrong:
+a merged PR that changes an Edge Function has changed *nothing* in production
+until the command below is run.
+
+| Changed | Deployed by | How |
+|---|---|---|
+| `src/**`, `app.config.ts`, `vercel.json` | **Vercel**, automatically on merge to `main` | nothing to do |
+| `supabase/functions/**` | **you** | `functions deploy` |
+| `supabase/migrations/**` | **you** | paste into the SQL editor |
+| Edge Function secrets | **you** | `secrets set` |
+| Storage buckets | **you** | dashboard only — no CLI, no migration |
+| Vercel env vars | **you** | dashboard, then **redeploy** |
+
+### Project refs
+
+| | Supabase project ref |
+|---|---|
+| DEV — Vercel Preview, and Production while staging | `tkqsfoppwlyupentuixy` |
+| PROD | `yrcmdixqgvmhqxejvlor` |
+
+### The commands
+
+No install needed — `npx` fetches the CLI. Log in once per machine.
+
+```bash
+npx supabase@latest login
+
+# Deploy an Edge Function (after ANY change under supabase/functions/)
+npx supabase@latest functions deploy rag-search       --project-ref <ref>
+npx supabase@latest functions deploy ingest-document  --project-ref <ref>
+npx supabase@latest functions deploy invite-member    --project-ref <ref>
+
+# Set or rotate a secret (server-side only; never in this repo)
+npx supabase@latest secrets set GROQ_API_KEY=...      --project-ref <ref>
+npx supabase@latest secrets set HF_API_TOKEN=...      --project-ref <ref>
+npx supabase@latest secrets set OCR_SPACE_API_KEY=... --project-ref <ref>
+
+# Capture the live schema (see Database — the migration gap)
+npx supabase@latest db dump --db-url "postgresql://..." -f 010_live_schema.sql
+```
+
+**Migrations have no CLI path here.** The project is not linked (there is no
+`supabase/config.toml`) and migration history was never tracked, so
+`db push` is not usable. Apply SQL by pasting the file into the dashboard's
+SQL editor — DEV first, then PROD once verified.
+
+`supabase db dump` is **schema-only by default**; there is no `--schema-only`
+flag, and it excludes the `storage` schema, so storage RLS policies must be
+captured separately.
+
+### Order of operations
+
+1. Migration first, Edge Function second. Write RPC changes so the old
+   function still works against the new signature — new parameters last, with
+   defaults — and neither order breaks.
+2. DEV first, always. Verify in the app, then repeat against PROD.
+3. Changing a Vercel env var requires a **redeploy**. `EXPO_PUBLIC_*` values
+   are compiled into the bundle at build time; a running deployment cannot
+   pick them up.
+
+---
+
 ## Environment variables
 
 Copy `.env.example` to `.env`. Every variable is documented there.
