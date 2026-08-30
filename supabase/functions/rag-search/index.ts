@@ -1,13 +1,17 @@
 // ─── FamilyVault RAG Search Edge Function ───────────────────────
 // Pipeline: Query → Retrieve matching chunks → LLM generates answer
-// Uses: Groq (Llama 3.3 70B) for generation, free tier
+// Uses: Groq (gpt-oss-120b) for generation, free tier
 // ────────────────────────────────────────────────────────────────
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { embedText } from '../_shared/embeddings.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const GROQ_API_KEY = Deno.env.get('GROQ_API_KEY') ?? '';
+// llama-3.3-70b-versatile was deprecated by Groq on 2026-06-17.
+// gpt-oss-120b is Groq's recommended replacement.
+const GROQ_MODEL = Deno.env.get('GROQ_MODEL') ?? 'openai/gpt-oss-120b';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
@@ -60,7 +64,7 @@ Deno.serve(async (req) => {
       .map((c, i) => `[Document: ${c.file_name}]\n${c.content}`)
       .join('\n\n---\n\n');
 
-    // 4. Generate answer with Groq (Llama 3.3 70B)
+    // 4. Generate answer with Groq
     const answer = await generateAnswer(query, context, chunks);
     console.log(`[rag] Generated answer (${answer.length} chars)`);
 
@@ -104,12 +108,21 @@ async function retrieveChunks(schema: string, query: string): Promise<ChunkResul
 
   if (!tsquery) return [];
 
-  // Search in document_chunks using full-text search + also search ocr_text on documents
+  // Embed the query so retrieval can rank semantically as well as lexically.
+  // Returns null when HF is unavailable — retrieval then falls back to the
+  // keyword-only path inside the RPC rather than failing the request.
+  const queryEmbedding = await embedText(query);
+  if (!queryEmbedding) {
+    console.warn('[rag] No query embedding — keyword-only retrieval for this request');
+  }
+
+  // Hybrid retrieval: 0.7 semantic + 0.3 keyword when an embedding is present.
   const { data, error } = await supabase.rpc('rag_retrieve_chunks', {
     p_schema: schema,
     p_tsquery: tsquery,
     p_query_pattern: `%${query}%`,
     p_limit: 10,
+    p_query_embedding: queryEmbedding,
   });
 
   if (error) {
@@ -169,7 +182,7 @@ async function fallbackRetrieve(schema: string, query: string, words: string[]):
   return results;
 }
 
-// ─── Generate Answer (Groq / Llama 3.3) ────────────────────────
+// ─── Generate Answer (Groq) ────────────────────────────────────
 
 async function generateAnswer(query: string, context: string, chunks: ChunkResult[]): Promise<string> {
   if (!GROQ_API_KEY) {
@@ -184,7 +197,7 @@ async function generateAnswer(query: string, context: string, chunks: ChunkResul
         'Authorization': `Bearer ${GROQ_API_KEY}`,
       },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
+        model: GROQ_MODEL,
         messages: [
           {
             role: 'system',
@@ -199,7 +212,7 @@ If you mention a document, reference it by its filename.`,
           },
         ],
         temperature: 0.1,
-        max_tokens: 300,
+        max_tokens: 500,
       }),
     });
 
