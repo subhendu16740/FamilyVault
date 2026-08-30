@@ -10,7 +10,7 @@ const slides = [
   {
     emoji: '🏛️',
     title: 'Welcome to FamilyVault',
-    subtitle: 'Your family\'s documents, safe and searchable.',
+    subtitle: 'Every document your family needs, in one place.',
   },
   {
     emoji: '📁',
