@@ -255,8 +255,11 @@ removed, but the missing files were never recovered.
 check_expiry_notifications   delete_family_document     get_user_notifications
 hybrid_search_documents      insert_family_document     mark_notification_read
 update_family_document       complete_document_ingestion
-create_expiry_alert          get_document_chunks        rag_retrieve_chunks
+create_expiry_alert          get_document_chunks
 ```
+
+`rag_retrieve_chunks` was in this list until migration `011` captured it — the
+other ten still exist only in the live database.
 
 Also missing: `CREATE EXTENSION vector`, and the committed `document_chunks`
 table declares `embedding_id VARCHAR(100)` rather than a `vector(384)` column
@@ -284,9 +287,15 @@ To close the gap: `pg_dump --schema-only` against the live project, commit as
   `all-MiniLM-L6-v2` → extracts metadata (expiry dates, passport/PAN/Aadhaar/
   policy numbers) → stores via `complete_document_ingestion` → creates expiry
   alerts.
-- **`rag-search`** — retrieves chunks via `rag_retrieve_chunks` (full-text
-  search) → sends chunks + query to Groq (Llama 3.3 70B) → returns answer plus
-  source document references.
+- **`rag-search`** — embeds the query (`_shared/embeddings.ts`, same model as
+  ingest) → retrieves chunks via `rag_retrieve_chunks`, which blends semantic
+  distance and full-text rank 0.7/0.3 → sends chunks + query to Groq → returns
+  answer plus source document references. If embedding fails the RPC falls back
+  to keyword-only rather than erroring.
+  **The Groq model is pinned in one place** (`GROQ_MODEL`, overridable by a
+  secret of the same name). `llama-3.3-70b-versatile` was deprecated on
+  2026-06-17; check Groq's deprecation page before assuming the current default
+  still exists.
 - **`invite-member`** — sends family invitation emails via Supabase Auth.
 
 All three handle CORS preflight explicitly.
@@ -298,8 +307,8 @@ INGEST  upload → client OCR (Tesseract web / ML Kit native) → upload file + 
         → ingest-document → OCR.space fallback if needed → chunk → embed
         → document_chunks (+vectors) + document_metadata → expiry alerts
 
-SEARCH  question → rag-search → retrieve chunks (tsquery) → Groq/Llama 3.3
-        → answer + source docs
+SEARCH  question → rag-search → embed query → retrieve chunks
+        (0.7 semantic + 0.3 keyword) → Groq → answer + source docs
 ```
 
 ---
