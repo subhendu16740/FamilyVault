@@ -13,6 +13,16 @@ const GROQ_API_KEY = Deno.env.get('GROQ_API_KEY') ?? '';
 // gpt-oss-120b is Groq's recommended replacement.
 const GROQ_MODEL = Deno.env.get('GROQ_MODEL') ?? 'openai/gpt-oss-120b';
 
+// Groq's free tier caps gpt-oss-120b at 8,000 tokens per MINUTE. Ten chunks
+// of ~500 tokens sent ~5,600 tokens per question, so a second question inside
+// a minute was guaranteed to 429 — conversation was impossible by
+// construction. Budgeting the context by characters (~4 chars/token) keeps a
+// request near 2,000 tokens, which leaves room for three or four questions a
+// minute. Retrieval still ranks over all chunks; only what reaches the model
+// is trimmed.
+const MAX_CONTEXT_CHARS = 6000;
+const MAX_CHARS_PER_CHUNK = 1800;
+
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
 const corsHeaders = {
@@ -59,14 +69,14 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 3. Build context from chunks
-    const context = chunks
-      .map((c, i) => `[Document: ${c.file_name}]\n${c.content}`)
-      .join('\n\n---\n\n');
+    // 3. Build context from the highest-ranked chunks, within a token budget.
+    const context = buildContext(chunks);
 
     // 4. Generate answer with Groq
-    const answer = await generateAnswer(query, context, chunks);
-    console.log(`[rag] Generated answer (${answer.length} chars)`);
+    const result = await generateAnswer(query, context, chunks);
+    console.log(
+      `[rag] Answer ${result.degraded ? 'DEGRADED' : 'generated'} (${result.answer.length} chars)`,
+    );
 
     // 5. Return answer + source documents
     const sources = [...new Map(chunks.map(c => [c.document_id, {
@@ -76,7 +86,14 @@ Deno.serve(async (req) => {
       category_name: c.category_name,
     }])).values()];
 
-    return jsonResponse({ answer, sources });
+    // `degraded` tells the client the answer did NOT come from the model, so
+    // the UI can say so rather than presenting a placeholder as a real answer.
+    return jsonResponse({
+      answer: result.answer,
+      sources,
+      degraded: result.degraded,
+      ...(result.retryAfterSeconds ? { retry_after_seconds: result.retryAfterSeconds } : {}),
+    });
 
   } catch (err) {
     console.error('[rag] Error:', err);
@@ -184,9 +201,21 @@ async function fallbackRetrieve(schema: string, query: string, words: string[]):
 
 // ─── Generate Answer (Groq) ────────────────────────────────────
 
-async function generateAnswer(query: string, context: string, chunks: ChunkResult[]): Promise<string> {
+interface AnswerResult {
+  answer: string;
+  /** true when the text did not come from the model. */
+  degraded: boolean;
+  retryAfterSeconds?: number;
+}
+
+async function generateAnswer(
+  query: string,
+  context: string,
+  chunks: ChunkResult[],
+): Promise<AnswerResult> {
   if (!GROQ_API_KEY) {
-    return buildFallbackAnswer(query, context, chunks);
+    console.warn('[rag] GROQ_API_KEY is not set');
+    return { answer: buildFallbackAnswer(chunks, 'unavailable'), degraded: true };
   }
 
   try {
@@ -219,22 +248,80 @@ If you mention a document, reference it by its filename.`,
     if (!response.ok) {
       const errText = await response.text();
       console.warn(`[rag] Groq API error (${response.status}): ${errText}`);
-      return buildFallbackAnswer(query, context, chunks);
+
+      // 429 is the common one on the free tier and is worth saying out loud,
+      // because "wait twelve seconds" is advice the user can act on.
+      if (response.status === 429) {
+        const retryAfterSeconds = parseRetryAfter(errText);
+        return {
+          answer: buildFallbackAnswer(chunks, 'rate_limited', retryAfterSeconds),
+          degraded: true,
+          retryAfterSeconds,
+        };
+      }
+      return { answer: buildFallbackAnswer(chunks, 'unavailable'), degraded: true };
     }
 
     const result = await response.json();
-    return result.choices?.[0]?.message?.content ?? buildFallbackAnswer(query, context, chunks);
+    const text = result.choices?.[0]?.message?.content;
+    if (!text) {
+      console.warn('[rag] Groq returned no content');
+      return { answer: buildFallbackAnswer(chunks, 'unavailable'), degraded: true };
+    }
+
+    return { answer: text, degraded: false };
 
   } catch (err) {
     console.warn('[rag] Groq generation failed:', err);
-    return buildFallbackAnswer(query, context, chunks);
+    return { answer: buildFallbackAnswer(chunks, 'unavailable'), degraded: true };
   }
 }
 
-function buildFallbackAnswer(_query: string, _context: string, chunks: ChunkResult[]): string {
-  const docNames = [...new Set(chunks.map(c => c.file_name))];
-  return `I found relevant information in ${docNames.length} document(s): ${docNames.join(', ')}. Please review them for details.`;
+/** Groq reports the wait as "Please try again in 12.06s." */
+function parseRetryAfter(errText: string): number | undefined {
+  const match = errText.match(/try again in ([\d.]+)s/i);
+  if (!match) return undefined;
+  return Math.ceil(parseFloat(match[1]));
 }
+
+/**
+ * Keep the model's context under the free-tier token budget. Chunks arrive
+ * ranked, so taking from the front keeps the most relevant material.
+ */
+function buildContext(chunks: ChunkResult[]): string {
+  const parts: string[] = [];
+  let budget = MAX_CONTEXT_CHARS;
+
+  for (const c of chunks) {
+    if (budget <= 0) break;
+    const body = c.content.slice(0, Math.min(MAX_CHARS_PER_CHUNK, budget));
+    parts.push(`[Document: ${c.file_name}]\n${body}`);
+    budget -= body.length;
+  }
+
+  console.log(`[rag] Context: ${parts.length}/${chunks.length} chunks, ${MAX_CONTEXT_CHARS - budget} chars`);
+  return parts.join('\n\n---\n\n');
+}
+
+function buildFallbackAnswer(
+  chunks: ChunkResult[],
+  reason: 'rate_limited' | 'unavailable',
+  retryAfterSeconds?: number,
+): string {
+  const docNames = [...new Set(chunks.map(c => c.file_name))];
+  const found = docNames.length
+    ? ` These documents matched your question: ${docNames.join(', ')}.`
+    : '';
+
+  // Say plainly that this is NOT an answer. The previous wording read like a
+  // successful reply, which hid a ten-week model outage and a rate limit.
+  if (reason === 'rate_limited') {
+    const wait = retryAfterSeconds ? `about ${retryAfterSeconds} seconds` : 'a moment';
+    return `I couldn't answer that one — the AI service is rate limited right now. Try again in ${wait}.${found}`;
+  }
+  return `I couldn't answer that one — the AI service is unavailable right now.${found}`;
+}
+
 
 // ─── Helpers ───────────────────────────────────────────────────
 
