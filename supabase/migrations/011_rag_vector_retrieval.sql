@@ -11,12 +11,24 @@
 -- this migration before deploying the new rag-search function, in either
 -- order, without a broken window.
 --
+-- The DROP below is load-bearing. CREATE OR REPLACE only replaces a function
+-- whose argument list is identical; adding a parameter changes the signature,
+-- so without the DROP Postgres keeps the original 4-argument function AND
+-- creates a second 5-argument one. A 4-argument call then matches both — the
+-- old one exactly, the new one via its default — and fails with
+-- "function rag_retrieve_chunks(...) is not unique", breaking the currently
+-- deployed rag-search until the new one ships.
+--
 --   embedding IS NULL  → byte-for-byte the previous behaviour
 --   embedding present  → hybrid, weighted 0.7 semantic / 0.3 keyword to match
 --                        public.hybrid_search_documents
 --
 -- NOTE: migration 010 is reserved for the pending pg_dump of the live schema.
 -- ============================================================================
+
+-- Remove the previous 4-argument definition so the new one below is the only
+-- candidate. Safe: the new signature serves 4-argument callers via its default.
+DROP FUNCTION IF EXISTS public.rag_retrieve_chunks(TEXT, TEXT, TEXT, INTEGER);
 
 CREATE OR REPLACE FUNCTION public.rag_retrieve_chunks(
   p_schema          TEXT,
