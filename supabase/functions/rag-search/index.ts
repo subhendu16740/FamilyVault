@@ -96,7 +96,10 @@ Deno.serve(async (req) => {
     const context = buildContext(chunks);
 
     // 4. Generate answer with Groq
-    const result = await generateAnswer(query, context, chunks, history);
+    // The model answers the STANDALONE question. Handing it the raw
+    // follow-up ("What about 2026?") next to whatever retrieval found lets it
+    // answer a different question from the context instead of the one asked.
+    const result = await generateAnswer(standalone, context, chunks, history);
     console.log(
       `[rag] Answer ${result.degraded ? 'DEGRADED' : 'generated'} (${result.answer.length} chars)`,
     );
@@ -344,7 +347,8 @@ async function generateAnswer(
           {
             role: 'system',
             content: `You are FamilyVault AI — a helpful assistant that answers questions about a family's documents.
-You ONLY answer based on the provided document context. If the answer isn't in the context, say so.
+You ONLY answer based on the provided document context.
+The context is whatever search returned — it may not actually answer the question. If it doesn't, say so plainly and, if a related document exists, say what it does cover instead. NEVER answer a different question just because the context happens to contain information about it.
 This is an ongoing conversation: use earlier turns to understand what the user is referring to.
 Keep answers concise (1-3 sentences). Include specific details like dates, amounts, and document names.
 If you mention a document, reference it by its filename.`,
