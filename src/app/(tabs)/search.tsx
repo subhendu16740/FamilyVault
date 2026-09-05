@@ -8,7 +8,7 @@ import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFamily } from '../../lib/family-context';
-import { fetchCategories, ragSearch, type RagSearchResult } from '../../lib/api';
+import { fetchCategories, ragSearch, type RagSearchResult, type RagHistoryTurn } from '../../lib/api';
 import type { Database } from '../../lib/database.types';
 
 type DocumentCategory = Database['public']['Tables']['document_categories']['Row'];
@@ -46,6 +46,16 @@ export default function SearchScreen() {
     setQuery('');
     setIsAsking(true);
 
+    // Everything said so far, in the shape the server expects. Captured
+    // before the new turn is appended so it never includes this question.
+    const history: RagHistoryTurn[] = messages
+      .filter((m) => !m.loading && m.text)
+      .map((m) => ({
+        role: m.role === 'user' ? 'user' : 'assistant',
+        content: m.text,
+        source_ids: m.sources?.map((s) => s.id),
+      }));
+
     // Add user message
     const userMsg: ChatMessage = { id: `u-${Date.now()}`, role: 'user', text: question };
     const aiPlaceholder: ChatMessage = { id: `a-${Date.now()}`, role: 'ai', text: '', loading: true };
@@ -54,7 +64,7 @@ export default function SearchScreen() {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
 
     try {
-      const result = await ragSearch(currentFamily.id, question);
+      const result = await ragSearch(currentFamily.id, question, history);
       setMessages((prev) =>
         prev.map((m) =>
           m.id === aiPlaceholder.id

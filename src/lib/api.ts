@@ -160,11 +160,26 @@ function resolveAliases(
 export interface RagSearchResult {
   answer: string;
   sources: { id: string; file_name: string; file_type: string; category_name: string | null }[];
+  /** true when `answer` did not come from the model (rate limit, outage). */
+  degraded?: boolean;
+  retry_after_seconds?: number;
 }
 
-export async function ragSearch(familyId: string, query: string): Promise<RagSearchResult> {
+/** One prior turn of the conversation, as the server expects it. */
+export interface RagHistoryTurn {
+  role: 'user' | 'assistant';
+  content: string;
+  /** Document IDs cited in an assistant turn — lets follow-ups stay on-topic. */
+  source_ids?: string[];
+}
+
+export async function ragSearch(
+  familyId: string,
+  query: string,
+  history: RagHistoryTurn[] = [],
+): Promise<RagSearchResult> {
   const { data, error } = await supabase.functions.invoke('rag-search', {
-    body: { family_id: familyId, query },
+    body: { family_id: familyId, query, history },
   });
 
   if (error) throw error;

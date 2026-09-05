@@ -23,6 +23,22 @@ const GROQ_MODEL = Deno.env.get('GROQ_MODEL') ?? 'openai/gpt-oss-120b';
 const MAX_CONTEXT_CHARS = 6000;
 const MAX_CHARS_PER_CHUNK = 1800;
 
+// Conversation. Follow-ups like "and what about this one?" carry no
+// retrievable signal on their own, so before retrieving we rewrite them into
+// a standalone question using the recent turns. That rewrite goes to a small
+// fast model with its own rate-limit pool on Groq, so it costs nothing
+// against the answer model's budget.
+const GROQ_CONDENSE_MODEL = Deno.env.get('GROQ_CONDENSE_MODEL') ?? 'llama-3.1-8b-instant';
+const MAX_HISTORY_TURNS = 6;        // 3 exchanges
+const MAX_HISTORY_CHARS = 600;      // per message, keeps the prompt bounded
+
+interface HistoryTurn {
+  role: 'user' | 'assistant';
+  content: string;
+  /** Document IDs the assistant cited in this turn, if any. */
+  source_ids?: string[];
+}
+
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
 const corsHeaders = {
@@ -37,13 +53,14 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { family_id, query } = await req.json();
+    const { family_id, query, history: rawHistory } = await req.json();
 
     if (!family_id || !query) {
       return jsonResponse({ error: 'Missing family_id or query' }, 400);
     }
 
-    console.log(`[rag] Query: "${query}" for family=${family_id}`);
+    const history = sanitiseHistory(rawHistory);
+    console.log(`[rag] Query: "${query}" for family=${family_id} (history: ${history.length} turns)`);
 
     // 1. Get family schema
     const { data: family, error: famErr } = await supabase
@@ -58,8 +75,14 @@ Deno.serve(async (req) => {
 
     const schema = family.storage_namespace;
 
-    // 2. Retrieve relevant chunks using full-text search
-    const chunks = await retrieveChunks(schema, query);
+    // 2. Turn a follow-up into a standalone question, then retrieve on THAT.
+    //    "latest available data?" retrieves nothing; "latest ISB placement
+    //    data in the 2022 report" retrieves the right document.
+    const standalone = history.length > 0 ? await condenseQuery(query, history) : query;
+    if (standalone !== query) console.log(`[rag] Condensed: "${standalone}"`);
+
+    const citedIds = history.flatMap(t => t.source_ids ?? []);
+    const chunks = await retrieveChunks(schema, standalone, citedIds);
     console.log(`[rag] Retrieved ${chunks.length} chunks`);
 
     if (chunks.length === 0) {
@@ -73,7 +96,7 @@ Deno.serve(async (req) => {
     const context = buildContext(chunks);
 
     // 4. Generate answer with Groq
-    const result = await generateAnswer(query, context, chunks);
+    const result = await generateAnswer(query, context, chunks, history);
     console.log(
       `[rag] Answer ${result.degraded ? 'DEGRADED' : 'generated'} (${result.answer.length} chars)`,
     );
@@ -112,7 +135,11 @@ interface ChunkResult {
   chunk_index: number;
 }
 
-async function retrieveChunks(schema: string, query: string): Promise<ChunkResult[]> {
+async function retrieveChunks(
+  schema: string,
+  query: string,
+  citedIds: string[] = [],
+): Promise<ChunkResult[]> {
   // Build tsquery from words
   const words = query
     .toLowerCase()
@@ -147,7 +174,92 @@ async function retrieveChunks(schema: string, query: string): Promise<ChunkResul
     return await fallbackRetrieve(schema, query, words);
   }
 
-  return (data ?? []) as ChunkResult[];
+  const results = (data ?? []) as ChunkResult[];
+
+  // In a conversation, chunks from documents already on the table should win
+  // ties. A stable sort keeps the ranking otherwise intact — this is a nudge,
+  // not an override, so a clearly better match elsewhere still surfaces.
+  if (citedIds.length > 0) {
+    const cited = new Set(citedIds);
+    results.sort((a, b) =>
+      Number(cited.has(b.document_id)) - Number(cited.has(a.document_id)));
+  }
+
+  return results;
+}
+
+// ─── Conversation helpers ──────────────────────────────────────
+
+/** Accept only well-formed recent turns; never trust the shape blindly. */
+function sanitiseHistory(raw: unknown): HistoryTurn[] {
+  if (!Array.isArray(raw)) return [];
+  const turns: HistoryTurn[] = [];
+  for (const t of raw) {
+    if (!t || typeof t !== 'object') continue;
+    const role = (t as HistoryTurn).role;
+    const content = (t as HistoryTurn).content;
+    if ((role !== 'user' && role !== 'assistant') || typeof content !== 'string') continue;
+    const ids = Array.isArray((t as HistoryTurn).source_ids)
+      ? (t as HistoryTurn).source_ids!.filter(id => typeof id === 'string').slice(0, 5)
+      : undefined;
+    turns.push({ role, content: content.slice(0, MAX_HISTORY_CHARS), source_ids: ids });
+  }
+  return turns.slice(-MAX_HISTORY_TURNS);
+}
+
+/**
+ * Rewrite a follow-up into a question that stands on its own. Falls back to
+ * the original query on any failure — a bad condensation is worse than none.
+ */
+async function condenseQuery(query: string, history: HistoryTurn[]): Promise<string> {
+  if (!GROQ_API_KEY) return query;
+
+  const transcript = history
+    .map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.content}`)
+    .join('\n');
+
+  try {
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${GROQ_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: GROQ_CONDENSE_MODEL,
+        messages: [
+          {
+            role: 'system',
+            content: `Rewrite the user's latest message as a single standalone search query that makes sense with no conversation history.
+Resolve references like "it", "this one", "that policy", "the latest data" using the conversation.
+Keep every specific name, document, year and number that matters. Do not answer the question.
+Reply with the rewritten query only — no quotes, no preamble.`,
+          },
+          {
+            role: 'user',
+            content: `Conversation so far:\n${transcript}\n\nLatest message: ${query}`,
+          },
+        ],
+        temperature: 0,
+        max_tokens: 80,
+      }),
+    });
+
+    if (!response.ok) {
+      console.warn(`[rag] Condense failed (${response.status}) — using raw query`);
+      return query;
+    }
+
+    const result = await response.json();
+    const text: string = result.choices?.[0]?.message?.content?.trim() ?? '';
+
+    // Guard against the model chatting instead of rewriting.
+    if (!text || text.length > 300 || text.split('\n').length > 2) return query;
+    return text.replace(/^["']|["']$/g, '');
+  } catch (err) {
+    console.warn('[rag] Condense error — using raw query:', err);
+    return query;
+  }
 }
 
 async function fallbackRetrieve(schema: string, query: string, words: string[]): Promise<ChunkResult[]> {
@@ -212,6 +324,7 @@ async function generateAnswer(
   query: string,
   context: string,
   chunks: ChunkResult[],
+  history: HistoryTurn[] = [],
 ): Promise<AnswerResult> {
   if (!GROQ_API_KEY) {
     console.warn('[rag] GROQ_API_KEY is not set');
@@ -232,9 +345,12 @@ async function generateAnswer(
             role: 'system',
             content: `You are FamilyVault AI — a helpful assistant that answers questions about a family's documents.
 You ONLY answer based on the provided document context. If the answer isn't in the context, say so.
+This is an ongoing conversation: use earlier turns to understand what the user is referring to.
 Keep answers concise (1-3 sentences). Include specific details like dates, amounts, and document names.
 If you mention a document, reference it by its filename.`,
           },
+          // Prior turns, so "this one" and "that policy" resolve naturally.
+          ...history.map(t => ({ role: t.role, content: t.content })),
           {
             role: 'user',
             content: `Context from family documents:\n\n${context}\n\n---\n\nQuestion: ${query}`,
