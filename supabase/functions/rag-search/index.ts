@@ -115,8 +115,12 @@ Deno.serve(async (req) => {
     // 2. Turn a follow-up into a standalone question, then retrieve on THAT.
     //    "latest available data?" retrieves nothing; "latest ISB placement
     //    data in the 2022 report" retrieves the right document.
-    const standalone = history.length > 0 ? await condenseQuery(query, history) : query;
-    if (standalone !== query) console.log(`[rag] Condensed: "${standalone}"`);
+    const cond = history.length > 0
+      ? await condenseQuery(query, history)
+      : { query, changed: false as boolean, error: undefined as string | undefined };
+    const standalone = cond.query;
+    if (cond.changed) console.log(`[rag] Condensed: "${standalone}"`);
+    else if (history.length > 0) console.log(`[rag] Not condensed${cond.error ? ` (${cond.error})` : ''}`);
 
     const citedIds = history.flatMap(t => t.source_ids ?? []);
     const [pin, retrieved] = await Promise.all([
@@ -152,6 +156,8 @@ Deno.serve(async (req) => {
       retrieved_docs: uniqNames(retrieved),
       candidate_count: candidates.length,
       kept_docs: uniqNames(chunks),
+      condensed: cond.changed,
+      ...(cond.error ? { condense_error: cond.error } : {}),
       ...(pin.error ? { pin_error: pin.error } : {}),
       ...(rank.error ? { rerank_error: rank.error } : {}),
     };
@@ -441,11 +447,15 @@ function dedupeChunks(chunks: ChunkResult[]): ChunkResult[] {
 }
 
 /**
- * Rewrite a follow-up into a question that stands on its own. Falls back to
- * the original query on any failure — a bad condensation is worse than none.
+ * Rewrite a follow-up into a question that stands on its own. Returns the
+ * original query on any failure — a bad condensation is worse than none —
+ * and reports what happened so the outcome is visible in the response.
  */
-async function condenseQuery(query: string, history: HistoryTurn[]): Promise<string> {
-  if (!GROQ_API_KEY) return query;
+async function condenseQuery(
+  query: string,
+  history: HistoryTurn[],
+): Promise<{ query: string; changed: boolean; error?: string }> {
+  if (!GROQ_API_KEY) return { query, changed: false, error: 'no api key' };
 
   const transcript = history
     .map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.content}`)
@@ -460,39 +470,52 @@ async function condenseQuery(query: string, history: HistoryTurn[]): Promise<str
       },
       body: JSON.stringify({
         model: GROQ_CONDENSE_MODEL,
+        temperature: 0,
+        max_tokens: 80,
         messages: [
           {
             role: 'system',
             content: `Rewrite the user's latest message as a single standalone search query that makes sense with no conversation history.
-Resolve references like "it", "this one", "that policy", "the latest data" using the conversation.
-Keep the SUBJECT of the conversation in the rewrite — if the discussion is about ISB placements and the user asks for "the latest data", the query is about the latest ISB placements data, not the latest data of any kind. Only drop the subject if the user clearly changes topic.
+Resolve references like "it", "this one", "that policy", "the latest data", "the highest offer" using the conversation.
+Keep the SUBJECT of the conversation in the rewrite — if the discussion is about ISB placements and the user asks about "the highest offer", the query is about the highest salary offer in the ISB placements report. Only drop the subject if the user clearly changes topic.
 Keep every specific name, document, year and number that matters. Do not answer the question.
-Reply with the rewritten query only — no quotes, no preamble.`,
+Output ONLY the rewritten query on one line. No label, no quotes, no explanation.`,
           },
           {
             role: 'user',
             content: `Conversation so far:\n${transcript}\n\nLatest message: ${query}`,
           },
         ],
-        temperature: 0,
-        max_tokens: 80,
       }),
     });
 
     if (!response.ok) {
-      console.warn(`[rag] Condense failed (${response.status}) — using raw query`);
-      return query;
+      const errText = await response.text();
+      return { query, changed: false, error: `HTTP ${response.status}: ${errText.slice(0, 100)}` };
     }
 
     const result = await response.json();
-    const text: string = result.choices?.[0]?.message?.content?.trim() ?? '';
+    const raw: string = result.choices?.[0]?.message?.content ?? '';
 
-    // Guard against the model chatting instead of rewriting.
-    if (!text || text.length > 300 || text.split('\n').length > 2) return query;
-    return text.replace(/^["']|["']$/g, '');
+    // Small models add preambles ("Here is the rewritten query:") despite
+    // instructions. Take the last non-empty line and strip labels and quotes,
+    // rather than rejecting the whole thing and silently using the raw query.
+    const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+    let text = lines[lines.length - 1] ?? '';
+    text = text
+      .replace(/^(rewritten|standalone|search)?\s*query\s*:\s*/i, '')
+      .replace(/^["'\u201c\u2018]+|["'\u201d\u2019]+$/g, '')
+      .trim();
+
+    if (!text || text.length > 300) {
+      console.warn(`[rag] Condense rejected output: ${JSON.stringify(raw).slice(0, 200)}`);
+      return { query, changed: false, error: 'unusable output' };
+    }
+
+    const changed = text.toLowerCase() !== query.trim().toLowerCase();
+    return { query: text, changed };
   } catch (err) {
-    console.warn('[rag] Condense error — using raw query:', err);
-    return query;
+    return { query, changed: false, error: String(err).slice(0, 100) };
   }
 }
 

@@ -172,6 +172,9 @@ export interface RagSearchResult {
     retrieved_docs: string[];
     candidate_count: number;
     kept_docs: string[];
+    /** false means the retriever was given the raw follow-up, not a rewrite. */
+    condensed: boolean;
+    condense_error?: string;
     pin_error?: string;
     rerank_error?: string;
   };

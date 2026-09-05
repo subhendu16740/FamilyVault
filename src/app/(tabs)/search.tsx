@@ -196,11 +196,13 @@ export default function SearchScreen() {
                         {msg.debug && msg.debug.history_turns > 0 && (
                           <Text style={styles.searchedFor} numberOfLines={3}>
                             Searched for: {msg.debug.searched_for}
+                            {msg.debug.condensed ? '' : ' (not rewritten)'}
                             {'\n'}
                             {msg.debug.kept_docs.length} kept of {msg.debug.candidate_count} · {msg.debug.pinned_docs.length} pinned
                             {msg.debug.client_sent_sources ? '' : ' · old client'}
                             {msg.debug.pin_error ? ` · pin: ${msg.debug.pin_error}` : ''}
                             {msg.debug.rerank_error ? ` · rerank: ${msg.debug.rerank_error}` : ''}
+                            {msg.debug.condense_error ? ` · condense: ${msg.debug.condense_error}` : ''}
                           </Text>
                         )}
                         {msg.sources && msg.sources.length > 0 && (
