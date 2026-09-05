@@ -18,6 +18,7 @@ interface ChatMessage {
   role: 'user' | 'ai';
   text: string;
   sources?: RagSearchResult['sources'];
+  debug?: RagSearchResult['debug'];
   loading?: boolean;
 }
 
@@ -69,7 +70,7 @@ export default function SearchScreen() {
       setMessages((prev) =>
         prev.map((m) =>
           m.id === aiPlaceholder.id
-            ? { ...m, text: result.answer, sources: result.sources, loading: false }
+            ? { ...m, text: result.answer, sources: result.sources, debug: result.debug, loading: false }
             : m
         )
       );
@@ -192,6 +193,15 @@ export default function SearchScreen() {
                         ]}>
                           {msg.text}
                         </Text>
+                        {msg.debug && msg.debug.history_turns > 0 && (
+                          <Text style={styles.searchedFor} numberOfLines={3}>
+                            Searched for: {msg.debug.searched_for}
+                            {'\n'}
+                            {msg.debug.pinned_docs.length} pinned · {msg.debug.retrieved_docs.length} retrieved
+                            {msg.debug.client_sent_sources ? '' : ' · old client'}
+                            {msg.debug.pin_error ? ` · pin: ${msg.debug.pin_error}` : ''}
+                          </Text>
+                        )}
                         {msg.sources && msg.sources.length > 0 && (
                           <View style={styles.sourcesWrap}>
                             {msg.sources.map((s) => (
@@ -362,6 +372,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   sourceText: { fontSize: 11, color: '#2A3D66', fontWeight: '500', maxWidth: 150 },
+  searchedFor: { fontSize: 11, color: '#9CA3AF', marginTop: 8, fontStyle: 'italic', lineHeight: 15 },
   // ─── Input Bar ────────────────────────────────────────
   inputBar: {
     backgroundColor: '#FFFFFF',

@@ -163,6 +163,15 @@ export interface RagSearchResult {
   /** true when `answer` did not come from the model (rate limit, outage). */
   degraded?: boolean;
   retry_after_seconds?: number;
+  /** What the server actually did — shown under follow-up answers. */
+  debug?: {
+    searched_for: string;
+    history_turns: number;
+    client_sent_sources: boolean;
+    pinned_docs: string[];
+    retrieved_docs: string[];
+    pin_error?: string;
+  };
 }
 
 /** One prior turn of the conversation, as the server expects it. */
