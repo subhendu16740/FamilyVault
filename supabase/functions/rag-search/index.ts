@@ -32,12 +32,33 @@ const GROQ_CONDENSE_MODEL = Deno.env.get('GROQ_CONDENSE_MODEL') ?? 'llama-3.1-8b
 const MAX_HISTORY_TURNS = 6;        // 3 exchanges
 const MAX_HISTORY_CHARS = 600;      // per message, keeps the prompt bounded
 
+/** A document an earlier answer cited — enough to rebuild a ChunkResult. */
+interface CitedSource {
+  id: string;
+  file_name: string;
+  file_type: string;
+  category_name: string | null;
+}
+
 interface HistoryTurn {
   role: 'user' | 'assistant';
   content: string;
-  /** Document IDs the assistant cited in this turn, if any. */
+  /** Documents the assistant cited in this turn, if any. */
+  sources?: CitedSource[];
+  /** Legacy shape from older clients; superseded by `sources`. */
   source_ids?: string[];
 }
+
+// Follow-ups often refer to a document already on the table ("the latest
+// data", "that policy"). Retrieval on the rewritten question usually finds
+// it again — but not always, and when it misses the model sees unrelated
+// chunks and answers about those instead. So for every follow-up, a few
+// chunks from the most recently cited document are pinned into context
+// regardless of what retrieval returns. Kept small so it cannot crowd out a
+// genuine topic change.
+const PIN_MAX_DOCS = 2;
+const PIN_CHUNKS_PER_DOC = 2;
+const PIN_MAX_CHARS_PER_CHUNK = 900;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
@@ -82,7 +103,12 @@ Deno.serve(async (req) => {
     if (standalone !== query) console.log(`[rag] Condensed: "${standalone}"`);
 
     const citedIds = history.flatMap(t => t.source_ids ?? []);
-    const chunks = await retrieveChunks(schema, standalone, citedIds);
+    const [pinned, retrieved] = await Promise.all([
+      history.length > 0 ? pinnedChunks(schema, history) : Promise.resolve([]),
+      retrieveChunks(schema, standalone, citedIds),
+    ]);
+    const chunks = dedupeChunks([...pinned, ...retrieved]);
+    if (pinned.length) console.log(`[rag] Pinned ${pinned.length} chunk(s) from cited documents`);
     console.log(`[rag] Retrieved ${chunks.length} chunks`);
 
     if (chunks.length === 0) {
@@ -202,12 +228,74 @@ function sanitiseHistory(raw: unknown): HistoryTurn[] {
     const role = (t as HistoryTurn).role;
     const content = (t as HistoryTurn).content;
     if ((role !== 'user' && role !== 'assistant') || typeof content !== 'string') continue;
-    const ids = Array.isArray((t as HistoryTurn).source_ids)
+    const rawSources = (t as HistoryTurn).sources;
+    const sources: CitedSource[] | undefined = Array.isArray(rawSources)
+      ? rawSources
+          .filter(x => x && typeof x === 'object' && typeof (x as CitedSource).id === 'string')
+          .slice(0, 5)
+          .map(x => ({
+            id: (x as CitedSource).id,
+            file_name: String((x as CitedSource).file_name ?? ''),
+            file_type: String((x as CitedSource).file_type ?? ''),
+            category_name: (x as CitedSource).category_name ?? null,
+          }))
+      : undefined;
+    const legacyIds = Array.isArray((t as HistoryTurn).source_ids)
       ? (t as HistoryTurn).source_ids!.filter(id => typeof id === 'string').slice(0, 5)
       : undefined;
-    turns.push({ role, content: content.slice(0, MAX_HISTORY_CHARS), source_ids: ids });
+    const ids = sources?.map(x => x.id) ?? legacyIds;
+    turns.push({ role, content: content.slice(0, MAX_HISTORY_CHARS), sources, source_ids: ids });
   }
   return turns.slice(-MAX_HISTORY_TURNS);
+}
+
+/**
+ * Pull a few chunks from the document(s) the conversation most recently
+ * cited, so a follow-up always has them in view. Uses get_document_chunks,
+ * which returns chunks in index order — the opening of a document is the
+ * best blind guess for what a follow-up is about.
+ */
+async function pinnedChunks(schema: string, history: HistoryTurn[]): Promise<ChunkResult[]> {
+  const lastCited = [...history].reverse().find(t => t.role === 'assistant' && t.sources?.length);
+  if (!lastCited?.sources) return [];
+
+  const docs = lastCited.sources.slice(0, PIN_MAX_DOCS);
+  const results: ChunkResult[] = [];
+
+  await Promise.all(docs.map(async (doc) => {
+    const { data, error } = await supabase.rpc('get_document_chunks', {
+      p_schema: schema,
+      p_document_id: doc.id,
+      p_limit: PIN_CHUNKS_PER_DOC,
+    });
+    if (error || !data) {
+      console.warn(`[rag] Pin failed for ${doc.file_name}:`, error?.message);
+      return;
+    }
+    for (const c of data as { content: string; chunk_index: number }[]) {
+      results.push({
+        document_id: doc.id,
+        file_name: doc.file_name,
+        file_type: doc.file_type,
+        category_name: doc.category_name,
+        content: c.content.slice(0, PIN_MAX_CHARS_PER_CHUNK),
+        chunk_index: c.chunk_index,
+      });
+    }
+  }));
+
+  return results;
+}
+
+/** First occurrence wins, so pinned chunks stay ahead of retrieved duplicates. */
+function dedupeChunks(chunks: ChunkResult[]): ChunkResult[] {
+  const seen = new Set<string>();
+  return chunks.filter(c => {
+    const key = `${c.document_id}:${c.chunk_index}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /**
@@ -235,6 +323,7 @@ async function condenseQuery(query: string, history: HistoryTurn[]): Promise<str
             role: 'system',
             content: `Rewrite the user's latest message as a single standalone search query that makes sense with no conversation history.
 Resolve references like "it", "this one", "that policy", "the latest data" using the conversation.
+Keep the SUBJECT of the conversation in the rewrite — if the discussion is about ISB placements and the user asks for "the latest data", the query is about the latest ISB placements data, not the latest data of any kind. Only drop the subject if the user clearly changes topic.
 Keep every specific name, document, year and number that matters. Do not answer the question.
 Reply with the rewritten query only — no quotes, no preamble.`,
           },
