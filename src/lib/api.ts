@@ -169,7 +169,9 @@ export interface RagSearchResult {
 export interface RagHistoryTurn {
   role: 'user' | 'assistant';
   content: string;
-  /** Document IDs cited in an assistant turn — lets follow-ups stay on-topic. */
+  /** Documents cited in an assistant turn — the server pins them into context for follow-ups. */
+  sources?: RagSearchResult['sources'];
+  /** Kept for older servers; superseded by `sources`. */
   source_ids?: string[];
 }
 

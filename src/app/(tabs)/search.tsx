@@ -53,6 +53,7 @@ export default function SearchScreen() {
       .map((m) => ({
         role: m.role === 'user' ? 'user' : 'assistant',
         content: m.text,
+        sources: m.sources,
         source_ids: m.sources?.map((s) => s.id),
       }));
 
