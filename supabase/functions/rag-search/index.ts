@@ -81,7 +81,11 @@ Deno.serve(async (req) => {
     }
 
     const history = sanitiseHistory(rawHistory);
-    console.log(`[rag] Query: "${query}" for family=${family_id} (history: ${history.length} turns)`);
+    // Did the client send cited documents (new shape) or only IDs (old bundle)?
+    // Distinguishes "pinning had nothing to work with" from "pinning failed".
+    const clientSentSources = Array.isArray(rawHistory)
+      && rawHistory.some((t: unknown) => Array.isArray((t as HistoryTurn)?.sources));
+    console.log(`[rag] Query: "${query}" for family=${family_id} (history: ${history.length} turns, sources: ${clientSentSources})`);
 
     // 1. Get family schema
     const { data: family, error: famErr } = await supabase
@@ -103,18 +107,33 @@ Deno.serve(async (req) => {
     if (standalone !== query) console.log(`[rag] Condensed: "${standalone}"`);
 
     const citedIds = history.flatMap(t => t.source_ids ?? []);
-    const [pinned, retrieved] = await Promise.all([
-      history.length > 0 ? pinnedChunks(schema, history) : Promise.resolve([]),
+    const [pin, retrieved] = await Promise.all([
+      history.length > 0 ? pinnedChunks(schema, history) : Promise.resolve({ chunks: [] as ChunkResult[] }),
       retrieveChunks(schema, standalone, citedIds),
     ]);
+    const pinned = pin.chunks;
     const chunks = dedupeChunks([...pinned, ...retrieved]);
     if (pinned.length) console.log(`[rag] Pinned ${pinned.length} chunk(s) from cited documents`);
+    if (pin.error) console.warn(`[rag] Pin error: ${pin.error}`);
+
+    // Surfaced in the response so a screenshot of the app is a full diagnosis:
+    // what was actually searched, what was pinned, what came back.
+    const uniqNames = (cs: ChunkResult[]) => [...new Set(cs.map(c => c.file_name))];
+    const debug = {
+      searched_for: standalone,
+      history_turns: history.length,
+      client_sent_sources: clientSentSources,
+      pinned_docs: uniqNames(pinned),
+      retrieved_docs: uniqNames(retrieved),
+      ...(pin.error ? { pin_error: pin.error } : {}),
+    };
     console.log(`[rag] Retrieved ${chunks.length} chunks`);
 
     if (chunks.length === 0) {
       return jsonResponse({
         answer: "I couldn't find any documents matching your query. Try uploading relevant documents first.",
         sources: [],
+        debug,
       });
     }
 
@@ -145,6 +164,7 @@ Deno.serve(async (req) => {
       sources,
       degraded: result.degraded,
       ...(result.retryAfterSeconds ? { retry_after_seconds: result.retryAfterSeconds } : {}),
+      debug,
     });
 
   } catch (err) {
@@ -255,12 +275,16 @@ function sanitiseHistory(raw: unknown): HistoryTurn[] {
  * which returns chunks in index order — the opening of a document is the
  * best blind guess for what a follow-up is about.
  */
-async function pinnedChunks(schema: string, history: HistoryTurn[]): Promise<ChunkResult[]> {
+async function pinnedChunks(
+  schema: string,
+  history: HistoryTurn[],
+): Promise<{ chunks: ChunkResult[]; error?: string }> {
   const lastCited = [...history].reverse().find(t => t.role === 'assistant' && t.sources?.length);
-  if (!lastCited?.sources) return [];
+  if (!lastCited?.sources) return { chunks: [], error: 'no cited sources in history' };
 
   const docs = lastCited.sources.slice(0, PIN_MAX_DOCS);
   const results: ChunkResult[] = [];
+  const errors: string[] = [];
 
   await Promise.all(docs.map(async (doc) => {
     const { data, error } = await supabase.rpc('get_document_chunks', {
@@ -269,7 +293,7 @@ async function pinnedChunks(schema: string, history: HistoryTurn[]): Promise<Chu
       p_limit: PIN_CHUNKS_PER_DOC,
     });
     if (error || !data) {
-      console.warn(`[rag] Pin failed for ${doc.file_name}:`, error?.message);
+      errors.push(`${doc.file_name}: ${error?.message ?? 'no data'}`);
       return;
     }
     for (const c of data as { content: string; chunk_index: number }[]) {
@@ -284,7 +308,7 @@ async function pinnedChunks(schema: string, history: HistoryTurn[]): Promise<Chu
     }
   }));
 
-  return results;
+  return { chunks: results, ...(errors.length ? { error: errors.join('; ') } : {}) };
 }
 
 /** First occurrence wins, so pinned chunks stay ahead of retrieved duplicates. */
