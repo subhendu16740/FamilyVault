@@ -197,9 +197,10 @@ export default function SearchScreen() {
                           <Text style={styles.searchedFor} numberOfLines={3}>
                             Searched for: {msg.debug.searched_for}
                             {'\n'}
-                            {msg.debug.pinned_docs.length} pinned · {msg.debug.retrieved_docs.length} retrieved
+                            {msg.debug.kept_docs.length} kept of {msg.debug.candidate_count} · {msg.debug.pinned_docs.length} pinned
                             {msg.debug.client_sent_sources ? '' : ' · old client'}
                             {msg.debug.pin_error ? ` · pin: ${msg.debug.pin_error}` : ''}
+                            {msg.debug.rerank_error ? ` · rerank: ${msg.debug.rerank_error}` : ''}
                           </Text>
                         )}
                         {msg.sources && msg.sources.length > 0 && (
