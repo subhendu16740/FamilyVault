@@ -32,6 +32,18 @@ const GROQ_CONDENSE_MODEL = Deno.env.get('GROQ_CONDENSE_MODEL') ?? 'llama-3.1-8b
 const MAX_HISTORY_TURNS = 6;        // 3 exchanges
 const MAX_HISTORY_CHARS = 600;      // per message, keeps the prompt bounded
 
+// Reranking. Retrieval casts a wide net; a second, cheap model then judges
+// each candidate against the actual question and only the best survive.
+// This is the missing relevance floor: a tax return that merely mentions
+// "2026" scores 1/10 for a placements question and never reaches the answer
+// model. The judge runs on the small model, which has its own rate-limit
+// pool on Groq, so it costs nothing against the answer model's budget.
+const GROQ_RERANK_MODEL = Deno.env.get('GROQ_RERANK_MODEL') ?? 'llama-3.1-8b-instant';
+const RERANK_CANDIDATES = 15;      // how many retrieval returns for judging
+const RERANK_KEEP = 5;             // how many survive into the prompt
+const RERANK_MIN_SCORE = 4;        // 0–10; below this a chunk is dropped outright
+const RERANK_SNIPPET_CHARS = 350;  // per candidate, keeps the judge call small
+
 /** A document an earlier answer cited — enough to rebuild a ChunkResult. */
 interface CitedSource {
   id: string;
@@ -103,8 +115,12 @@ Deno.serve(async (req) => {
     // 2. Turn a follow-up into a standalone question, then retrieve on THAT.
     //    "latest available data?" retrieves nothing; "latest ISB placement
     //    data in the 2022 report" retrieves the right document.
-    const standalone = history.length > 0 ? await condenseQuery(query, history) : query;
-    if (standalone !== query) console.log(`[rag] Condensed: "${standalone}"`);
+    const cond = history.length > 0
+      ? await condenseQuery(query, history)
+      : { query, changed: false as boolean, error: undefined as string | undefined };
+    const standalone = cond.query;
+    if (cond.changed) console.log(`[rag] Condensed: "${standalone}"`);
+    else if (history.length > 0) console.log(`[rag] Not condensed${cond.error ? ` (${cond.error})` : ''}`);
 
     const citedIds = history.flatMap(t => t.source_ids ?? []);
     const [pin, retrieved] = await Promise.all([
@@ -112,12 +128,25 @@ Deno.serve(async (req) => {
       retrieveChunks(schema, standalone, citedIds),
     ]);
     const pinned = pin.chunks;
-    const chunks = dedupeChunks([...pinned, ...retrieved]);
     if (pinned.length) console.log(`[rag] Pinned ${pinned.length} chunk(s) from cited documents`);
     if (pin.error) console.warn(`[rag] Pin error: ${pin.error}`);
 
+    // Pinned chunks are CANDIDATES, not guaranteed context. They join the
+    // pool so a document from earlier in the conversation is always
+    // considered — and then the judge decides, like everything else. That is
+    // what stops last turn's document crowding out this turn's answer when
+    // the user changes subject.
+    const candidates = dedupeChunks([...pinned, ...retrieved]);
+    console.log(`[rag] ${candidates.length} candidate chunks`);
+
+    // 3. Judge every candidate against the question; keep only the relevant.
+    const rank = await rerankChunks(standalone, candidates);
+    const chunks = rank.kept;
+    if (rank.error) console.warn(`[rag] Rerank fell back: ${rank.error}`);
+    console.log(`[rag] Kept ${chunks.length}/${candidates.length} after rerank`);
+
     // Surfaced in the response so a screenshot of the app is a full diagnosis:
-    // what was actually searched, what was pinned, what came back.
+    // what was searched, what was pinned, what came back, what survived.
     const uniqNames = (cs: ChunkResult[]) => [...new Set(cs.map(c => c.file_name))];
     const debug = {
       searched_for: standalone,
@@ -125,11 +154,15 @@ Deno.serve(async (req) => {
       client_sent_sources: clientSentSources,
       pinned_docs: uniqNames(pinned),
       retrieved_docs: uniqNames(retrieved),
+      candidate_count: candidates.length,
+      kept_docs: uniqNames(chunks),
+      condensed: cond.changed,
+      ...(cond.error ? { condense_error: cond.error } : {}),
       ...(pin.error ? { pin_error: pin.error } : {}),
+      ...(rank.error ? { rerank_error: rank.error } : {}),
     };
-    console.log(`[rag] Retrieved ${chunks.length} chunks`);
 
-    if (chunks.length === 0) {
+    if (candidates.length === 0) {
       return jsonResponse({
         answer: "I couldn't find any documents matching your query. Try uploading relevant documents first.",
         sources: [],
@@ -137,8 +170,20 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 3. Build context from the highest-ranked chunks, within a token budget.
-    const context = buildContext(chunks);
+    // Everything retrieved was judged irrelevant. Say so — and name what was
+    // considered — rather than letting the model improvise from junk.
+    if (chunks.length === 0) {
+      const considered = uniqNames(candidates).slice(0, 3).join(', ');
+      return jsonResponse({
+        answer: `I couldn't find anything in your documents that answers that. The closest matches were ${considered}, but none of them actually address it.`,
+        sources: [],
+        debug,
+      });
+    }
+
+    // 4. Build context from the survivors, within a token budget.
+    const built = buildContext(chunks);
+    const context = built.text;
 
     // 4. Generate answer with Groq
     // The model answers the STANDALONE question. Handing it the raw
@@ -150,7 +195,9 @@ Deno.serve(async (req) => {
     );
 
     // 5. Return answer + source documents
-    const sources = [...new Map(chunks.map(c => [c.document_id, {
+    // Built from the chunks that made it INTO the prompt — not from everything
+    // retrieved — so a chip never claims a document the model never read.
+    const sources = [...new Map(built.used.map(c => [c.document_id, {
       id: c.document_id,
       file_name: c.file_name,
       file_type: c.file_type,
@@ -214,7 +261,7 @@ async function retrieveChunks(
     p_schema: schema,
     p_tsquery: tsquery,
     p_query_pattern: `%${query}%`,
-    p_limit: 10,
+    p_limit: RERANK_CANDIDATES,
     p_query_embedding: queryEmbedding,
   });
 
@@ -311,6 +358,83 @@ async function pinnedChunks(
   return { chunks: results, ...(errors.length ? { error: errors.join('; ') } : {}) };
 }
 
+/**
+ * Score every candidate against the question in ONE call to the small model,
+ * then keep only those above the floor. Any failure returns the candidates
+ * unjudged and truncated — worse ranking, never a broken answer.
+ */
+async function rerankChunks(
+  question: string,
+  candidates: ChunkResult[],
+): Promise<{ kept: ChunkResult[]; error?: string }> {
+  const fallback = (error: string) => ({ kept: candidates.slice(0, RERANK_KEEP), error });
+  if (candidates.length === 0) return { kept: [] };
+  if (!GROQ_API_KEY) return fallback('no api key');
+
+  const listing = candidates.map((c, i) => {
+    const type = c.category_name ? ` · ${c.category_name}` : '';
+    const snippet = c.content.slice(0, RERANK_SNIPPET_CHARS).replace(/\s+/g, ' ');
+    return `[${i}] ${c.file_name}${type}\n${snippet}`;
+  }).join('\n\n');
+
+  try {
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${GROQ_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: GROQ_RERANK_MODEL,
+        temperature: 0,
+        max_tokens: 200,
+        response_format: { type: 'json_object' },
+        messages: [
+          {
+            role: 'system',
+            content: `You are a strict relevance judge for a family document vault.
+Score how well each passage answers the question, 0 to 10.
+10 = directly contains the answer. 5 = related, partial. 0 = unrelated, even if it shares a word or a year with the question.
+Use the document type: an insurance question is not answered by a tax return, a placements question is not answered by a resume.
+Reply with JSON only: {"scores":[{"i":0,"s":7}, ...]} — exactly one entry per passage index.`,
+          },
+          {
+            role: 'user',
+            content: `Question: ${question}\n\nPassages:\n\n${listing}\n\nReturn the JSON scores.`,
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      return fallback(`HTTP ${response.status}: ${errText.slice(0, 120)}`);
+    }
+
+    const result = await response.json();
+    const raw = result.choices?.[0]?.message?.content ?? '';
+    const parsed = JSON.parse(raw) as { scores?: { i: number; s: number }[] };
+    if (!Array.isArray(parsed.scores)) return fallback('no scores array');
+
+    const score = new Map<number, number>();
+    for (const e of parsed.scores) {
+      if (Number.isInteger(e?.i) && typeof e?.s === 'number') score.set(e.i, e.s);
+    }
+
+    const kept = candidates
+      .map((c, i) => ({ c, s: score.get(i) ?? 0 }))
+      .filter(x => x.s >= RERANK_MIN_SCORE)
+      .sort((a, b) => b.s - a.s)
+      .slice(0, RERANK_KEEP)
+      .map(x => x.c);
+
+    console.log(`[rag] Rerank scores: ${candidates.map((c, i) => `${c.file_name.slice(0, 18)}=${score.get(i) ?? '?'}`).join(', ')}`);
+    return { kept };
+  } catch (err) {
+    return fallback(String(err).slice(0, 120));
+  }
+}
+
 /** First occurrence wins, so pinned chunks stay ahead of retrieved duplicates. */
 function dedupeChunks(chunks: ChunkResult[]): ChunkResult[] {
   const seen = new Set<string>();
@@ -323,11 +447,15 @@ function dedupeChunks(chunks: ChunkResult[]): ChunkResult[] {
 }
 
 /**
- * Rewrite a follow-up into a question that stands on its own. Falls back to
- * the original query on any failure — a bad condensation is worse than none.
+ * Rewrite a follow-up into a question that stands on its own. Returns the
+ * original query on any failure — a bad condensation is worse than none —
+ * and reports what happened so the outcome is visible in the response.
  */
-async function condenseQuery(query: string, history: HistoryTurn[]): Promise<string> {
-  if (!GROQ_API_KEY) return query;
+async function condenseQuery(
+  query: string,
+  history: HistoryTurn[],
+): Promise<{ query: string; changed: boolean; error?: string }> {
+  if (!GROQ_API_KEY) return { query, changed: false, error: 'no api key' };
 
   const transcript = history
     .map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.content}`)
@@ -342,39 +470,52 @@ async function condenseQuery(query: string, history: HistoryTurn[]): Promise<str
       },
       body: JSON.stringify({
         model: GROQ_CONDENSE_MODEL,
+        temperature: 0,
+        max_tokens: 80,
         messages: [
           {
             role: 'system',
             content: `Rewrite the user's latest message as a single standalone search query that makes sense with no conversation history.
-Resolve references like "it", "this one", "that policy", "the latest data" using the conversation.
-Keep the SUBJECT of the conversation in the rewrite — if the discussion is about ISB placements and the user asks for "the latest data", the query is about the latest ISB placements data, not the latest data of any kind. Only drop the subject if the user clearly changes topic.
+Resolve references like "it", "this one", "that policy", "the latest data", "the highest offer" using the conversation.
+Keep the SUBJECT of the conversation in the rewrite — if the discussion is about ISB placements and the user asks about "the highest offer", the query is about the highest salary offer in the ISB placements report. Only drop the subject if the user clearly changes topic.
 Keep every specific name, document, year and number that matters. Do not answer the question.
-Reply with the rewritten query only — no quotes, no preamble.`,
+Output ONLY the rewritten query on one line. No label, no quotes, no explanation.`,
           },
           {
             role: 'user',
             content: `Conversation so far:\n${transcript}\n\nLatest message: ${query}`,
           },
         ],
-        temperature: 0,
-        max_tokens: 80,
       }),
     });
 
     if (!response.ok) {
-      console.warn(`[rag] Condense failed (${response.status}) — using raw query`);
-      return query;
+      const errText = await response.text();
+      return { query, changed: false, error: `HTTP ${response.status}: ${errText.slice(0, 100)}` };
     }
 
     const result = await response.json();
-    const text: string = result.choices?.[0]?.message?.content?.trim() ?? '';
+    const raw: string = result.choices?.[0]?.message?.content ?? '';
 
-    // Guard against the model chatting instead of rewriting.
-    if (!text || text.length > 300 || text.split('\n').length > 2) return query;
-    return text.replace(/^["']|["']$/g, '');
+    // Small models add preambles ("Here is the rewritten query:") despite
+    // instructions. Take the last non-empty line and strip labels and quotes,
+    // rather than rejecting the whole thing and silently using the raw query.
+    const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+    let text = lines[lines.length - 1] ?? '';
+    text = text
+      .replace(/^(rewritten|standalone|search)?\s*query\s*:\s*/i, '')
+      .replace(/^["'\u201c\u2018]+|["'\u201d\u2019]+$/g, '')
+      .trim();
+
+    if (!text || text.length > 300) {
+      console.warn(`[rag] Condense rejected output: ${JSON.stringify(raw).slice(0, 200)}`);
+      return { query, changed: false, error: 'unusable output' };
+    }
+
+    const changed = text.toLowerCase() !== query.trim().toLowerCase();
+    return { query: text, changed };
   } catch (err) {
-    console.warn('[rag] Condense error — using raw query:', err);
-    return query;
+    return { query, changed: false, error: String(err).slice(0, 100) };
   }
 }
 
@@ -530,19 +671,24 @@ function parseRetryAfter(errText: string): number | undefined {
  * Keep the model's context under the free-tier token budget. Chunks arrive
  * ranked, so taking from the front keeps the most relevant material.
  */
-function buildContext(chunks: ChunkResult[]): string {
+function buildContext(chunks: ChunkResult[]): { text: string; used: ChunkResult[] } {
   const parts: string[] = [];
+  const used: ChunkResult[] = [];
   let budget = MAX_CONTEXT_CHARS;
 
   for (const c of chunks) {
     if (budget <= 0) break;
     const body = c.content.slice(0, Math.min(MAX_CHARS_PER_CHUNK, budget));
-    parts.push(`[Document: ${c.file_name}]\n${body}`);
+    // The document TYPE is the single most useful hint for routing a question:
+    // "IDV" belongs to the insurance policy, not the tax return beside it.
+    const type = c.category_name ? ` | Type: ${c.category_name}` : '';
+    parts.push(`[Document: ${c.file_name}${type}]\n${body}`);
+    used.push(c);
     budget -= body.length;
   }
 
   console.log(`[rag] Context: ${parts.length}/${chunks.length} chunks, ${MAX_CONTEXT_CHARS - budget} chars`);
-  return parts.join('\n\n---\n\n');
+  return { text: parts.join('\n\n---\n\n'), used };
 }
 
 function buildFallbackAnswer(
