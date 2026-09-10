@@ -125,13 +125,20 @@ Deno.serve(async (req) => {
     // 2. Turn a follow-up into a standalone question, then retrieve on THAT.
     //    "latest available data?" retrieves nothing; "latest ISB placement
     //    data in the 2022 report" retrieves the right document.
-    // Also runs with no history when the question is not in English: the
-    // documents are indexed in English, so retrieval needs an English query
-    // even when the person asked in Hindi. The answer is still written in
-    // their language (see generateAnswer).
-    const cond = history.length > 0 || nonEnglish
-      ? await condenseQuery(query, history, { toEnglish: nonEnglish })
+    // The documents are indexed in English, so a question asked in Hindi has
+    // to be searched in English. That is its own step, not a hint to the
+    // condenser: asked to "rewrite as a standalone query", a small model
+    // happily rewrites in the language it was given. The answer is still
+    // written in the person's language (see generateAnswer).
+    const trans = nonEnglish
+      ? await translateToEnglish(query)
       : { query, changed: false as boolean, error: undefined as string | undefined, model: undefined as string | undefined };
+    if (trans.changed) console.log(`[rag] Translated: "${trans.query}"`);
+    else if (nonEnglish) console.warn(`[rag] Not translated${trans.error ? ` (${trans.error})` : ''}`);
+
+    const cond = history.length > 0
+      ? await condenseQuery(trans.query, history, { toEnglish: nonEnglish })
+      : { query: trans.query, changed: false as boolean, error: undefined as string | undefined, model: undefined as string | undefined };
     const standalone = cond.query;
     if (cond.changed) console.log(`[rag] Condensed: "${standalone}"`);
     else if (history.length > 0) console.log(`[rag] Not condensed${cond.error ? ` (${cond.error})` : ''}`);
@@ -173,6 +180,8 @@ Deno.serve(async (req) => {
       kept_docs: uniqNames(chunks),
       condensed: cond.changed,
       ...(language ? { language } : {}),
+      ...(trans.changed ? { translated: trans.query } : {}),
+      ...(trans.error ? { translate_error: trans.error } : {}),
       ...(voice ? { voice: true } : {}),
       // Which models actually ran, so a retired one shows up in a screenshot
       // instead of only in the logs. `answer` is filled in below.
@@ -262,10 +271,13 @@ async function retrieveChunks(
   query: string,
   citedIds: string[] = [],
 ): Promise<ChunkResult[]> {
-  // Build tsquery from words
+  // Build tsquery from words. Letters and digits in any script, plus the
+  // combining marks that Indic scripts need (a Devanagari vowel sign is \p{M}
+  // — strip it and the word is gone). Everything else, including tsquery
+  // operators like & | ! ( ) : ', is removed.
   const words = query
     .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/[^\p{L}\p{M}\p{N}\s]/gu, '')
     .split(/\s+/)
     .filter(w => w.length > 2);
 
@@ -464,6 +476,56 @@ function dedupeChunks(chunks: ChunkResult[]): ChunkResult[] {
     seen.add(key);
     return true;
   });
+}
+
+/**
+ * Translate a question into English for retrieval. Returns the original on
+ * any failure, and reports why, so the outcome is visible in the response.
+ */
+async function translateToEnglish(
+  query: string,
+): Promise<{ query: string; changed: boolean; error?: string; model?: string }> {
+  if (!hasGroqKey) return { query, changed: false, error: 'no api key' };
+  let usedModel: string | undefined;
+  try {
+    const { response, model } = await groqChat('condense', {
+      temperature: 0,
+      max_tokens: 120,
+      messages: [
+        {
+          role: 'system',
+          content: `Translate the user's message into English. It is a question about family documents (passport, PAN card, Aadhaar, insurance, tax returns, bank, property, school).
+Keep every name, number, date and abbreviation exactly as given (IDV, PAN, ITR, LIC stay as they are). Do not answer it, do not add anything.
+Output ONLY the English translation on one line. No label, no quotes, no explanation.`,
+        },
+        { role: 'user', content: query },
+      ],
+    });
+    usedModel = model;
+
+    if (!response.ok) {
+      const errText = await response.text();
+      return { query, changed: false, error: `HTTP ${response.status}: ${errText.slice(0, 100)}`, model };
+    }
+
+    const result = await response.json();
+    const raw: string = result.choices?.[0]?.message?.content ?? '';
+    const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+    let text = lines[lines.length - 1] ?? '';
+    text = text
+      .replace(/^(english|translation)\s*:\s*/i, '')
+      .replace(/^["'\u201c\u2018]+|["'\u201d\u2019]+$/g, '')
+      .trim();
+
+    // A translation that still has no Latin letters didn't translate.
+    if (!text || text.length > 400 || !/[a-z]{2,}/i.test(text)) {
+      console.warn(`[rag] Translate rejected output: ${JSON.stringify(raw).slice(0, 200)}`);
+      return { query, changed: false, error: 'unusable output', model };
+    }
+    return { query: text, changed: true, model };
+  } catch (err) {
+    return { query, changed: false, error: String(err).slice(0, 100), model: usedModel };
+  }
 }
 
 /**
