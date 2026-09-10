@@ -160,6 +160,8 @@ function resolveAliases(
 export interface RagSearchResult {
   answer: string;
   sources: { id: string; file_name: string; file_type: string; category_name: string | null }[];
+  /** BCP-47 tag the answer was written in — the client picks the matching voice. */
+  answer_language?: string;
   /** true when `answer` did not come from the model (rate limit, outage). */
   degraded?: boolean;
   retry_after_seconds?: number;
@@ -194,13 +196,27 @@ export interface RagHistoryTurn {
   source_ids?: string[];
 }
 
+export interface RagSearchOptions {
+  /** BCP-47 tag of the question and the wanted answer, e.g. 'hi-IN'. Omit for English. */
+  language?: string;
+  /** The answer will be read aloud: ask for short plain sentences, no markdown. */
+  voice?: boolean;
+}
+
 export async function ragSearch(
   familyId: string,
   query: string,
   history: RagHistoryTurn[] = [],
+  options: RagSearchOptions = {},
 ): Promise<RagSearchResult> {
   const { data, error } = await supabase.functions.invoke('rag-search', {
-    body: { family_id: familyId, query, history },
+    body: {
+      family_id: familyId,
+      query,
+      history,
+      ...(options.language ? { language: options.language } : {}),
+      ...(options.voice ? { voice: true } : {}),
+    },
   });
 
   if (error) throw error;

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   ScrollView, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform,
@@ -10,6 +10,12 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useFamily } from '../../lib/family-context';
 import { fetchCategories, ragSearch, type RagSearchResult, type RagHistoryTurn } from '../../lib/api';
 import type { Database } from '../../lib/database.types';
+import { usePreferences } from '../../lib/preferences';
+import { phrase } from '../../lib/voice-languages';
+import {
+  recognitionSupported, listen, stopListening, speak, stopSpeaking, type SpeechErrorCode,
+} from '../../lib/speech';
+import { toSpeech } from '../../lib/speech-text';
 
 type DocumentCategory = Database['public']['Tables']['document_categories']['Row'];
 
@@ -27,6 +33,10 @@ function shortModel(id: string): string {
   return id.split('/').pop() ?? id;
 }
 
+// Voice mode. One control, one state at a time, and the screen always says
+// which — the four states the mic button can be in.
+type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking';
+
 export default function SearchScreen() {
   const { currentFamily, members } = useFamily();
   const [query, setQuery] = useState('');
@@ -34,6 +44,47 @@ export default function SearchScreen() {
   const [categories, setCategories] = useState<DocumentCategory[]>([]);
   const [isAsking, setIsAsking] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
+
+  // ─── Voice assistant ────────────────────────────────────
+  const { voiceMode, voiceLanguage } = usePreferences();
+  const voiceSupported = useMemo(() => recognitionSupported(), []);
+  const [voiceState, setVoiceState] = useState<VoiceState>('idle');
+  const voiceStateRef = useRef<VoiceState>('idle');
+  const [speakingId, setSpeakingId] = useState<string | null>(null);
+  const [voiceNotice, setVoiceNotice] = useState<string | null>(null);
+  const t = (key: Parameters<typeof phrase>[1]) => phrase(voiceLanguage, key);
+
+  const setVoice = (next: VoiceState) => {
+    voiceStateRef.current = next;
+    setVoiceState(next);
+  };
+
+  // Read an answer aloud. Also the Read-again button's action.
+  const speakMessage = useCallback((id: string, text: string, lang?: string) => {
+    setSpeakingId(id);
+    setVoice('speaking');
+    speak(toSpeech(text), lang || voiceLanguage, {
+      onDone: () => {
+        setSpeakingId(current => (current === id ? null : current));
+        if (voiceStateRef.current === 'speaking') setVoice('idle');
+      },
+      onError: () => {
+        setSpeakingId(null);
+        if (voiceStateRef.current === 'speaking') setVoice('idle');
+      },
+    });
+  }, [voiceLanguage]);
+
+  const stopVoice = useCallback(() => {
+    stopListening();
+    stopSpeaking();
+    setSpeakingId(null);
+    setVoice('idle');
+  }, []);
+
+  // Leaving the screen must never leave a voice talking or a mic open.
+  useEffect(() => () => { stopListening(); stopSpeaking(); }, []);
+  useEffect(() => { if (!voiceMode) stopVoice(); }, [voiceMode, stopVoice]);
 
   // Build dynamic suggestions from family member names
   const suggestions = members.slice(0, 4).map((m) => {
@@ -46,11 +97,17 @@ export default function SearchScreen() {
     fetchCategories().then(setCategories).catch(console.error);
   }, []);
 
-  const handleAsk = async (q: string) => {
+  const handleAsk = async (q: string, opts: { spoken?: boolean } = {}) => {
     if (!q.trim() || !currentFamily || isAsking) return;
     const question = q.trim();
     setQuery('');
     setIsAsking(true);
+    setVoiceNotice(null);
+    // A spoken question gets a spoken answer. A typed one in voice mode too:
+    // the setting is about hearing answers, not only about the mic — so this
+    // holds even on a browser with no recogniser.
+    const wantVoice = voiceMode || !!opts.spoken;
+    if (wantVoice) setVoice('thinking');
 
     // Everything said so far, in the shape the server expects. Captured
     // before the new turn is appended so it never includes this question.
@@ -71,7 +128,10 @@ export default function SearchScreen() {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
 
     try {
-      const result = await ragSearch(currentFamily.id, question, history);
+      const result = await ragSearch(currentFamily.id, question, history, {
+        language: voiceMode ? voiceLanguage : undefined,
+        voice: wantVoice,
+      });
       setMessages((prev) =>
         prev.map((m) =>
           m.id === aiPlaceholder.id
@@ -79,20 +139,81 @@ export default function SearchScreen() {
             : m
         )
       );
+      if (wantVoice) speakMessage(aiPlaceholder.id, result.answer, result.answer_language);
     } catch (err) {
       console.error('RAG error:', err);
+      const failed = t('failed');
       setMessages((prev) =>
         prev.map((m) =>
           m.id === aiPlaceholder.id
-            ? { ...m, text: 'Sorry, I couldn\'t process your question. Please try again.', loading: false }
+            ? { ...m, text: failed, loading: false }
             : m
         )
       );
+      if (wantVoice) speakMessage(aiPlaceholder.id, failed);
     } finally {
       setIsAsking(false);
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
     }
   };
+
+  // Tap to talk. The recogniser stops itself when the person pauses and the
+  // transcript goes straight to search — no send step.
+  const startListening = () => {
+    stopSpeaking();
+    setSpeakingId(null);
+    setVoiceNotice(null);
+    setQuery('');
+    setVoice('listening');
+    listen(voiceLanguage, {
+      onInterim: (text) => setQuery(text),
+      onFinal: (text) => {
+        setQuery('');
+        handleAsk(text, { spoken: true });
+      },
+      onError: (code: SpeechErrorCode) => {
+        setQuery('');
+        setVoice('idle');
+        const notice =
+          code === 'not-allowed' ? t('mic_denied')
+          : code === 'unsupported' ? t('no_voice_support')
+          : t('not_heard');
+        setVoiceNotice(notice);
+        speak(notice, voiceLanguage);
+      },
+      onEnd: () => {
+        // Ended with silence, no transcript: back to ready.
+        if (voiceStateRef.current === 'listening') {
+          setQuery('');
+          setVoice('idle');
+        }
+      },
+    });
+  };
+
+  const onMicPress = () => {
+    switch (voiceStateRef.current) {
+      case 'idle': startListening(); break;
+      case 'listening': stopListening(); break;   // onend delivers what was said so far
+      case 'thinking': break;                      // wait for the answer
+      case 'speaking': startListening(); break;    // cut the voice off and ask again
+    }
+  };
+
+  const voicePlaceholder = () => {
+    if (!voiceSupported) return t('no_voice_support');
+    if (voiceNotice) return voiceNotice;
+    switch (voiceState) {
+      case 'listening': return t('listening');
+      case 'thinking': return t('thinking');
+      case 'speaking': return t('ask_another');
+      default: return t('tap_to_ask');
+    }
+  };
+
+  // Voice mode shows the mic in the right-hand slot, unless the person has
+  // typed something — then it's a question to send, as before.
+  const showMic = voiceMode && voiceSupported && (voiceState === 'listening' || !query.trim());
 
   const hasMessages = messages.length > 0;
 
@@ -108,7 +229,7 @@ export default function SearchScreen() {
           <View style={styles.headerRow}>
             {hasMessages && (
               <TouchableOpacity
-                onPress={() => setMessages([])}
+                onPress={() => { stopVoice(); setMessages([]); }}
                 style={styles.backBtn}
               >
                 <Feather name="arrow-left" size={24} color="#4B5563" />
@@ -116,7 +237,7 @@ export default function SearchScreen() {
             )}
             <Text style={styles.title}>Ask FamilyVault</Text>
             {hasMessages && (
-              <TouchableOpacity onPress={() => setMessages([])} style={styles.newChatBtn}>
+              <TouchableOpacity onPress={() => { stopVoice(); setMessages([]); }} style={styles.newChatBtn}>
                 <Feather name="plus" size={18} color="#2A3D66" />
               </TouchableOpacity>
             )}
@@ -142,11 +263,13 @@ export default function SearchScreen() {
                   end={{ x: 1, y: 1 }}
                   style={styles.emptyIcon}
                 >
-                  <Feather name="cpu" size={32} color="#FFFFFF" />
+                  <Feather name={voiceMode ? 'mic' : 'cpu'} size={32} color="#FFFFFF" />
                 </LinearGradient>
-                <Text style={styles.emptyTitle}>Ask anything about your documents</Text>
+                <Text style={styles.emptyTitle}>
+                  {voiceMode ? t('empty_title') : 'Ask anything about your documents'}
+                </Text>
                 <Text style={styles.emptySub}>
-                  I can find information across all your family's uploaded documents.
+                  {voiceMode ? t('empty_sub') : "I can find information across all your family's uploaded documents."}
                 </Text>
               </View>
 
@@ -188,7 +311,7 @@ export default function SearchScreen() {
                     {msg.loading ? (
                       <View style={styles.typingRow}>
                         <ActivityIndicator size="small" color="#2A3D66" />
-                        <Text style={styles.typingText}>Searching documents...</Text>
+                        <Text style={styles.typingText}>{voiceMode ? t('thinking') : 'Searching documents...'}</Text>
                       </View>
                     ) : (
                       <>
@@ -198,7 +321,26 @@ export default function SearchScreen() {
                         ]}>
                           {msg.text}
                         </Text>
-                        {msg.debug && msg.debug.history_turns > 0 && (
+                        {msg.role === 'ai' && voiceMode && (
+                          <View style={styles.voiceTools}>
+                            {speakingId === msg.id ? (
+                              <TouchableOpacity style={styles.voiceToolBtn} onPress={stopVoice}>
+                                <Feather name="square" size={14} color="#2A3D66" />
+                                <Text style={styles.voiceToolText}>{t('stop')}</Text>
+                              </TouchableOpacity>
+                            ) : (
+                              <TouchableOpacity
+                                style={styles.voiceToolBtn}
+                                onPress={() => speakMessage(msg.id, msg.text)}
+                                disabled={voiceState === 'listening' || voiceState === 'thinking'}
+                              >
+                                <Feather name="volume-2" size={14} color="#2A3D66" />
+                                <Text style={styles.voiceToolText}>{t('read_again')}</Text>
+                              </TouchableOpacity>
+                            )}
+                          </View>
+                        )}
+                        {!voiceMode && msg.debug && msg.debug.history_turns > 0 && (
                           <Text style={styles.searchedFor} numberOfLines={3}>
                             Searched for: {msg.debug.searched_for}
                             {msg.debug.condensed ? '' : ' (not rewritten)'}
@@ -237,17 +379,53 @@ export default function SearchScreen() {
         {/* Input Bar */}
         <View style={styles.inputBar}>
           <View style={styles.inputBox}>
-            <Feather name="message-circle" size={18} color="#9CA3AF" style={styles.inputIcon} />
+            <Feather
+              name={voiceMode ? 'mic' : 'message-circle'}
+              size={18}
+              color={voiceState === 'listening' ? '#D4807B' : '#9CA3AF'}
+              style={styles.inputIcon}
+            />
             <TextInput
               value={query}
               onChangeText={setQuery}
               onSubmitEditing={() => handleAsk(query)}
-              placeholder="Ask about your documents..."
-              placeholderTextColor="#9CA3AF"
+              placeholder={voiceMode ? voicePlaceholder() : 'Ask about your documents...'}
+              placeholderTextColor={voiceNotice ? '#B45309' : '#9CA3AF'}
               returnKeyType="send"
-              style={styles.input}
-              editable={!isAsking}
+              style={[styles.input, voiceMode && styles.inputLarge]}
+              editable={!isAsking && voiceState !== 'listening'}
             />
+            {showMic ? (
+              <TouchableOpacity
+                onPress={onMicPress}
+                disabled={voiceState === 'thinking'}
+                accessibilityLabel={voicePlaceholder()}
+                style={styles.micBtn}
+              >
+                {voiceState === 'thinking' ? (
+                  <View style={[styles.micCircle, styles.micThinking]}>
+                    <ActivityIndicator size="small" color="#6B7280" />
+                  </View>
+                ) : voiceState === 'listening' ? (
+                  <View style={[styles.micCircle, styles.micListening]}>
+                    <Feather name="mic" size={26} color="#FFFFFF" />
+                  </View>
+                ) : voiceState === 'speaking' ? (
+                  <View style={[styles.micCircle, styles.micSpeaking]}>
+                    <Feather name="volume-2" size={26} color="#FFFFFF" />
+                  </View>
+                ) : (
+                  <LinearGradient
+                    colors={['#2A3D66', '#4A6491']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.micCircle}
+                  >
+                    <Feather name="mic" size={26} color="#FFFFFF" />
+                  </LinearGradient>
+                )}
+              </TouchableOpacity>
+            ) : (
             <TouchableOpacity
               onPress={() => handleAsk(query)}
               disabled={!query.trim() || isAsking}
@@ -262,6 +440,7 @@ export default function SearchScreen() {
                 <Feather name="send" size={18} color="#FFFFFF" />
               </LinearGradient>
             </TouchableOpacity>
+            )}
           </View>
         </View>
       </KeyboardAvoidingView>
@@ -410,8 +589,36 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     outlineStyle: 'none',
   } as any,
+  inputLarge: { fontSize: 17 },
   sendBtn: {},
   sendBtnDisabled: { opacity: 0.5 },
+  // ─── Voice ────────────────────────────────────────────
+  micBtn: {},
+  micCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  micListening: {
+    backgroundColor: '#D4807B',
+    boxShadow: '0px 0px 0px 8px rgba(212, 128, 123, 0.25)',
+  },
+  micThinking: { backgroundColor: '#E5E7EB' },
+  micSpeaking: { backgroundColor: '#2F7D5C' },
+  voiceTools: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  voiceToolBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#EFF6FF',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    minHeight: 40,
+  },
+  voiceToolText: { fontSize: 14, color: '#2A3D66', fontWeight: '600' },
   sendGradient: {
     width: 36,
     height: 36,
