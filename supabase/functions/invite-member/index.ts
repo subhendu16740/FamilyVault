@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
+import { requireFamilyMember } from "../_shared/auth.ts";
 
 Deno.serve(async (req) => {
   // Handle CORS preflight
@@ -8,9 +9,11 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { family_id, invitee_email, role, invited_by } = await req.json();
+    // `invited_by` used to be read from the body. It is now derived from the
+    // caller's verified token — a body field can name anyone.
+    const { family_id, invitee_email, role } = await req.json();
 
-    if (!family_id || !invitee_email || !invited_by) {
+    if (!family_id || !invitee_email) {
       return new Response(
         JSON.stringify({ error: "Missing required fields" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -22,6 +25,12 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
+
+    // Inviting is an admin action — mirrors the invitations_insert_admin RLS
+    // policy that the service role otherwise bypasses.
+    const auth = await requireFamilyMember(req, supabaseAdmin, family_id, { admin: true });
+    if (!auth.ok) return auth.response;
+    const invited_by = auth.member.userId;
 
     // 1. Create invitation record
     const token = crypto.randomUUID();

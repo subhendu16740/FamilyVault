@@ -5,6 +5,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { embedText } from '../_shared/embeddings.ts';
+import { requireFamilyMember } from '../_shared/auth.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -91,6 +92,11 @@ Deno.serve(async (req) => {
     if (!family_id || !query) {
       return jsonResponse({ error: 'Missing family_id or query' }, 400);
     }
+
+    // The service-role client below bypasses RLS, so this is the only place
+    // the caller's right to read this family's documents is ever checked.
+    const auth = await requireFamilyMember(req, supabase, family_id);
+    if (!auth.ok) return auth.response;
 
     const history = sanitiseHistory(rawHistory);
     // Did the client send cited documents (new shape) or only IDs (old bundle)?
