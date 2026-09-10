@@ -171,7 +171,11 @@ export interface RagSearchResult {
     pinned_docs: string[];
     retrieved_docs: string[];
     candidate_count: number;
+    /** Passages that survived reranking — same unit as candidate_count. */
+    kept_count?: number;
     kept_docs: string[];
+    /** Groq models that actually ran each step. Missing = the step didn't run. */
+    models?: { answer?: string; condense?: string; rerank?: string };
     /** false means the retriever was given the raw follow-up, not a rewrite. */
     condensed: boolean;
     condense_error?: string;

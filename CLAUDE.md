@@ -364,10 +364,15 @@ To close the gap: `pg_dump --schema-only` against the live project, commit as
   distance and full-text rank 0.7/0.3 → sends chunks + query to Groq → returns
   answer plus source document references. If embedding fails the RPC falls back
   to keyword-only rather than erroring.
-  **The Groq model is pinned in one place** (`GROQ_MODEL`, overridable by a
-  secret of the same name). `llama-3.3-70b-versatile` was deprecated on
-  2026-06-17; check Groq's deprecation page before assuming the current default
-  still exists.
+  **Groq models are resolved at runtime** by `_shared/groq.ts`: each role
+  (answer, condense, rerank) has a preference list, a secret of the role's name
+  (`GROQ_MODEL`, `GROQ_CONDENSE_MODEL`, `GROQ_RERANK_MODEL`) always goes first,
+  Groq's `/models` endpoint prunes names that no longer exist, and a call that
+  still hits a retired model is retried once on the next candidate. Groq
+  retires free-tier models on short notice (`llama-3.3-70b-versatile` in June
+  2026, `llama-3.1-8b-instant` in August 2026) — when adding a fallback, confirm
+  the name on Groq's models page first. The models that actually ran are
+  returned in `debug.models` and shown under follow-up answers.
 - **`invite-member`** — sends family invitation emails via Supabase Auth.
 
 All three handle CORS preflight explicitly.
