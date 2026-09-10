@@ -5,6 +5,7 @@
 // ─────────────────────────────────────────────────────────────────
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { requireFamilyMember } from '../_shared/auth.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -41,6 +42,12 @@ Deno.serve(async (req) => {
     if (!family_id || !document_id || !storage_path) {
       return jsonResponse({ error: 'Missing required fields' }, 400);
     }
+
+    // Writes into the family's private schema on the service role: the caller
+    // must be a member with upload rights, or anyone with the anon key could
+    // ingest into any family whose id they know.
+    const auth = await requireFamilyMember(req, supabase, family_id, { upload: true });
+    if (!auth.ok) return auth.response;
 
     console.log(`[ingest] Starting: doc=${document_id}, path=${storage_path}, pre-extracted=${!!ocr_text}`);
 
