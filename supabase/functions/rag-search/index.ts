@@ -1,18 +1,17 @@
 // ─── FamilyVault RAG Search Edge Function ───────────────────────
 // Pipeline: Query → Retrieve matching chunks → LLM generates answer
-// Uses: Groq (gpt-oss-120b) for generation, free tier
+// Uses: Groq free tier; models are resolved at runtime (see _shared/groq.ts)
 // ────────────────────────────────────────────────────────────────
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { embedText } from '../_shared/embeddings.ts';
 import { requireFamilyMember } from '../_shared/auth.ts';
+import { groqChat, hasGroqKey } from '../_shared/groq.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-const GROQ_API_KEY = Deno.env.get('GROQ_API_KEY') ?? '';
 // llama-3.3-70b-versatile was deprecated by Groq on 2026-06-17.
 // gpt-oss-120b is Groq's recommended replacement.
-const GROQ_MODEL = Deno.env.get('GROQ_MODEL') ?? 'openai/gpt-oss-120b';
 
 // Groq's free tier caps gpt-oss-120b at 8,000 tokens per MINUTE. Ten chunks
 // of ~500 tokens sent ~5,600 tokens per question, so a second question inside
@@ -29,7 +28,6 @@ const MAX_CHARS_PER_CHUNK = 1800;
 // a standalone question using the recent turns. That rewrite goes to a small
 // fast model with its own rate-limit pool on Groq, so it costs nothing
 // against the answer model's budget.
-const GROQ_CONDENSE_MODEL = Deno.env.get('GROQ_CONDENSE_MODEL') ?? 'llama-3.1-8b-instant';
 const MAX_HISTORY_TURNS = 6;        // 3 exchanges
 const MAX_HISTORY_CHARS = 600;      // per message, keeps the prompt bounded
 
@@ -39,7 +37,6 @@ const MAX_HISTORY_CHARS = 600;      // per message, keeps the prompt bounded
 // "2026" scores 1/10 for a placements question and never reaches the answer
 // model. The judge runs on the small model, which has its own rate-limit
 // pool on Groq, so it costs nothing against the answer model's budget.
-const GROQ_RERANK_MODEL = Deno.env.get('GROQ_RERANK_MODEL') ?? 'llama-3.1-8b-instant';
 const RERANK_CANDIDATES = 15;      // how many retrieval returns for judging
 const RERANK_KEEP = 5;             // how many survive into the prompt
 const RERANK_MIN_SCORE = 4;        // 0–10; below this a chunk is dropped outright
@@ -123,14 +120,14 @@ Deno.serve(async (req) => {
     //    data in the 2022 report" retrieves the right document.
     const cond = history.length > 0
       ? await condenseQuery(query, history)
-      : { query, changed: false as boolean, error: undefined as string | undefined };
+      : { query, changed: false as boolean, error: undefined as string | undefined, model: undefined as string | undefined };
     const standalone = cond.query;
     if (cond.changed) console.log(`[rag] Condensed: "${standalone}"`);
     else if (history.length > 0) console.log(`[rag] Not condensed${cond.error ? ` (${cond.error})` : ''}`);
 
     const citedIds = history.flatMap(t => t.source_ids ?? []);
     const [pin, retrieved] = await Promise.all([
-      history.length > 0 ? pinnedChunks(schema, history) : Promise.resolve({ chunks: [] as ChunkResult[] }),
+      history.length > 0 ? pinnedChunks(schema, history) : Promise.resolve({ chunks: [] as ChunkResult[], error: undefined as string | undefined }),
       retrieveChunks(schema, standalone, citedIds),
     ]);
     const pinned = pin.chunks;
@@ -161,8 +158,15 @@ Deno.serve(async (req) => {
       pinned_docs: uniqNames(pinned),
       retrieved_docs: uniqNames(retrieved),
       candidate_count: candidates.length,
+      kept_count: chunks.length,
       kept_docs: uniqNames(chunks),
       condensed: cond.changed,
+      // Which models actually ran, so a retired one shows up in a screenshot
+      // instead of only in the logs. `answer` is filled in below.
+      models: {
+        ...(cond.model ? { condense: cond.model } : {}),
+        ...(rank.model ? { rerank: rank.model } : {}),
+      } as { condense?: string; rerank?: string; answer?: string },
       ...(cond.error ? { condense_error: cond.error } : {}),
       ...(pin.error ? { pin_error: pin.error } : {}),
       ...(rank.error ? { rerank_error: rank.error } : {}),
@@ -217,7 +221,7 @@ Deno.serve(async (req) => {
       sources,
       degraded: result.degraded,
       ...(result.retryAfterSeconds ? { retry_after_seconds: result.retryAfterSeconds } : {}),
-      debug,
+      debug: { ...debug, models: { ...debug.models, ...(result.model ? { answer: result.model } : {}) } },
     });
 
   } catch (err) {
@@ -372,10 +376,11 @@ async function pinnedChunks(
 async function rerankChunks(
   question: string,
   candidates: ChunkResult[],
-): Promise<{ kept: ChunkResult[]; error?: string }> {
-  const fallback = (error: string) => ({ kept: candidates.slice(0, RERANK_KEEP), error });
+): Promise<{ kept: ChunkResult[]; error?: string; model?: string }> {
+  let usedModel: string | undefined;
+  const fallback = (error: string) => ({ kept: candidates.slice(0, RERANK_KEEP), error, model: usedModel });
   if (candidates.length === 0) return { kept: [] };
-  if (!GROQ_API_KEY) return fallback('no api key');
+  if (!hasGroqKey) return fallback('no api key');
 
   const listing = candidates.map((c, i) => {
     const type = c.category_name ? ` · ${c.category_name}` : '';
@@ -384,33 +389,26 @@ async function rerankChunks(
   }).join('\n\n');
 
   try {
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${GROQ_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: GROQ_RERANK_MODEL,
-        temperature: 0,
-        max_tokens: 200,
-        response_format: { type: 'json_object' },
-        messages: [
-          {
-            role: 'system',
-            content: `You are a strict relevance judge for a family document vault.
+    const { response, model } = await groqChat('rerank', {
+      temperature: 0,
+      max_tokens: 200,
+      response_format: { type: 'json_object' },
+      messages: [
+        {
+          role: 'system',
+          content: `You are a strict relevance judge for a family document vault.
 Score how well each passage answers the question, 0 to 10.
 10 = directly contains the answer. 5 = related, partial. 0 = unrelated, even if it shares a word or a year with the question.
 Use the document type: an insurance question is not answered by a tax return, a placements question is not answered by a resume.
 Reply with JSON only: {"scores":[{"i":0,"s":7}, ...]} — exactly one entry per passage index.`,
-          },
-          {
-            role: 'user',
-            content: `Question: ${question}\n\nPassages:\n\n${listing}\n\nReturn the JSON scores.`,
-          },
-        ],
-      }),
+        },
+        {
+          role: 'user',
+          content: `Question: ${question}\n\nPassages:\n\n${listing}\n\nReturn the JSON scores.`,
+        },
+      ],
     });
+    usedModel = model;
 
     if (!response.ok) {
       const errText = await response.text();
@@ -435,7 +433,7 @@ Reply with JSON only: {"scores":[{"i":0,"s":7}, ...]} — exactly one entry per 
       .map(x => x.c);
 
     console.log(`[rag] Rerank scores: ${candidates.map((c, i) => `${c.file_name.slice(0, 18)}=${score.get(i) ?? '?'}`).join(', ')}`);
-    return { kept };
+    return { kept, model };
   } catch (err) {
     return fallback(String(err).slice(0, 120));
   }
@@ -460,44 +458,38 @@ function dedupeChunks(chunks: ChunkResult[]): ChunkResult[] {
 async function condenseQuery(
   query: string,
   history: HistoryTurn[],
-): Promise<{ query: string; changed: boolean; error?: string }> {
-  if (!GROQ_API_KEY) return { query, changed: false, error: 'no api key' };
+): Promise<{ query: string; changed: boolean; error?: string; model?: string }> {
+  if (!hasGroqKey) return { query, changed: false, error: 'no api key' };
+  let usedModel: string | undefined;
 
   const transcript = history
     .map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.content}`)
     .join('\n');
 
   try {
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${GROQ_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: GROQ_CONDENSE_MODEL,
-        temperature: 0,
-        max_tokens: 80,
-        messages: [
-          {
-            role: 'system',
-            content: `Rewrite the user's latest message as a single standalone search query that makes sense with no conversation history.
+    const { response, model } = await groqChat('condense', {
+      temperature: 0,
+      max_tokens: 80,
+      messages: [
+        {
+          role: 'system',
+          content: `Rewrite the user's latest message as a single standalone search query that makes sense with no conversation history.
 Resolve references like "it", "this one", "that policy", "the latest data", "the highest offer" using the conversation.
 Keep the SUBJECT of the conversation in the rewrite — if the discussion is about ISB placements and the user asks about "the highest offer", the query is about the highest salary offer in the ISB placements report. Only drop the subject if the user clearly changes topic.
 Keep every specific name, document, year and number that matters. Do not answer the question.
 Output ONLY the rewritten query on one line. No label, no quotes, no explanation.`,
-          },
-          {
-            role: 'user',
-            content: `Conversation so far:\n${transcript}\n\nLatest message: ${query}`,
-          },
-        ],
-      }),
+        },
+        {
+          role: 'user',
+          content: `Conversation so far:\n${transcript}\n\nLatest message: ${query}`,
+        },
+      ],
     });
+    usedModel = model;
 
     if (!response.ok) {
       const errText = await response.text();
-      return { query, changed: false, error: `HTTP ${response.status}: ${errText.slice(0, 100)}` };
+      return { query, changed: false, error: `HTTP ${response.status}: ${errText.slice(0, 100)}`, model };
     }
 
     const result = await response.json();
@@ -515,13 +507,13 @@ Output ONLY the rewritten query on one line. No label, no quotes, no explanation
 
     if (!text || text.length > 300) {
       console.warn(`[rag] Condense rejected output: ${JSON.stringify(raw).slice(0, 200)}`);
-      return { query, changed: false, error: 'unusable output' };
+      return { query, changed: false, error: 'unusable output', model };
     }
 
     const changed = text.toLowerCase() !== query.trim().toLowerCase();
-    return { query: text, changed };
+    return { query: text, changed, model };
   } catch (err) {
-    return { query, changed: false, error: String(err).slice(0, 100) };
+    return { query, changed: false, error: String(err).slice(0, 100), model: usedModel };
   }
 }
 
@@ -581,6 +573,8 @@ interface AnswerResult {
   /** true when the text did not come from the model. */
   degraded: boolean;
   retryAfterSeconds?: number;
+  /** Which Groq model produced (or failed to produce) the text. */
+  model?: string;
 }
 
 async function generateAnswer(
@@ -589,42 +583,36 @@ async function generateAnswer(
   chunks: ChunkResult[],
   history: HistoryTurn[] = [],
 ): Promise<AnswerResult> {
-  if (!GROQ_API_KEY) {
+  if (!hasGroqKey) {
     console.warn('[rag] GROQ_API_KEY is not set');
     return { answer: buildFallbackAnswer(chunks, 'unavailable'), degraded: true };
   }
+  let usedModel: string | undefined;
 
   try {
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${GROQ_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: GROQ_MODEL,
-        messages: [
-          {
-            role: 'system',
-            content: `You are FamilyVault AI — a helpful assistant that answers questions about a family's documents.
+    const { response, model } = await groqChat('answer', {
+      messages: [
+        {
+          role: 'system',
+          content: `You are FamilyVault AI — a helpful assistant that answers questions about a family's documents.
 Today's date is ${todayLabel()}. Use it to interpret "this year", "recently", "latest", "expiring soon" and similar. A document is only about the current year if its own dates say so — never assume a document's year is the current year.
 You ONLY answer based on the provided document context.
 The context is whatever search returned — it may not actually answer the question. If it doesn't, say so plainly and, if a related document exists, say what it does cover instead. NEVER answer a different question just because the context happens to contain information about it.
 This is an ongoing conversation: use earlier turns to understand what the user is referring to.
 Keep answers concise (1-3 sentences). Include specific details like dates, amounts, and document names.
 If you mention a document, reference it by its filename.`,
-          },
-          // Prior turns, so "this one" and "that policy" resolve naturally.
-          ...history.map(t => ({ role: t.role, content: t.content })),
-          {
-            role: 'user',
-            content: `Context from family documents:\n\n${context}\n\n---\n\nQuestion: ${query}`,
-          },
-        ],
-        temperature: 0.1,
-        max_tokens: 500,
-      }),
+        },
+        // Prior turns, so "this one" and "that policy" resolve naturally.
+        ...history.map(t => ({ role: t.role, content: t.content })),
+        {
+          role: 'user',
+          content: `Context from family documents:\n\n${context}\n\n---\n\nQuestion: ${query}`,
+        },
+      ],
+      temperature: 0.1,
+      max_tokens: 500,
     });
+    usedModel = model;
 
     if (!response.ok) {
       const errText = await response.text();
@@ -638,23 +626,24 @@ If you mention a document, reference it by its filename.`,
           answer: buildFallbackAnswer(chunks, 'rate_limited', retryAfterSeconds),
           degraded: true,
           retryAfterSeconds,
+          model,
         };
       }
-      return { answer: buildFallbackAnswer(chunks, 'unavailable'), degraded: true };
+      return { answer: buildFallbackAnswer(chunks, 'unavailable'), degraded: true, model };
     }
 
     const result = await response.json();
     const text = result.choices?.[0]?.message?.content;
     if (!text) {
       console.warn('[rag] Groq returned no content');
-      return { answer: buildFallbackAnswer(chunks, 'unavailable'), degraded: true };
+      return { answer: buildFallbackAnswer(chunks, 'unavailable'), degraded: true, model };
     }
 
-    return { answer: text, degraded: false };
+    return { answer: text, degraded: false, model };
 
   } catch (err) {
     console.warn('[rag] Groq generation failed:', err);
-    return { answer: buildFallbackAnswer(chunks, 'unavailable'), degraded: true };
+    return { answer: buildFallbackAnswer(chunks, 'unavailable'), degraded: true, model: usedModel };
   }
 }
 

@@ -22,6 +22,11 @@ interface ChatMessage {
   loading?: boolean;
 }
 
+/** "openai/gpt-oss-120b" → "gpt-oss-120b": enough to recognise, short enough for one line. */
+function shortModel(id: string): string {
+  return id.split('/').pop() ?? id;
+}
+
 export default function SearchScreen() {
   const { currentFamily, members } = useFamily();
   const [query, setQuery] = useState('');
@@ -198,7 +203,8 @@ export default function SearchScreen() {
                             Searched for: {msg.debug.searched_for}
                             {msg.debug.condensed ? '' : ' (not rewritten)'}
                             {'\n'}
-                            {msg.debug.kept_docs.length} kept of {msg.debug.candidate_count} · {msg.debug.pinned_docs.length} pinned
+                            {msg.debug.kept_count ?? msg.debug.kept_docs.length} of {msg.debug.candidate_count} passages kept ({msg.debug.kept_docs.length} {msg.debug.kept_docs.length === 1 ? 'doc' : 'docs'}) · {msg.debug.pinned_docs.length} pinned
+                            {msg.debug.models?.answer ? ` · ${shortModel(msg.debug.models.answer)}` : ''}
                             {msg.debug.client_sent_sources ? '' : ' · old client'}
                             {msg.debug.pin_error ? ` · pin: ${msg.debug.pin_error}` : ''}
                             {msg.debug.rerank_error ? ` · rerank: ${msg.debug.rerank_error}` : ''}
