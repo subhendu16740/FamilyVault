@@ -5,6 +5,7 @@ import * as Font from 'expo-font';
 import { Feather } from '@expo/vector-icons';
 import { AuthProvider, useAuth } from '../lib/auth';
 import { FamilyProvider } from '../lib/family-context';
+import { PreferencesProvider } from '../lib/preferences';
 
 function AuthGate() {
   const { session, loading: authLoading } = useAuth();
@@ -46,6 +47,7 @@ export default function RootLayout() {
 
   return (
     <AuthProvider>
+      <PreferencesProvider>
       <FamilyProvider>
         <AuthGate />
         <Stack screenOptions={{ headerShown: false }}>
@@ -60,6 +62,7 @@ export default function RootLayout() {
           <Stack.Screen name="notifications" />
         </Stack>
       </FamilyProvider>
+      </PreferencesProvider>
     </AuthProvider>
   );
 }

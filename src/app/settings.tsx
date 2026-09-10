@@ -1,5 +1,6 @@
+import { useEffect, useState } from 'react';
 import {
-  View, Text, TouchableOpacity, ScrollView, StyleSheet,
+  View, Text, TouchableOpacity, ScrollView, StyleSheet, Switch, Modal, Pressable,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -7,6 +8,9 @@ import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../lib/auth';
 import { useFamily } from '../lib/family-context';
+import { usePreferences } from '../lib/preferences';
+import { VOICE_LANGUAGES, voiceLanguage } from '../lib/voice-languages';
+import { hasVoiceFor } from '../lib/speech';
 
 const settingsGroups = [
   {
@@ -37,6 +41,19 @@ const settingsGroups = [
 export default function SettingsScreen() {
   const { user, signOut } = useAuth();
   const { membership } = useFamily();
+  const { voiceMode, voiceLanguage: voiceLang, setVoiceMode, setVoiceLanguage } = usePreferences();
+  const [langPickerOpen, setLangPickerOpen] = useState(false);
+  // Which languages this phone can actually speak. Unknown until checked;
+  // a missing entry means "not checked yet", never "unavailable".
+  const [voiceAvailable, setVoiceAvailable] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    if (!langPickerOpen) return;
+    let cancelled = false;
+    Promise.all(VOICE_LANGUAGES.map(async l => [l.code, await hasVoiceFor(l.code)] as const))
+      .then(pairs => { if (!cancelled) setVoiceAvailable(Object.fromEntries(pairs)); });
+    return () => { cancelled = true; };
+  }, [langPickerOpen]);
 
   const handleSignOut = async () => {
     await signOut();
@@ -95,6 +112,44 @@ export default function SettingsScreen() {
           </View>
         ))}
 
+        {/* Accessibility — the one group with live controls */}
+        <View style={styles.group}>
+          <Text style={styles.groupTitle}>Accessibility</Text>
+          <View style={styles.groupCard}>
+            <View style={styles.settingRow}>
+              <View style={styles.settingIconWrap}>
+                <Feather name="mic" size={18} color="#2A3D66" />
+              </View>
+              <View style={styles.settingText}>
+                <Text style={styles.settingLabel}>Voice assistant</Text>
+                <Text style={styles.settingSub}>Talk to search and hear the answers</Text>
+              </View>
+              <Switch
+                value={voiceMode}
+                onValueChange={setVoiceMode}
+                trackColor={{ false: '#D1D5DB', true: '#4A6491' }}
+                thumbColor="#FFFFFF"
+                accessibilityLabel="Voice assistant"
+              />
+            </View>
+            <TouchableOpacity
+              style={[styles.settingRow, styles.settingRowBorder]}
+              activeOpacity={0.7}
+              onPress={() => setLangPickerOpen(true)}
+            >
+              <View style={styles.settingIconWrap}>
+                <Feather name="globe" size={18} color="#2A3D66" />
+              </View>
+              <View style={styles.settingText}>
+                <Text style={styles.settingLabel}>Voice language</Text>
+                <Text style={styles.settingSub}>What you speak, and what it speaks back</Text>
+              </View>
+              <Text style={styles.settingValue}>{voiceLanguage(voiceLang).native}</Text>
+              <Feather name="chevron-right" size={18} color="#9CA3AF" />
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {/* Sign Out */}
         <View style={styles.signOutSection}>
           <TouchableOpacity
@@ -107,6 +162,41 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      <Modal
+        visible={langPickerOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setLangPickerOpen(false)}
+      >
+        <Pressable style={styles.sheetBackdrop} onPress={() => setLangPickerOpen(false)}>
+          <Pressable style={styles.sheet} onPress={() => {}}>
+            <Text style={styles.sheetTitle}>Voice language</Text>
+            <ScrollView style={styles.sheetList}>
+              {VOICE_LANGUAGES.map((l, i) => {
+                const selected = l.code === voiceLang;
+                const unavailable = voiceAvailable[l.code] === false;
+                return (
+                  <TouchableOpacity
+                    key={l.code}
+                    style={[styles.langRow, i > 0 && styles.settingRowBorder]}
+                    activeOpacity={0.7}
+                    onPress={() => { setVoiceLanguage(l.code); setLangPickerOpen(false); }}
+                  >
+                    <View style={styles.settingText}>
+                      <Text style={[styles.langNative, selected && styles.langSelected]}>{l.native}</Text>
+                      <Text style={styles.settingSub}>
+                        {l.english}{unavailable ? ' · No voice on this phone' : ''}
+                      </Text>
+                    </View>
+                    {selected && <Feather name="check" size={20} color="#2A3D66" />}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -182,6 +272,32 @@ const styles = StyleSheet.create({
   settingText: { flex: 1 },
   settingLabel: { fontSize: 15, fontWeight: '500', color: '#1F2937' },
   settingSub: { fontSize: 12, color: '#9CA3AF', marginTop: 1 },
+  settingValue: { fontSize: 15, color: '#4B5563' },
+  sheetBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(13, 17, 23, 0.45)',
+    justifyContent: 'flex-end',
+  },
+  sheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 20,
+    paddingBottom: 32,
+    maxHeight: '75%',
+  },
+  sheetTitle: { fontSize: 17, fontWeight: '700', color: '#2A3D66', paddingHorizontal: 20, marginBottom: 8 },
+  sheetList: { paddingHorizontal: 4 },
+  langRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    minHeight: 60,
+  },
+  langNative: { fontSize: 18, color: '#1F2937' },
+  langSelected: { color: '#2A3D66', fontWeight: '700' },
   signOutSection: { paddingHorizontal: 20, paddingBottom: 32 },
   signOutBtn: {
     flexDirection: 'row',

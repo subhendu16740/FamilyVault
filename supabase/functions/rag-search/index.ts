@@ -84,7 +84,14 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { family_id, query, history: rawHistory } = await req.json();
+    const { family_id, query, history: rawHistory, language: rawLanguage, voice: rawVoice } = await req.json();
+
+    // Voice assistant (optional). `language` is a BCP-47 tag for the
+    // question and the wanted answer; `voice` means the answer will be read
+    // aloud, so it should be written for the ear. Old clients send neither.
+    const language = parseLanguage(rawLanguage);
+    const voice = rawVoice === true;
+    const nonEnglish = !!language && !language.toLowerCase().startsWith('en');
 
     if (!family_id || !query) {
       return jsonResponse({ error: 'Missing family_id or query' }, 400);
@@ -118,8 +125,12 @@ Deno.serve(async (req) => {
     // 2. Turn a follow-up into a standalone question, then retrieve on THAT.
     //    "latest available data?" retrieves nothing; "latest ISB placement
     //    data in the 2022 report" retrieves the right document.
-    const cond = history.length > 0
-      ? await condenseQuery(query, history)
+    // Also runs with no history when the question is not in English: the
+    // documents are indexed in English, so retrieval needs an English query
+    // even when the person asked in Hindi. The answer is still written in
+    // their language (see generateAnswer).
+    const cond = history.length > 0 || nonEnglish
+      ? await condenseQuery(query, history, { toEnglish: nonEnglish })
       : { query, changed: false as boolean, error: undefined as string | undefined, model: undefined as string | undefined };
     const standalone = cond.query;
     if (cond.changed) console.log(`[rag] Condensed: "${standalone}"`);
@@ -161,6 +172,8 @@ Deno.serve(async (req) => {
       kept_count: chunks.length,
       kept_docs: uniqNames(chunks),
       condensed: cond.changed,
+      ...(language ? { language } : {}),
+      ...(voice ? { voice: true } : {}),
       // Which models actually ran, so a retired one shows up in a screenshot
       // instead of only in the logs. `answer` is filled in below.
       models: {
@@ -174,8 +187,9 @@ Deno.serve(async (req) => {
 
     if (candidates.length === 0) {
       return jsonResponse({
-        answer: "I couldn't find any documents matching your query. Try uploading relevant documents first.",
+        answer: nothingFoundMessage(language),
         sources: [],
+        ...(language ? { answer_language: language } : {}),
         debug,
       });
     }
@@ -185,8 +199,9 @@ Deno.serve(async (req) => {
     if (chunks.length === 0) {
       const considered = uniqNames(candidates).slice(0, 3).join(', ');
       return jsonResponse({
-        answer: `I couldn't find anything in your documents that answers that. The closest matches were ${considered}, but none of them actually address it.`,
+        answer: nothingRelevantMessage(language, considered),
         sources: [],
+        ...(language ? { answer_language: language } : {}),
         debug,
       });
     }
@@ -199,7 +214,7 @@ Deno.serve(async (req) => {
     // The model answers the STANDALONE question. Handing it the raw
     // follow-up ("What about 2026?") next to whatever retrieval found lets it
     // answer a different question from the context instead of the one asked.
-    const result = await generateAnswer(standalone, context, chunks, history);
+    const result = await generateAnswer(standalone, context, chunks, history, { language, voice });
     console.log(
       `[rag] Answer ${result.degraded ? 'DEGRADED' : 'generated'} (${result.answer.length} chars)`,
     );
@@ -221,6 +236,7 @@ Deno.serve(async (req) => {
       sources,
       degraded: result.degraded,
       ...(result.retryAfterSeconds ? { retry_after_seconds: result.retryAfterSeconds } : {}),
+      ...(language ? { answer_language: language } : {}),
       debug: { ...debug, models: { ...debug.models, ...(result.model ? { answer: result.model } : {}) } },
     });
 
@@ -458,13 +474,17 @@ function dedupeChunks(chunks: ChunkResult[]): ChunkResult[] {
 async function condenseQuery(
   query: string,
   history: HistoryTurn[],
+  opts: { toEnglish?: boolean } = {},
 ): Promise<{ query: string; changed: boolean; error?: string; model?: string }> {
   if (!hasGroqKey) return { query, changed: false, error: 'no api key' };
   let usedModel: string | undefined;
 
-  const transcript = history
-    .map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.content}`)
-    .join('\n');
+  const transcript = history.length > 0
+    ? history.map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.content}`).join('\n')
+    : '(none)';
+  const translate = opts.toEnglish
+    ? '\nThe documents are in English. Write the query in English, translating the message if it is in another language. Keep names, numbers and dates exactly as given.'
+    : '';
 
   try {
     const { response, model } = await groqChat('condense', {
@@ -476,7 +496,7 @@ async function condenseQuery(
           content: `Rewrite the user's latest message as a single standalone search query that makes sense with no conversation history.
 Resolve references like "it", "this one", "that policy", "the latest data", "the highest offer" using the conversation.
 Keep the SUBJECT of the conversation in the rewrite — if the discussion is about ISB placements and the user asks about "the highest offer", the query is about the highest salary offer in the ISB placements report. Only drop the subject if the user clearly changes topic.
-Keep every specific name, document, year and number that matters. Do not answer the question.
+Keep every specific name, document, year and number that matters. Do not answer the question.${translate}
 Output ONLY the rewritten query on one line. No label, no quotes, no explanation.`,
         },
         {
@@ -582,7 +602,18 @@ async function generateAnswer(
   context: string,
   chunks: ChunkResult[],
   history: HistoryTurn[] = [],
+  opts: { language?: string; voice?: boolean } = {},
 ): Promise<AnswerResult> {
+  const langName = opts.language ? languageName(opts.language) : undefined;
+  const languageRule = langName && !opts.language!.toLowerCase().startsWith('en')
+    ? `\nReply in ${langName}. The documents are in English: translate naturally, but keep proper names, numbers, dates and identifiers exactly as written.`
+    : '';
+  // Spoken answers: no markdown (a voice reads "asterisk"), no lists, dates
+  // in words, and the document described rather than its file name read out.
+  const voiceRule = opts.voice
+    ? `\nYour answer will be read aloud by a voice assistant to an elderly person. Write two or three short, plain spoken sentences. No markdown, no bullet points, no asterisks, no headings. Write dates in words (for example "14 March 2027"). Describe the document naturally ("this is from Mom's passport") instead of reading out a file name.`
+    : '\nIf you mention a document, reference it by its filename.';
+
   if (!hasGroqKey) {
     console.warn('[rag] GROQ_API_KEY is not set');
     return { answer: buildFallbackAnswer(chunks, 'unavailable'), degraded: true };
@@ -599,8 +630,7 @@ Today's date is ${todayLabel()}. Use it to interpret "this year", "recently", "l
 You ONLY answer based on the provided document context.
 The context is whatever search returned — it may not actually answer the question. If it doesn't, say so plainly and, if a related document exists, say what it does cover instead. NEVER answer a different question just because the context happens to contain information about it.
 This is an ongoing conversation: use earlier turns to understand what the user is referring to.
-Keep answers concise (1-3 sentences). Include specific details like dates, amounts, and document names.
-If you mention a document, reference it by its filename.`,
+Keep answers concise (1-3 sentences). Include specific details like dates, amounts, and document names.${languageRule}${voiceRule}`,
         },
         // Prior turns, so "this one" and "that policy" resolve naturally.
         ...history.map(t => ({ role: t.role, content: t.content })),
@@ -645,6 +675,39 @@ If you mention a document, reference it by its filename.`,
     console.warn('[rag] Groq generation failed:', err);
     return { answer: buildFallbackAnswer(chunks, 'unavailable'), degraded: true, model: usedModel };
   }
+}
+
+/** Accept a BCP-47 tag like "hi-IN" or "en"; anything else is ignored. */
+function parseLanguage(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const t = raw.trim();
+  return /^[a-z]{2,3}(-[A-Za-z]{2,4})?$/i.test(t) ? t : undefined;
+}
+
+const LANGUAGE_NAMES: Record<string, string> = {
+  en: 'English', hi: 'Hindi', bn: 'Bengali', ta: 'Tamil', te: 'Telugu',
+  mr: 'Marathi', gu: 'Gujarati', kn: 'Kannada', ml: 'Malayalam', pa: 'Punjabi',
+  ur: 'Urdu', or: 'Odia', as: 'Assamese',
+};
+
+function languageName(tag: string): string {
+  const base = tag.split('-')[0].toLowerCase();
+  return LANGUAGE_NAMES[base] ?? tag;
+}
+
+// The two "found nothing" answers are not model-written, so they need their
+// own translations. Hindi is covered; other languages get English, which the
+// client still reads aloud in the chosen voice.
+function nothingFoundMessage(language?: string): string {
+  const base = (language ?? 'en').split('-')[0].toLowerCase();
+  if (base === 'hi') return 'मुझे आपके दस्तावेज़ों में इससे मिलता-जुलता कुछ नहीं मिला। पहले संबंधित दस्तावेज़ अपलोड करें।';
+  return "I couldn't find any documents matching your query. Try uploading relevant documents first.";
+}
+
+function nothingRelevantMessage(language: string | undefined, considered: string): string {
+  const base = (language ?? 'en').split('-')[0].toLowerCase();
+  if (base === 'hi') return `मुझे आपके दस्तावेज़ों में इसका जवाब नहीं मिला। सबसे नज़दीकी दस्तावेज़ ${considered} थे, लेकिन उनमें यह जानकारी नहीं है।`;
+  return `I couldn't find anything in your documents that answers that. The closest matches were ${considered}, but none of them actually address it.`;
 }
 
 /** e.g. "30 August 2026" — unambiguous for the model, no locale surprises. */

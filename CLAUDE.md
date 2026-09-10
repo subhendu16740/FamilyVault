@@ -269,6 +269,11 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `drawer-context.tsx` | Profile drawer open/close state |
 | `api.ts` | **All** Supabase queries — documents, search, upload, RAG, notifications, invitations |
 | `ocr.ts` | Platform-split OCR with progress callback |
+| `preferences.tsx` | `PreferencesProvider`: voice assistant toggle + language, cached locally, stored on `public.users` |
+| `speech.ts` | Voice: `listen`/`stopListening` (platform-split recogniser) and `speak`/`stopSpeaking` (expo-speech) |
+| `speech-text.ts` | `toSpeech()`: strips markdown and spells out ID numbers before they are read aloud |
+| `voice-languages.ts` | The language picker list and the few phrases the app itself says, per language |
+| `storage.ts` | Key-value cache: localStorage on web, AsyncStorage on native |
 | `database.types.ts` | Generated Supabase types — **stale**, see typecheck note |
 
 ---
@@ -282,6 +287,7 @@ check the other.** These are the files where web and native genuinely diverge:
 src/components/animated-icon.tsx   /  animated-icon.web.tsx
 src/components/app-tabs.tsx        /  app-tabs.web.tsx
 src/hooks/use-color-scheme.ts      /  use-color-scheme.web.ts
+src/lib/speech-recognition.ts      /  speech-recognition.web.ts
 src/app/+html.tsx                     (web only — HTML shell, @font-face)
 src/global.css                        (web only)
 ```
@@ -293,6 +299,13 @@ Plus 8 `Platform.OS === 'web'` branches across `src/`. The important ones:
   Android/iOS. Touching this file means reasoning about both.
 - **`src/lib/supabase.ts`** only `require`s AsyncStorage on native; importing
   it unconditionally breaks the web build with "window is not defined".
+  `src/lib/storage.ts` follows the same pattern.
+- **`src/lib/speech-recognition.web.ts`** is the browser's Web Speech API
+  (Chrome, Safari; not Firefox). The native twin is a stub that reports
+  "unsupported" until the phone's recogniser is wired up with
+  `expo-speech-recognition` and microphone permission strings — that needs
+  an EAS build to verify. Text-to-speech (`expo-speech`) already works on
+  both.
 
 Since review happens on web, native breakage is the drift that goes unnoticed.
 Be explicit when a change touches a native-only path.
@@ -331,7 +344,10 @@ create_expiry_alert          get_document_chunks
 ```
 
 `rag_retrieve_chunks` was in this list until migration `011` captured it — the
-other ten still exist only in the live database.
+other ten still exist only in the live database. Migration `012` adds the two
+voice-preference columns to `public.users`; the app tolerates their absence
+(falls back to the local cache) but the setting won't follow the account until
+it is applied.
 
 Also missing: `CREATE EXTENSION vector`, and the committed `document_chunks`
 table declares `embedding_id VARCHAR(100)` rather than a `vector(384)` column
@@ -373,6 +389,11 @@ To close the gap: `pg_dump --schema-only` against the live project, commit as
   2026, `llama-3.1-8b-instant` in August 2026) — when adding a fallback, confirm
   the name on Groq's models page first. The models that actually ran are
   returned in `debug.models` and shown under follow-up answers.
+  **Voice / language:** the request may carry `language` (BCP-47) and
+  `voice: true`. A non-English question is condensed *into English* before
+  retrieval (the index is English) and the answer is written in the person's
+  language; `voice` asks for short spoken sentences with no markdown. The
+  response echoes `answer_language`.
 - **`invite-member`** — sends family invitation emails via Supabase Auth.
 
 All three handle CORS preflight explicitly.
@@ -411,6 +432,12 @@ SEARCH  question → rag-search → embed query → retrieve chunks
   (e.g. `router.replace('/home' as any)`).
 - Re-fetch on focus with `useFocusEffect`, not `useEffect` — plain `useEffect`
   leaves lists stale after a delete on another screen.
+- **Voice mode** (Settings › Accessibility) is built for elderly users: one
+  big control, one state at a time, everything spoken is also shown. Keep the
+  four mic states (idle / listening / thinking / speaking) and never add a
+  step that needs a second tap to get an answer. Strings the app itself says
+  live in `voice-languages.ts` with English and Hindi; other languages fall
+  back to English.
 
 ---
 
