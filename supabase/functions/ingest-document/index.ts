@@ -1,20 +1,19 @@
 // ─── FamilyVault Document Ingestion Edge Function ───────────────
 // Pipeline: Download → Extract Text → Chunk → Embed → Store
 // All free/open-source: pdf.js for PDFs, Tesseract for images,
-// HuggingFace free Inference API for embeddings.
+// HuggingFace free Inference API for embeddings (see _shared/embeddings.ts —
+// the model and its required "passage: " prefix live there, so ingest and
+// search can never drift onto different models).
 // ─────────────────────────────────────────────────────────────────
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { requireFamilyMember } from '../_shared/auth.ts';
+import { embedPassages } from '../_shared/embeddings.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-const HF_API_TOKEN = Deno.env.get('HF_API_TOKEN') ?? ''; // Optional — works without for low volume
 const OCR_SPACE_API_KEY = Deno.env.get('OCR_SPACE_API_KEY') ?? ''; // supabase secrets set OCR_SPACE_API_KEY=...
 
-// Embedding model: all-MiniLM-L6-v2 (384 dims, free on HuggingFace)
-const EMBEDDING_MODEL = 'sentence-transformers/all-MiniLM-L6-v2';
-const EMBEDDING_DIMS = 384;
 const CHUNK_SIZE = 500;     // target tokens per chunk
 const CHUNK_OVERLAP = 50;   // overlap between chunks
 
@@ -92,15 +91,16 @@ Deno.serve(async (req) => {
     console.log(`[ingest] Created ${chunks.length} chunks`);
 
     // 4. Generate embeddings
-    const embeddings = await generateEmbeddings(chunks.map(c => c.content));
-    console.log(`[ingest] Generated ${embeddings.length} embeddings`);
+    const embeddings = await embedPassages(chunks.map(c => c.content));
+    const embedded = embeddings.filter(Boolean).length;
+    console.log(`[ingest] Embedded ${embedded}/${chunks.length} chunks`);
 
-    // 5. Prepare chunks with embeddings (skip empty embeddings from failed HF API)
+    // 5. Prepare chunks with embeddings. A null vector is not fatal: the chunk
+    // is still stored and still found by keyword, and the next index rebuild
+    // will fill it in.
     const chunksWithEmbeddings = chunks.map((chunk, i) => ({
       ...chunk,
-      embedding: embeddings[i] && embeddings[i].length > 0
-        ? `[${embeddings[i].join(',')}]`
-        : null,
+      embedding: embeddings[i] ? `[${embeddings[i]!.join(',')}]` : null,
     }));
 
     // 6. Extract metadata (dates, IDs, policy numbers, etc.)
@@ -409,76 +409,6 @@ function chunkBySentences(text: string, targetSize: number, overlap: number): Ch
 
 // ─── Embeddings (HuggingFace Inference API) ───────────────────
 
-async function generateEmbeddings(texts: string[]): Promise<number[][]> {
-  if (texts.length === 0) return [];
-
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  };
-  if (HF_API_TOKEN) {
-    headers['Authorization'] = `Bearer ${HF_API_TOKEN}`;
-  }
-
-  // Try multiple API endpoint formats (HF has changed their API)
-  const endpoints = [
-    `https://api-inference.huggingface.co/models/${EMBEDDING_MODEL}`,
-    `https://api-inference.huggingface.co/pipeline/feature-extraction/${EMBEDDING_MODEL}`,
-  ];
-
-  for (const endpoint of endpoints) {
-    try {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          inputs: texts,
-          options: { wait_for_model: true },
-        }),
-      });
-
-      if (!response.ok) {
-        const errText = await response.text();
-        console.warn(`[ingest] HF API error (${response.status}) at ${endpoint}: ${errText.substring(0, 200)}`);
-        continue; // Try next endpoint
-      }
-
-      const embeddings = await response.json();
-
-      // Validate response shape
-      if (Array.isArray(embeddings) && embeddings.length === texts.length) {
-        console.log(`[ingest] Embeddings generated via ${endpoint}`);
-        return embeddings.map((emb: number[] | number[][]) => {
-          if (Array.isArray(emb[0])) {
-            return meanPool(emb as number[][]);
-          }
-          return emb as number[];
-        });
-      }
-
-      console.warn('[ingest] Unexpected embedding response shape');
-    } catch (err) {
-      console.warn(`[ingest] Embedding endpoint failed (${endpoint}):`, err);
-    }
-  }
-
-  console.warn('[ingest] All embedding endpoints failed — text search only');
-  return texts.map(() => []);
-}
-
-function meanPool(tokenEmbeddings: number[][]): number[] {
-  if (tokenEmbeddings.length === 0) return [];
-  const dims = tokenEmbeddings[0].length;
-  const result = new Array(dims).fill(0);
-  for (const emb of tokenEmbeddings) {
-    for (let i = 0; i < dims; i++) {
-      result[i] += emb[i];
-    }
-  }
-  for (let i = 0; i < dims; i++) {
-    result[i] /= tokenEmbeddings.length;
-  }
-  return result;
-}
 
 // ─── Metadata Extraction ───────────────────────────────────────
 

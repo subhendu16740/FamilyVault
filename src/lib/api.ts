@@ -199,6 +199,42 @@ export interface RagHistoryTurn {
   source_ids?: string[];
 }
 
+/** Progress of the one-time rebuild of a family's search index. */
+export interface IndexStatus {
+  /** No work left: every chunk is embedded with the current model. */
+  up_to_date: boolean;
+  /** This call finished the rebuild (or there was nothing to do). */
+  done: boolean;
+  /** Chunks embedded by this call. */
+  processed: number;
+  done_count: number;
+  total_count: number;
+  model: string;
+  /** Whether the signed-in member is allowed to start a rebuild. */
+  can_rebuild?: boolean;
+  error?: string;
+}
+
+/**
+ * Read, or advance, the family's search index rebuild.
+ *
+ * Needed once after the move to a multilingual embedding model, so that
+ * Indian-language documents can be found by meaning and not only by exact
+ * words. Each call with `statusOnly: false` embeds as many chunks as it can
+ * within its time budget and returns progress; call it again while `done` is
+ * false. It is safe to stop and resume — the cursor lives in the database.
+ */
+export async function indexStatus(
+  familyId: string,
+  statusOnly = true,
+): Promise<IndexStatus> {
+  const { data, error } = await supabase.functions.invoke('reembed-index', {
+    body: { family_id: familyId, status_only: statusOnly },
+  });
+  if (error) throw error;
+  return data as IndexStatus;
+}
+
 export interface RagSearchOptions {
   /** BCP-47 tag of the question and the wanted answer, e.g. 'hi-IN'. Omit for English. */
   language?: string;
