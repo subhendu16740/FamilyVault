@@ -425,10 +425,12 @@ export default function SearchScreen() {
           <View style={styles.indexStrip}>
             <ActivityIndicator size="small" color="#2A3D66" />
             <Text style={styles.indexStripText} numberOfLines={1}>
-              {indexFix.rechunking
-                ? 'Improving search across languages… re-reading your documents'
-                : `Improving search across languages… ${indexFix.done_count}` +
-                  `${indexFix.total_count > 0 ? ` of ${indexFix.total_count}` : ''} passages`}
+              {indexFix.reextracting
+                ? 'Improving search… reading your PDFs again, tables and all'
+                : indexFix.rechunking
+                  ? 'Improving search across languages… re-reading your documents'
+                  : `Improving search across languages… ${indexFix.done_count}` +
+                    `${indexFix.total_count > 0 ? ` of ${indexFix.total_count}` : ''} passages`}
             </Text>
           </View>
         )}

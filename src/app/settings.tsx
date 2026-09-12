@@ -117,6 +117,7 @@ export default function SettingsScreen() {
     if (indexError) return indexError;
     if (!index) return 'Checking…';
     if (rebuilding) {
+      if (index.reextracting) return 'Updating… reading your PDFs again';
       if (index.rechunking) return 'Updating… re-reading your documents';
       const of = index.total_count > 0 ? ` of ${index.total_count}` : '';
       return `Updating… ${index.done_count}${of} passages`;
