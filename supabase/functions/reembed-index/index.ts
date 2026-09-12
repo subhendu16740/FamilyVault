@@ -135,7 +135,7 @@ Deno.serve(async (req) => {
         break;
       }
 
-      const vectors = await embedPassages(chunks.map(c => c.content));
+      const { vectors, error: embedError } = await embedPassages(chunks.map(c => c.content));
 
       // Every vector null means the embedding service is down, not that these
       // chunks are unembeddable. Stop and keep the cursor where it is, so the
@@ -149,7 +149,9 @@ Deno.serve(async (req) => {
           completed_at: null,
         });
         return json({
-          error: 'Embedding service unavailable — nothing was skipped, try again shortly',
+          error: embedError
+            ? `Embedding service: ${embedError}`
+            : 'Embedding service unavailable — nothing was skipped, try again shortly',
           done: false,
           processed,
           done_count: doneCount,

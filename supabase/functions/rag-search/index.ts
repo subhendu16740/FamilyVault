@@ -190,6 +190,7 @@ Deno.serve(async (req) => {
       // are in different scripts. This is the difference between "the index
       // is not ready", "embedding failed" and "there is genuinely no match".
       embedded: retrieved.embedded,
+      ...(retrieved.embedError ? { embed_error: retrieved.embedError } : {}),
       ...(trans.error ? { translate_error: trans.error } : {}),
       ...(voice ? { voice: true } : {}),
       // Which models actually ran, so a retired one shows up in a screenshot
@@ -280,7 +281,7 @@ async function retrieveChunks(
   query: string,
   citedIds: string[] = [],
   useVector = true,
-): Promise<{ chunks: ChunkResult[]; embedded: boolean }> {
+): Promise<{ chunks: ChunkResult[]; embedded: boolean; embedError?: string }> {
   // Build tsquery from words. Letters and digits in any script, plus the
   // combining marks that Indic scripts need (a Devanagari vowel sign is \p{M}
   // — strip it and the word is gone). Everything else, including tsquery
@@ -304,9 +305,12 @@ async function retrieveChunks(
   // onto the current model. Comparing a new query vector against old chunk
   // vectors would rank by noise, so keyword-only is the correct answer until
   // the rebuild finishes (see _shared/embeddings.ts and migration 013).
-  const queryEmbedding = useVector ? await embedQuery(query) : null;
+  const embed = useVector
+    ? await embedQuery(query)
+    : { vector: null as number[] | null, error: undefined as string | undefined };
+  const queryEmbedding = embed.vector;
   if (useVector && !queryEmbedding) {
-    console.warn('[rag] No query embedding — keyword-only retrieval for this request');
+    console.warn(`[rag] No query embedding (${embed.error ?? 'unknown'}) — keyword-only retrieval`);
   }
 
   // Hybrid retrieval: 0.7 semantic + 0.3 keyword when an embedding is present.
@@ -320,7 +324,7 @@ async function retrieveChunks(
 
   if (error) {
     console.warn('[rag] Chunk retrieval RPC failed, trying direct query:', error.message);
-    return { chunks: await fallbackRetrieve(schema, query, words), embedded: false };
+    return { chunks: await fallbackRetrieve(schema, query, words), embedded: false, embedError: embed.error };
   }
 
   const results = (data ?? []) as ChunkResult[];
@@ -334,7 +338,7 @@ async function retrieveChunks(
       Number(cited.has(b.document_id)) - Number(cited.has(a.document_id)));
   }
 
-  return { chunks: results, embedded: !!queryEmbedding };
+  return { chunks: results, embedded: !!queryEmbedding, embedError: embed.error };
 }
 
 // ─── Conversation helpers ──────────────────────────────────────
@@ -505,13 +509,18 @@ async function translateToEnglish(
   try {
     const { response, model } = await groqChat('condense', {
       temperature: 0,
-      max_tokens: 120,
+      max_tokens: 400,
+      // JSON mode, because these models think out loud. Asked for a bare
+      // line, gpt-oss returns its reasoning ("We need to translate the user's
+      // message…") and the actual translation is buried inside it. A JSON
+      // contract puts the answer in a field that reasoning cannot occupy.
+      response_format: { type: 'json_object' },
       messages: [
         {
           role: 'system',
           content: `Translate the user's message into English. It is a question about family documents (passport, PAN card, Aadhaar, insurance, tax returns, bank, property, school).
 Keep every name, number, date and abbreviation exactly as given (IDV, PAN, ITR, LIC stay as they are). Do not answer it, do not add anything.
-Output ONLY the English translation on one line. No label, no quotes, no explanation.`,
+Reply with JSON only: {"english":"<the translation>"}`,
         },
         { role: 'user', content: query },
       ],
@@ -525,12 +534,16 @@ Output ONLY the English translation on one line. No label, no quotes, no explana
 
     const result = await response.json();
     const raw = groqText(result);
-    const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
-    let text = lines[lines.length - 1] ?? '';
-    text = text
-      .replace(/^(english|translation)\s*:\s*/i, '')
-      .replace(/^["'\u201c\u2018]+|["'\u201d\u2019]+$/g, '')
-      .trim();
+    let text = jsonField(raw, 'english');
+    if (!text) {
+      // No JSON came back; fall back to the old last-line heuristic rather
+      // than losing a translation that is sitting right there.
+      const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+      text = (lines[lines.length - 1] ?? '')
+        .replace(/^(english|translation)\s*:\s*/i, '')
+        .replace(/^["'\u201c\u2018]+|["'\u201d\u2019]+$/g, '')
+        .trim();
+    }
 
     // A translation that still has no Latin letters didn't translate. Report
     // WHAT came back, not just that it was unusable: this runs on a phone
@@ -570,7 +583,9 @@ async function condenseQuery(
   try {
     const { response, model } = await groqChat('condense', {
       temperature: 0,
-      max_tokens: 80,
+      max_tokens: 400,
+      // Same reason as translateToEnglish: a bare line invites reasoning.
+      response_format: { type: 'json_object' },
       messages: [
         {
           role: 'system',
@@ -578,7 +593,7 @@ async function condenseQuery(
 Resolve references like "it", "this one", "that policy", "the latest data", "the highest offer" using the conversation.
 Keep the SUBJECT of the conversation in the rewrite — if the discussion is about ISB placements and the user asks about "the highest offer", the query is about the highest salary offer in the ISB placements report. Only drop the subject if the user clearly changes topic.
 Keep every specific name, document, year and number that matters. Do not answer the question.${translate}
-Output ONLY the rewritten query on one line. No label, no quotes, no explanation.`,
+Reply with JSON only: {"query":"<the rewritten query>"}`,
         },
         {
           role: 'user',
@@ -599,12 +614,14 @@ Output ONLY the rewritten query on one line. No label, no quotes, no explanation
     // Small models add preambles ("Here is the rewritten query:") despite
     // instructions. Take the last non-empty line and strip labels and quotes,
     // rather than rejecting the whole thing and silently using the raw query.
-    const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
-    let text = lines[lines.length - 1] ?? '';
-    text = text
-      .replace(/^(rewritten|standalone|search)?\s*query\s*:\s*/i, '')
-      .replace(/^["'\u201c\u2018]+|["'\u201d\u2019]+$/g, '')
-      .trim();
+    let text = jsonField(raw, 'query');
+    if (!text) {
+      const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+      text = (lines[lines.length - 1] ?? '')
+        .replace(/^(rewritten|standalone|search)?\s*query\s*:\s*/i, '')
+        .replace(/^["'\u201c\u2018]+|["'\u201d\u2019]+$/g, '')
+        .trim();
+    }
 
     if (!text || text.length > 300) {
       console.warn(`[rag] Condense rejected output: ${JSON.stringify(raw).slice(0, 300)}`);
@@ -783,6 +800,20 @@ async function isIndexReady(schema: string): Promise<boolean> {
   }
   if (!data) return true;
   return !!data.completed_at && data.model === EMBEDDING_MODEL;
+}
+
+/** One string field out of a JSON reply, or '' if it isn't there. */
+function jsonField(raw: string, field: string): string {
+  const start = raw.indexOf('{');
+  const end = raw.lastIndexOf('}');
+  if (start === -1 || end <= start) return '';
+  try {
+    const parsed = JSON.parse(raw.slice(start, end + 1)) as Record<string, unknown>;
+    const value = parsed[field];
+    return typeof value === 'string' ? value.trim() : '';
+  } catch {
+    return '';
+  }
 }
 
 /** Accept a BCP-47 tag like "hi-IN" or "en"; anything else is ignored. */

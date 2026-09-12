@@ -190,6 +190,8 @@ export interface RagSearchResult {
     index_rebuilding?: boolean;
     /** False means the question was searched by keywords alone. */
     embedded?: boolean;
+    /** Why embedding failed, when it did. */
+    embed_error?: string;
   };
 }
 
