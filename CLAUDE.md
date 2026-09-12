@@ -448,7 +448,10 @@ neither calls HuggingFace directly. Three things matter:
   until it has, `rag-search` sends no query vector and retrieval falls back to
   keyword-only. A family with no row was created after 013 and is ready by
   definition. **Changing the model means bumping it here and re-running
-  `reembed-index` for every family.**
+  `reembed-index` for every family.** The search screen starts that rebuild
+  by itself when an answer reports `debug.index_rebuilding`, so nobody has to
+  find the Settings row for search to work; Settings › Search remains the
+  manual route and the place errors are shown in full.
 
 ### RAG pipeline
 
@@ -466,6 +469,12 @@ INGEST  upload → client OCR (Tesseract web / ML Kit native) → upload file + 
 SEARCH  question → rag-search → embed query → retrieve chunks
         (0.7 semantic + 0.3 keyword) → Groq → answer + source docs
 ```
+
+**Retrieval fetches 40 and judges 15, with no document allowed more than 4 of
+those slots** (`diversify()`). A long document mentioning the search term on
+every page will otherwise fill every candidate slot: a 111-chunk tax return
+buried the one-chunk PAN card that actually answered the question. The cap is
+what lets a short, exactly-right document reach the judge.
 
 ---
 
