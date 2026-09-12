@@ -124,6 +124,15 @@ captured separately.
 1. Migration first, Edge Function second. Write RPC changes so the old
    function still works against the new signature — new parameters last, with
    defaults — and neither order breaks.
+   **A default is not enough on its own.** PostgREST resolves an RPC by the
+   exact argument names it is given: against a database without the migration,
+   passing a new argument fails the *whole* call rather than falling back to
+   the old overload, and a `select` naming a column that does not exist yet
+   fails the whole select. Both turned working features into silent dead ends
+   here. So every call that depends on a migration tries the new shape, and on
+   a "could not find the function" / "column does not exist" error retries the
+   shape that has always existed (`retrieveChunks`, `loadState`, `saveState`,
+   `preferences.tsx`). Assume the migration has NOT been applied.
 2. DEV first, always. Verify in the app, then repeat against PROD.
 3. Changing a Vercel env var requires a **redeploy**. `EXPO_PUBLIC_*` values
    are compiled into the bundle at build time; a running deployment cannot
@@ -381,7 +390,11 @@ To close the gap: `pg_dump --schema-only` against the live project, commit as
 `supabase/functions/` — Deno, excluded from `tsconfig.json` (they use remote
 `https://` imports and Deno globals that the app's TS config cannot resolve).
 
-- **`ingest-document`** — accepts pre-extracted OCR text from the client, or
+- **`ingest-document`** — the HTTP entry point only: it checks the caller and
+  hands off to `_shared/ingest.ts`, which owns the pipeline (download →
+  extract → chunk → embed → store → expiry alert). The pipeline is shared
+  because the rebuild re-runs it for documents that were never indexed.
+  Accepts pre-extracted OCR text from the client, or
   falls back to server-side extraction (simple PDF text parser → OCR.space).
   Chunks (500 tokens, 50 overlap, paragraph-aware) → embeds via HuggingFace
   `all-MiniLM-L6-v2` → extracts metadata (expiry dates, passport/PAN/Aadhaar/
@@ -486,10 +499,18 @@ neither calls HuggingFace directly. Three things matter:
   splitting decides what the chunks *are*, so embedding first would be wasted.
   Each phase has its own cursor (`rechunk_cursor`, `cursor_id`), so a run can
   stop anywhere and resume.
-- **Documents with no chunks are reported, not hidden.** `rag_unindexed_documents`
-  lists them and the app names them; this vault had a PDF stuck at
-  `ingestion_status = 'pending'` for a month, never searchable, with nobody
-  told.
+- **Documents with no chunks are retried, then reported.** The rebuild's first
+  phase gives each one a single attempt through the full ingest pipeline
+  (migration 017). It is bounded by construction: a document that yields text
+  leaves the list by gaining chunks, and one that yields none is marked
+  `failed` and never tried again, so this can never become work repeated on
+  every search. What is left, `rag_unindexed_documents` lists and the app
+  names. This vault had a PDF stuck at `ingestion_status = 'pending'` for a
+  month, never searchable, with nobody told.
+- **Nothing readable means no chunk.** An unreadable file used to be stored
+  with a `[Document: name]` placeholder chunk, which is indistinguishable from
+  a real passage at search time and hides the failure. `ingestDocument` now
+  returns `empty: true` and the caller marks the document instead.
 
 ### RAG pipeline
 

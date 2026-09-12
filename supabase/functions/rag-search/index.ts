@@ -165,7 +165,7 @@ Deno.serve(async (req) => {
       // searches do not trample each other, and resumes from its cursor on
       // the next search. A few questions and the index builds itself.
       afterResponse(
-        runReembed(supabase, schema, { budgetMs: 20_000, requireLease: true })
+        runReembed(supabase, schema, { budgetMs: 20_000, requireLease: true, familyId: family_id })
           .then(p => console.log(`[rag] Background re-embed: ${p.done_count}/${p.total_count}${p.error ? ` (${p.error})` : ''}`))
           .catch(err => console.warn('[rag] Background re-embed failed:', err)),
       );
@@ -342,18 +342,28 @@ async function retrieveChunks(
   }
 
   // Hybrid retrieval: 0.7 semantic + 0.3 keyword when an embedding is present.
-  const { data, error } = await supabase.rpc('rag_retrieve_chunks', {
+  const args = {
     p_schema: schema,
     p_tsquery: tsquery,
     p_query_pattern: `%${query}%`,
     p_limit: RETRIEVE_CANDIDATES,
     p_query_embedding: queryEmbedding,
-    // Capping here, while ranking, is the only place it works. Applied to the
-    // rows this returns it is too late: when one document supplies every row
-    // there is nothing left to diversify with. Migration 015; older databases
-    // ignore the argument and behave as before.
-    p_per_doc: MAX_CHUNKS_PER_DOC,
+  };
+  // Capping while ranking is the only place it works: applied to the rows
+  // this returns it is too late, because when one document supplies every row
+  // there is nothing left to diversify with. Migration 015 adds the argument.
+  //
+  // A database that has not had 015 applied has no overload taking it, and
+  // PostgREST rejects the WHOLE call rather than ignoring the extra argument —
+  // which turns a working search into no results at all. So ask for the
+  // capped version, and fall back to the signature that has always existed.
+  let { data, error } = await supabase.rpc('rag_retrieve_chunks', {
+    ...args, p_per_doc: MAX_CHUNKS_PER_DOC,
   });
+  if (error && /find the function|schema cache|does not exist/i.test(error.message)) {
+    console.warn('[rag] Migration 015 not applied — retrieving without the per-document cap');
+    ({ data, error } = await supabase.rpc('rag_retrieve_chunks', args));
+  }
 
   if (error) {
     console.warn('[rag] Chunk retrieval RPC failed, trying direct query:', error.message);
@@ -569,7 +579,11 @@ async function translateToEnglish(
   try {
     const { response, model } = await groqChat('condense', {
       temperature: 0,
-      max_tokens: 400,
+      // Room for the model to reason before the object. JSON mode validates
+      // the whole response, so output cut off by max_tokens comes back as a
+      // 400 rather than as a partial answer — which is what "Failed to
+      // validate JSON" was.
+      max_tokens: 1500,
       // JSON mode, because these models think out loud. Asked for a bare
       // line, gpt-oss returns its reasoning ("We need to translate the user's
       // message…") and the actual translation is buried inside it. A JSON
@@ -643,7 +657,7 @@ async function condenseQuery(
   try {
     const { response, model } = await groqChat('condense', {
       temperature: 0,
-      max_tokens: 400,
+      max_tokens: 1500, // as above: JSON mode 400s on a truncated object
       // Same reason as translateToEnglish: a bare line invites reasoning.
       response_format: { type: 'json_object' },
       messages: [
