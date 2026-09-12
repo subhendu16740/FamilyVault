@@ -8,7 +8,10 @@ import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFamily } from '../../lib/family-context';
-import { fetchCategories, ragSearch, type RagSearchResult, type RagHistoryTurn } from '../../lib/api';
+import {
+  fetchCategories, ragSearch, indexStatus,
+  type RagSearchResult, type RagHistoryTurn, type IndexStatus,
+} from '../../lib/api';
 import type { Database } from '../../lib/database.types';
 import { usePreferences } from '../../lib/preferences';
 import { phrase } from '../../lib/voice-languages';
@@ -44,6 +47,32 @@ export default function SearchScreen() {
   const [categories, setCategories] = useState<DocumentCategory[]>([]);
   const [isAsking, setIsAsking] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
+
+  // ─── Search index self-repair ───────────────────────────
+  // A vault whose chunks are not embedded on the current model searches by
+  // keywords alone, which is much worse and, for a question asked in another
+  // script, useless. The fix is a one-off rebuild — and asking someone to go
+  // and find a Settings row to make search work is not a fix at all. So when
+  // an answer reports the index is stale, start the rebuild here, once, and
+  // show it happening. A member who is not an admin gets a 403; that is
+  // expected and stays quiet.
+  const [indexFix, setIndexFix] = useState<IndexStatus | null>(null);
+  const indexFixStarted = useRef(false);
+
+  const repairIndex = useCallback(async (familyId: string) => {
+    if (indexFixStarted.current) return;
+    indexFixStarted.current = true;
+    try {
+      for (let pass = 0; pass < 200; pass++) {
+        const result = await indexStatus(familyId, false);
+        setIndexFix(result);
+        if (result.error || result.done || result.processed === 0) break;
+      }
+    } catch {
+      // Not an admin, or the service is down. Search still works on keywords.
+      setIndexFix(null);
+    }
+  }, []);
 
   // ─── Voice assistant ────────────────────────────────────
   const { voiceMode, voiceLanguage } = usePreferences();
@@ -140,6 +169,7 @@ export default function SearchScreen() {
         )
       );
       if (wantVoice) speakMessage(aiPlaceholder.id, result.answer, result.answer_language);
+      if (result.debug?.index_rebuilding && currentFamily) repairIndex(currentFamily.id);
     } catch (err) {
       console.error('RAG error:', err);
       const failed = t('failed');
@@ -385,6 +415,25 @@ export default function SearchScreen() {
           )}
         </ScrollView>
 
+        {/* Index repair, while it runs */}
+        {indexFix && !indexFix.up_to_date && !indexFix.error && (
+          <View style={styles.indexStrip}>
+            <ActivityIndicator size="small" color="#2A3D66" />
+            <Text style={styles.indexStripText} numberOfLines={1}>
+              Improving search across languages… {indexFix.done_count}
+              {indexFix.total_count > 0 ? ` of ${indexFix.total_count}` : ''} passages
+            </Text>
+          </View>
+        )}
+        {indexFix?.up_to_date && (
+          <View style={styles.indexStrip}>
+            <Feather name="check-circle" size={14} color="#2F7D5C" />
+            <Text style={styles.indexStripText}>
+              Search is ready. Ask again for a better answer.
+            </Text>
+          </View>
+        )}
+
         {/* Input Bar */}
         <View style={styles.inputBar}>
           <View style={styles.inputBox}>
@@ -570,6 +619,17 @@ const styles = StyleSheet.create({
   },
   sourceText: { fontSize: 11, color: '#2A3D66', fontWeight: '500', maxWidth: 150 },
   searchedFor: { fontSize: 11, color: '#9CA3AF', marginTop: 8, fontStyle: 'italic', lineHeight: 15 },
+  indexStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: '#EFF6FF',
+    borderTopWidth: 1,
+    borderTopColor: '#DBE7FB',
+  },
+  indexStripText: { flex: 1, fontSize: 12, color: '#2A3D66' },
   // ─── Input Bar ────────────────────────────────────────
   inputBar: {
     backgroundColor: '#FFFFFF',

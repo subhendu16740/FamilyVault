@@ -37,7 +37,15 @@ const MAX_HISTORY_CHARS = 600;      // per message, keeps the prompt bounded
 // "2026" scores 1/10 for a placements question and never reaches the answer
 // model. The judge runs on the small model, which has its own rate-limit
 // pool on Groq, so it costs nothing against the answer model's budget.
-const RERANK_CANDIDATES = 15;      // how many retrieval returns for judging
+// Retrieval casts wider than the judge needs, then the pool is trimmed for
+// DIVERSITY before judging. A 111-chunk tax return mentions "PAN" on page
+// after page and will happily fill every candidate slot, burying the
+// one-chunk PAN card that actually answers the question. Capping how much of
+// the pool any single document may occupy is what lets a short, exactly-right
+// document reach the judge at all.
+const RETRIEVE_CANDIDATES = 40;    // how many retrieval returns
+const MAX_CHUNKS_PER_DOC = 4;      // of those, per document, before judging
+const RERANK_CANDIDATES = 15;      // how many reach the judge
 const RERANK_KEEP = 5;             // how many survive into the prompt
 const RERANK_MIN_SCORE = 4;        // 0–10; below this a chunk is dropped outright
 const RERANK_SNIPPET_CHARS = 350;  // per candidate, keeps the judge call small
@@ -160,7 +168,11 @@ Deno.serve(async (req) => {
     // considered — and then the judge decides, like everything else. That is
     // what stops last turn's document crowding out this turn's answer when
     // the user changes subject.
-    const candidates = dedupeChunks([...pinned, ...retrievedChunks]);
+    const candidates = diversify(
+      dedupeChunks([...pinned, ...retrievedChunks]),
+      MAX_CHUNKS_PER_DOC,
+      RERANK_CANDIDATES,
+    );
     console.log(`[rag] ${candidates.length} candidate chunks`);
 
     // 3. Judge every candidate against the question; keep only the relevant.
@@ -318,7 +330,7 @@ async function retrieveChunks(
     p_schema: schema,
     p_tsquery: tsquery,
     p_query_pattern: `%${query}%`,
-    p_limit: RERANK_CANDIDATES,
+    p_limit: RETRIEVE_CANDIDATES,
     p_query_embedding: queryEmbedding,
   });
 
@@ -438,7 +450,10 @@ async function rerankChunks(
   try {
     const { response, model } = await groqChat('rerank', {
       temperature: 0,
-      max_tokens: 200,
+      // Generous, because these models reason before answering and Groq
+      // rejects the whole response with a 400 when JSON mode output is cut
+      // off mid-object. A truncated score list costs the judge entirely.
+      max_tokens: 2000,
       response_format: { type: 'json_object' },
       messages: [
         {
@@ -484,6 +499,30 @@ Reply with JSON only: {"scores":[{"i":0,"s":7}, ...]} — exactly one entry per 
   } catch (err) {
     return fallback(String(err).slice(0, 120));
   }
+}
+
+/**
+ * Trim a ranked candidate list so no single document dominates it, then fill
+ * any spare room from what was dropped. Order is preserved throughout, so
+ * this only ever promotes a lower-ranked chunk from an unrepresented
+ * document over the fifth chunk of one already well represented.
+ */
+function diversify(chunks: ChunkResult[], perDoc: number, limit: number): ChunkResult[] {
+  const seen = new Map<string, number>();
+  const kept: ChunkResult[] = [];
+  const overflow: ChunkResult[] = [];
+
+  for (const c of chunks) {
+    const count = seen.get(c.document_id) ?? 0;
+    if (count < perDoc) {
+      seen.set(c.document_id, count + 1);
+      kept.push(c);
+    } else {
+      overflow.push(c);
+    }
+  }
+
+  return [...kept, ...overflow].slice(0, limit);
 }
 
 /** First occurrence wins, so pinned chunks stay ahead of retrieved duplicates. */
