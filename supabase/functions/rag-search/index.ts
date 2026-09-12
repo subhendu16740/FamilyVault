@@ -6,6 +6,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { embedQuery, EMBEDDING_MODEL } from '../_shared/embeddings.ts';
 import { requireFamilyMember } from '../_shared/auth.ts';
+import { runReembed, afterResponse } from '../_shared/reembed.ts';
 import { groqChat, groqText, hasGroqKey } from '../_shared/groq.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -37,12 +38,13 @@ const MAX_HISTORY_CHARS = 600;      // per message, keeps the prompt bounded
 // "2026" scores 1/10 for a placements question and never reaches the answer
 // model. The judge runs on the small model, which has its own rate-limit
 // pool on Groq, so it costs nothing against the answer model's budget.
-// Retrieval casts wider than the judge needs, then the pool is trimmed for
-// DIVERSITY before judging. A 111-chunk tax return mentions "PAN" on page
-// after page and will happily fill every candidate slot, burying the
-// one-chunk PAN card that actually answers the question. Capping how much of
-// the pool any single document may occupy is what lets a short, exactly-right
-// document reach the judge at all.
+// Retrieval is capped per document, in SQL, so that no one file can supply
+// the whole candidate list. Measured on the live vault: for "what | arpita |
+// mobile | number", 36 of the top 40 keyword hits were a 111-chunk tax return
+// (Indian tax forms say "mobile" and "number" on every page) and the resume
+// carrying the actual number scored zero slots. The cap is what lets a short,
+// exactly-right document reach the judge at all. The client-side diversify()
+// below then applies the same rule once pinned chunks are mixed in.
 const RETRIEVE_CANDIDATES = 40;    // how many retrieval returns
 const MAX_CHUNKS_PER_DOC = 4;      // of those, per document, before judging
 const RERANK_CANDIDATES = 15;      // how many reach the judge
@@ -153,7 +155,21 @@ Deno.serve(async (req) => {
 
     const citedIds = history.flatMap(t => t.source_ids ?? []);
     const indexReady = await isIndexReady(schema);
-    if (!indexReady) console.log(`[rag] ${schema} is mid re-embed — keyword-only retrieval`);
+    if (!indexReady) {
+      console.log(`[rag] ${schema} is mid re-embed — keyword-only retrieval`);
+      // Start the rebuild here rather than waiting to be asked. A rebuild
+      // gated on someone opening the right Settings row does not happen, and
+      // until it does this family has no vectors at all — so a question in
+      // another script, or one phrased differently from the document, finds
+      // nothing. Runs after the response is sent, holds a lease so parallel
+      // searches do not trample each other, and resumes from its cursor on
+      // the next search. A few questions and the index builds itself.
+      afterResponse(
+        runReembed(supabase, schema, { budgetMs: 20_000, requireLease: true })
+          .then(p => console.log(`[rag] Background re-embed: ${p.done_count}/${p.total_count}${p.error ? ` (${p.error})` : ''}`))
+          .catch(err => console.warn('[rag] Background re-embed failed:', err)),
+      );
+    }
     const [pin, retrieved] = await Promise.all([
       history.length > 0 ? pinnedChunks(schema, history) : Promise.resolve({ chunks: [] as ChunkResult[], error: undefined as string | undefined }),
       retrieveChunks(schema, standalone, citedIds, indexReady),
@@ -332,6 +348,11 @@ async function retrieveChunks(
     p_query_pattern: `%${query}%`,
     p_limit: RETRIEVE_CANDIDATES,
     p_query_embedding: queryEmbedding,
+    // Capping here, while ranking, is the only place it works. Applied to the
+    // rows this returns it is too late: when one document supplies every row
+    // there is nothing left to diversify with. Migration 015; older databases
+    // ignore the argument and behave as before.
+    p_per_doc: MAX_CHUNKS_PER_DOC,
   });
 
   if (error) {
