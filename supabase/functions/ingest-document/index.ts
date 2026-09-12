@@ -269,6 +269,12 @@ async function ocrWithOcrSpace(blob: Blob, type: 'pdf' | 'image'): Promise<strin
     const formData = new FormData();
     const filename = type === 'pdf' ? 'document.pdf' : 'image.jpg';
     formData.append('file', blob, filename);
+    // English only, deliberately. This is the server-side fallback for PDFs
+    // the text extractor could not read; OCR.space's Indic language support
+    // varies by engine and an unrecognised code fails the whole request, which
+    // would cost us the fallback entirely. Images are OCR'd on the client,
+    // where Tesseract does read the person's chosen languages — so a scanned
+    // Indian-language PDF is the one case still limited to English.
     formData.append('language', 'eng');
     formData.append('isOverlayRequired', 'false');
     formData.append('OCREngine', '2'); // Engine 2: better for scanned docs

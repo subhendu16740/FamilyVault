@@ -11,10 +11,13 @@ import { useAuth } from './auth';
 import { supabase } from './supabase';
 import { storageGet, storageSet } from './storage';
 import { DEFAULT_VOICE_LANGUAGE } from './voice-languages';
+import { DEFAULT_OCR_LANGUAGES } from './ocr-languages';
 
 interface Preferences {
   voiceMode: boolean;
   voiceLanguage: string;
+  /** Tesseract language codes to read scanned documents with. */
+  documentLanguages: string[];
 }
 
 interface PreferencesContextType extends Preferences {
@@ -22,15 +25,21 @@ interface PreferencesContextType extends Preferences {
   ready: boolean;
   setVoiceMode: (on: boolean) => void;
   setVoiceLanguage: (code: string) => void;
+  setDocumentLanguages: (codes: string[]) => void;
 }
 
-const DEFAULTS: Preferences = { voiceMode: false, voiceLanguage: DEFAULT_VOICE_LANGUAGE };
+const DEFAULTS: Preferences = {
+  voiceMode: false,
+  voiceLanguage: DEFAULT_VOICE_LANGUAGE,
+  documentLanguages: DEFAULT_OCR_LANGUAGES,
+};
 
 const PreferencesContext = createContext<PreferencesContextType>({
   ...DEFAULTS,
   ready: false,
   setVoiceMode: () => {},
   setVoiceLanguage: () => {},
+  setDocumentLanguages: () => {},
 });
 
 const cacheKey = (userId: string) => `fv:prefs:${userId}`;
@@ -66,13 +75,22 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       }
       if (!cancelled) setReady(true);
 
-      const { data, error } = await users()
-        .select('voice_mode_enabled, voice_language')
+      // Read the newest shape first, then fall back. A column that a
+      // migration has not added yet fails the WHOLE select, so without this
+      // an unapplied 014 would also stop the voice settings from syncing.
+      let { data, error } = await users()
+        .select('voice_mode_enabled, voice_language, document_languages')
         .eq('id', user.id)
         .maybeSingle();
+      if (error) {
+        ({ data, error } = await users()
+          .select('voice_mode_enabled, voice_language')
+          .eq('id', user.id)
+          .maybeSingle());
+      }
       if (cancelled) return;
       if (error) {
-        // Most likely migration 012 not applied yet; the cache stands.
+        // Most likely migration 012 not applied yet either; the cache stands.
         console.warn('[prefs] could not read account preferences:', error.message);
         return;
       }
@@ -80,6 +98,9 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
         const fromDb: Preferences = {
           voiceMode: !!data.voice_mode_enabled,
           voiceLanguage: data.voice_language || DEFAULT_VOICE_LANGUAGE,
+          documentLanguages: Array.isArray(data.document_languages) && data.document_languages.length > 0
+            ? data.document_languages
+            : DEFAULT_OCR_LANGUAGES,
         };
         setPrefs(fromDb);
         storageSet(cacheKey(user.id), JSON.stringify(fromDb));
@@ -93,19 +114,33 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setPrefs(next);
     if (!user) return;
     storageSet(cacheKey(user.id), JSON.stringify(next));
-    users()
-      .update({ voice_mode_enabled: next.voiceMode, voice_language: next.voiceLanguage })
-      .eq('id', user.id)
-      .then(({ error }: { error: { message: string } | null }) => {
-        if (error) console.warn('[prefs] could not save to account:', error.message);
-      });
+
+    // Same reasoning as the read: write everything, and if a column is
+    // missing, write what the schema does have rather than losing the lot.
+    (async () => {
+      const full = {
+        voice_mode_enabled: next.voiceMode,
+        voice_language: next.voiceLanguage,
+        document_languages: next.documentLanguages,
+      };
+      let { error } = await users().update(full).eq('id', user.id);
+      if (error) {
+        const { document_languages: _omitted, ...voiceOnly } = full;
+        ({ error } = await users().update(voiceOnly).eq('id', user.id));
+      }
+      if (error) console.warn('[prefs] could not save to account:', error.message);
+    })();
   }, [user?.id]);
 
   const setVoiceMode = useCallback((on: boolean) => persist({ ...prefs, voiceMode: on }), [prefs, persist]);
   const setVoiceLanguage = useCallback((code: string) => persist({ ...prefs, voiceLanguage: code }), [prefs, persist]);
+  const setDocumentLanguages = useCallback(
+    (codes: string[]) => persist({ ...prefs, documentLanguages: codes.length > 0 ? codes : DEFAULT_OCR_LANGUAGES }),
+    [prefs, persist],
+  );
 
   return (
-    <PreferencesContext.Provider value={{ ...prefs, ready, setVoiceMode, setVoiceLanguage }}>
+    <PreferencesContext.Provider value={{ ...prefs, ready, setVoiceMode, setVoiceLanguage, setDocumentLanguages }}>
       {children}
     </PreferencesContext.Provider>
   );
