@@ -104,6 +104,36 @@ export async function resolveModel(role: GroqRole): Promise<string> {
   return prefs.find(id => !dead.has(id)) ?? prefs[0];
 }
 
+/**
+ * The text a Groq chat response actually carries.
+ *
+ * Reasoning models (the gpt-oss family among them) do not always put their
+ * answer in `content`: it can arrive in `reasoning`, or inside harmony
+ * channel markers, and a caller that only reads `content` then sees an empty
+ * string and reports a failure that never happened. Read every place the text
+ * can be, strip the scaffolding, and return what is left.
+ */
+export function groqText(result: unknown): string {
+  const message = (result as { choices?: { message?: Record<string, unknown> }[] })
+    ?.choices?.[0]?.message;
+  if (!message) return '';
+
+  const raw = [message.content, message.reasoning_content, message.reasoning]
+    .find(v => typeof v === 'string' && v.trim().length > 0) as string | undefined;
+  if (!raw) return '';
+
+  return raw
+    // <think>…</think> and friends: reasoning inlined into the content.
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<\|channel\|>[\s\S]*?<\|message\|>/g, '')
+    .replace(/<\|[a-z_]+\|>/g, '')
+    // An unterminated <think> means the answer never arrived; keep nothing
+    // rather than handing back half a thought.
+    .replace(/<think>[\s\S]*$/i, '')
+    .replace(/^\s*assistantfinal\s*/i, '')
+    .trim();
+}
+
 /** Groq's ways of saying "that model name is not going to work, ever". */
 function modelIsGone(status: number, body: string): boolean {
   if (status === 404) return true;

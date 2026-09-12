@@ -186,6 +186,10 @@ export interface RagSearchResult {
     /** English form of a non-English question, used for retrieval. */
     translated?: string;
     translate_error?: string;
+    /** The family's chunk vectors are still being rebuilt: keyword-only for now. */
+    index_rebuilding?: boolean;
+    /** False means the question was searched by keywords alone. */
+    embedded?: boolean;
   };
 }
 

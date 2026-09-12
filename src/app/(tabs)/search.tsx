@@ -341,15 +341,19 @@ export default function SearchScreen() {
                           </View>
                         )}
                         {msg.debug && (voiceMode
-                          ? !!(msg.debug.translate_error || msg.debug.condense_error || msg.debug.rerank_error || msg.debug.pin_error)
-                          : msg.debug.history_turns > 0 || !!msg.debug.translated) && (
+                          ? !!(msg.debug.translate_error || msg.debug.condense_error || msg.debug.rerank_error
+                               || msg.debug.pin_error || msg.debug.index_rebuilding || msg.debug.embedded === false)
+                          : msg.debug.history_turns > 0 || !!msg.debug.translated
+                               || msg.debug.index_rebuilding || msg.debug.embedded === false) && (
                           <Text style={styles.searchedFor} numberOfLines={3}>
                             Searched for: {msg.debug.searched_for}
                             {msg.debug.condensed ? '' : ' (not rewritten)'}
                             {'\n'}
                             {msg.debug.kept_count ?? msg.debug.kept_docs.length} of {msg.debug.candidate_count} passages kept ({msg.debug.kept_docs.length} {msg.debug.kept_docs.length === 1 ? 'doc' : 'docs'}) · {msg.debug.pinned_docs.length} pinned
                             {msg.debug.models?.answer ? ` · ${shortModel(msg.debug.models.answer)}` : ''}
-                            {msg.debug.client_sent_sources ? '' : ' · old client'}
+                            {msg.debug.history_turns > 0 && !msg.debug.client_sent_sources ? ' · old client' : ''}
+                            {msg.debug.index_rebuilding ? ' · index rebuilding — run Settings › Search' : ''}
+                            {msg.debug.embedded === false && !msg.debug.index_rebuilding ? ' · no query vector, keywords only' : ''}
                             {msg.debug.pin_error ? ` · pin: ${msg.debug.pin_error}` : ''}
                             {msg.debug.rerank_error ? ` · rerank: ${msg.debug.rerank_error}` : ''}
                             {msg.debug.condense_error ? ` · condense: ${msg.debug.condense_error}` : ''}
