@@ -340,7 +340,9 @@ export default function SearchScreen() {
                             )}
                           </View>
                         )}
-                        {!voiceMode && msg.debug && msg.debug.history_turns > 0 && (
+                        {msg.debug && (voiceMode
+                          ? !!(msg.debug.translate_error || msg.debug.condense_error || msg.debug.rerank_error || msg.debug.pin_error)
+                          : msg.debug.history_turns > 0 || !!msg.debug.translated) && (
                           <Text style={styles.searchedFor} numberOfLines={3}>
                             Searched for: {msg.debug.searched_for}
                             {msg.debug.condensed ? '' : ' (not rewritten)'}
@@ -351,6 +353,7 @@ export default function SearchScreen() {
                             {msg.debug.pin_error ? ` · pin: ${msg.debug.pin_error}` : ''}
                             {msg.debug.rerank_error ? ` · rerank: ${msg.debug.rerank_error}` : ''}
                             {msg.debug.condense_error ? ` · condense: ${msg.debug.condense_error}` : ''}
+                            {msg.debug.translate_error ? ` · translate: ${msg.debug.translate_error}` : ''}
                           </Text>
                         )}
                         {msg.sources && msg.sources.length > 0 && (

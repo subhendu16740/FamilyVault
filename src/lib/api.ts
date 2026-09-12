@@ -183,6 +183,9 @@ export interface RagSearchResult {
     condense_error?: string;
     pin_error?: string;
     rerank_error?: string;
+    /** English form of a non-English question, used for retrieval. */
+    translated?: string;
+    translate_error?: string;
   };
 }
 
