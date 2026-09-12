@@ -127,7 +127,6 @@ export default function SettingsScreen() {
         ? `Up to date, but ${stuck} document${stuck === 1 ? '' : 's'} could not be read`
         : 'Up to date — all languages searchable';
     }
-    if (index.can_rebuild === false) return 'Needs updating — ask a family admin';
     return 'Update needed for Indian-language documents';
   };
 
