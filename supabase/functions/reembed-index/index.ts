@@ -82,7 +82,7 @@ Deno.serve(async (req) => {
     // now, and should not be told "someone else has it" by a background
     // worker that may be idle. Batches are idempotent — the worst a rare
     // overlap costs is embedding the same chunk twice.
-    const progress = await runReembed(supabase, schema, { budgetMs: TIME_BUDGET_MS });
+    const progress = await runReembed(supabase, schema, { budgetMs: TIME_BUDGET_MS, familyId: family_id });
 
     return json({
       ...progress,

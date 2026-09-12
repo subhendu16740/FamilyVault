@@ -23,6 +23,7 @@
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { embedPassages, EMBEDDING_MODEL } from './embeddings.ts';
 import { chunkText } from './chunking.ts';
+import { ingestDocument } from './ingest.ts';
 
 /** One HF call per batch: small enough that a failure costs little. */
 export const BATCH_SIZE = 32;
@@ -57,11 +58,26 @@ export async function loadState(
   supabase: SupabaseClient,
   schema: string,
 ): Promise<StateRow | null> {
-  const { data, error } = await supabase
+  const BASE = 'storage_namespace, model, cursor_id, done_count, total_count, completed_at, updated_at';
+  // Ask for the newest shape, then fall back. A column a migration has not
+  // added yet fails the WHOLE select, and a rebuild that cannot read its own
+  // state never starts — which is exactly how migration 016 being unapplied
+  // stopped every rebuild instead of just the re-chunk phase.
+  let { data, error } = await supabase
     .from('family_embedding_state')
-    .select('storage_namespace, model, cursor_id, done_count, total_count, completed_at, updated_at, rechunk_cursor, rechunked_at')
+    .select(`${BASE}, rechunk_cursor, rechunked_at`)
     .eq('storage_namespace', schema)
     .maybeSingle();
+  if (error) {
+    ({ data, error } = await supabase
+      .from('family_embedding_state')
+      .select(BASE)
+      .eq('storage_namespace', schema)
+      .maybeSingle());
+    // Without 016 there is no re-chunk phase to run, so claim it is done and
+    // let the embedding phase proceed rather than blocking on a missing column.
+    if (data) (data as StateRow).rechunked_at = new Date(0).toISOString();
+  }
   if (error) {
     console.warn('[reembed] Could not read state:', error.message);
     return null;
@@ -74,13 +90,18 @@ export async function saveState(
   schema: string,
   patch: Partial<StateRow>,
 ): Promise<void> {
-  const { error } = await supabase
+  const row = { storage_namespace: schema, ...patch, updated_at: new Date().toISOString() };
+  let { error } = await supabase
     .from('family_embedding_state')
-    .upsert({
-      storage_namespace: schema,
-      ...patch,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'storage_namespace' });
+    .upsert(row, { onConflict: 'storage_namespace' });
+  if (error) {
+    // Same reasoning as the read: drop the columns migration 016 adds rather
+    // than losing the progress this run actually made.
+    const { rechunk_cursor: _c, rechunked_at: _a, ...older } = row as Record<string, unknown>;
+    ({ error } = await supabase
+      .from('family_embedding_state')
+      .upsert(older, { onConflict: 'storage_namespace' }));
+  }
   if (error) console.warn('[reembed] Could not save state:', error.message);
 }
 
@@ -153,6 +174,63 @@ async function rechunkPhase(
 }
 
 /**
+ * Give one attempt to each document that has no chunks at all.
+ *
+ * Such a document is invisible to search however good retrieval gets, and it
+ * got that way by an ingestion that failed or never ran — a file uploaded,
+ * stored, and then never read. Everything a retry needs is already here, so
+ * the rebuild retries rather than asking anyone to delete and re-upload.
+ *
+ * Bounded by construction: a document that yields text leaves this list by
+ * gaining chunks, and one that yields none is marked 'failed' and never tried
+ * again. Either way it is gone from the list after a single attempt, so this
+ * cannot become work repeated on every search.
+ */
+async function retryStuckDocuments(
+  supabase: SupabaseClient,
+  schema: string,
+  familyId: string,
+  deadline: number,
+): Promise<number> {
+  const { data, error } = await supabase.rpc('rag_documents_to_ingest', {
+    p_schema: schema, p_limit: 2,
+  });
+  if (error) {
+    // Migration 017 not applied yet; the rest of the rebuild still runs.
+    if (!/find the function|schema cache|does not exist/i.test(error.message)) {
+      console.warn('[reembed] Could not list stuck documents:', error.message);
+    }
+    return 0;
+  }
+
+  const docs = (data ?? []) as { id: string; storage_path: string; file_name: string }[];
+  let recovered = 0;
+
+  for (const doc of docs) {
+    if (Date.now() >= deadline) break;
+    try {
+      const result = await ingestDocument(supabase, {
+        familyId, documentId: doc.id, storagePath: doc.storage_path,
+      });
+      if (result.empty) {
+        console.warn(`[reembed] Nothing readable in ${doc.file_name} — marking failed`);
+        await supabase.rpc('rag_mark_ingestion_failed', { p_schema: schema, p_document_id: doc.id });
+      } else {
+        console.log(`[reembed] Recovered ${doc.file_name}: ${result.chunks} chunks`);
+        recovered++;
+      }
+    } catch (err) {
+      // One bad file must not stop the rebuild. Mark it and move on: the app
+      // names it, and the person can replace it.
+      console.warn(`[reembed] Retry failed for ${doc.file_name}:`, err);
+      await supabase.rpc('rag_mark_ingestion_failed', { p_schema: schema, p_document_id: doc.id });
+    }
+  }
+
+  return recovered;
+}
+
+/**
  * Take the lease, or return false because someone else holds it. The update
  * is conditional on `updated_at`, so two callers racing here cannot both win:
  * Postgres applies one, and the other matches no rows.
@@ -180,7 +258,7 @@ async function claimRebuild(supabase: SupabaseClient, schema: string): Promise<b
 export async function runReembed(
   supabase: SupabaseClient,
   schema: string,
-  opts: { budgetMs: number; requireLease?: boolean } = { budgetMs: 20_000 },
+  opts: { budgetMs: number; requireLease?: boolean; familyId?: string } = { budgetMs: 20_000 },
 ): Promise<ReembedProgress> {
   const state = await loadState(supabase, schema);
   if (!state) return { done: true, processed: 0, done_count: 0, total_count: 0 };
@@ -199,6 +277,13 @@ export async function runReembed(
   let cursor = state.cursor_id;
   let doneCount = state.done_count;
   let total = state.total_count;
+
+  // ── Phase 0: give one attempt to documents that were never indexed, so a
+  // failed upload is repaired rather than sitting in the vault unsearchable.
+  if (opts.familyId) {
+    const recovered = await retryStuckDocuments(supabase, schema, opts.familyId, deadline);
+    if (recovered > 0) console.log(`[reembed] ${schema}: recovered ${recovered} document(s)`);
+  }
 
   // ── Phase 1: re-split documents, if this family has not been through the
   // current splitter yet. Cheap, and it must finish before anything is

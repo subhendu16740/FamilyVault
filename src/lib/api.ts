@@ -241,8 +241,27 @@ export async function indexStatus(
   const { data, error } = await supabase.functions.invoke('reembed-index', {
     body: { family_id: familyId, status_only: statusOnly },
   });
-  if (error) throw error;
+  if (error) {
+    // supabase-js reports any non-2xx as the same opaque sentence and puts the
+    // response in `context`. The function answers with a real reason and
+    // progress so far, so read it — "Edge Function returned a non-2xx status
+    // code" tells a person nothing and sends us to the server logs.
+    const body = await readFunctionError(error);
+    if (body && typeof body === 'object' && 'error' in body) return body as IndexStatus;
+    throw new Error((body as { error?: string })?.error ?? error.message);
+  }
   return data as IndexStatus;
+}
+
+/** The JSON body behind a Supabase Functions error, when there is one. */
+async function readFunctionError(error: unknown): Promise<unknown> {
+  const response = (error as { context?: Response })?.context;
+  if (!response || typeof response.text !== 'function') return null;
+  try {
+    return JSON.parse(await response.text());
+  } catch {
+    return null;
+  }
 }
 
 export interface RagSearchOptions {
