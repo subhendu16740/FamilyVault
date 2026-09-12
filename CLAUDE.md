@@ -99,6 +99,7 @@ npx supabase@latest login
 npx supabase@latest functions deploy rag-search       --project-ref <ref>
 npx supabase@latest functions deploy ingest-document  --project-ref <ref>
 npx supabase@latest functions deploy invite-member    --project-ref <ref>
+npx supabase@latest functions deploy reembed-index    --project-ref <ref>
 
 # Set or rotate a secret (server-side only; never in this repo)
 npx supabase@latest secrets set GROQ_API_KEY=...      --project-ref <ref>
@@ -347,7 +348,9 @@ create_expiry_alert          get_document_chunks
 other ten still exist only in the live database. Migration `012` adds the two
 voice-preference columns to `public.users`; the app tolerates their absence
 (falls back to the local cache) but the setting won't follow the account until
-it is applied.
+it is applied. Migration `013` adds `public.family_embedding_state` plus three
+service-role helpers (`rag_chunk_total`, `rag_chunks_to_embed`,
+`rag_set_chunk_embedding`) and must be applied before `reembed-index` can run.
 
 Also missing: `CREATE EXTENSION vector`, and the committed `document_chunks`
 table declares `embedding_id VARCHAR(100)` rather than a `vector(384)` column
@@ -375,6 +378,10 @@ To close the gap: `pg_dump --schema-only` against the live project, commit as
   `all-MiniLM-L6-v2` → extracts metadata (expiry dates, passport/PAN/Aadhaar/
   policy numbers) → stores via `complete_document_ingestion` → creates expiry
   alerts.
+- **`reembed-index`** — rebuilds one family's chunk vectors on the current
+  embedding model, in batches, resuming from a cursor in
+  `public.family_embedding_state`. Any member may read progress; only an admin
+  may run it. Driven from Settings › Search.
 - **`rag-search`** — embeds the query (`_shared/embeddings.ts`, same model as
   ingest) → retrieves chunks via `rag_retrieve_chunks`, which blends semantic
   distance and full-text rank 0.7/0.3 → sends chunks + query to Groq → returns
@@ -397,6 +404,26 @@ To close the gap: `pg_dump --schema-only` against the live project, commit as
 - **`invite-member`** — sends family invitation emails via Supabase Auth.
 
 All three handle CORS preflight explicitly.
+
+### Embeddings — one model, two prefixes, one registry
+
+`_shared/embeddings.ts` owns the model for **both** ingest and search;
+neither calls HuggingFace directly. Three things matter:
+
+- The model is `intfloat/multilingual-e5-small` (384 dims, MIT, 100 languages).
+  It replaced the English-only `all-MiniLM-L6-v2`, which gave Hindi and other
+  Indian-language passages meaningless vectors. Same dimension, so the
+  `vector(384)` column and HNSW index were never touched.
+- **E5 requires prefixes.** Passages are embedded as `passage: …` and questions
+  as `query: …`. Omitting them degrades retrieval sharply and silently. Use
+  `embedPassages` / `embedQuery`, never a raw call.
+- **Query and chunk vectors must come from the same model.** Mixing ranks by
+  noise instead of failing. `public.family_embedding_state` (migration 013)
+  records which model a family's chunks use and whether the rebuild finished;
+  until it has, `rag-search` sends no query vector and retrieval falls back to
+  keyword-only. A family with no row was created after 013 and is ready by
+  definition. **Changing the model means bumping it here and re-running
+  `reembed-index` for every family.**
 
 ### RAG pipeline
 

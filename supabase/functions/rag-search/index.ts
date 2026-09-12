@@ -4,7 +4,7 @@
 // ────────────────────────────────────────────────────────────────
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { embedText } from '../_shared/embeddings.ts';
+import { embedQuery, EMBEDDING_MODEL } from '../_shared/embeddings.ts';
 import { requireFamilyMember } from '../_shared/auth.ts';
 import { groqChat, hasGroqKey } from '../_shared/groq.ts';
 
@@ -144,9 +144,11 @@ Deno.serve(async (req) => {
     else if (history.length > 0) console.log(`[rag] Not condensed${cond.error ? ` (${cond.error})` : ''}`);
 
     const citedIds = history.flatMap(t => t.source_ids ?? []);
+    const indexReady = await isIndexReady(schema);
+    if (!indexReady) console.log(`[rag] ${schema} is mid re-embed — keyword-only retrieval`);
     const [pin, retrieved] = await Promise.all([
       history.length > 0 ? pinnedChunks(schema, history) : Promise.resolve({ chunks: [] as ChunkResult[], error: undefined as string | undefined }),
-      retrieveChunks(schema, standalone, citedIds),
+      retrieveChunks(schema, standalone, citedIds, indexReady),
     ]);
     const pinned = pin.chunks;
     if (pinned.length) console.log(`[rag] Pinned ${pinned.length} chunk(s) from cited documents`);
@@ -181,6 +183,7 @@ Deno.serve(async (req) => {
       condensed: cond.changed,
       ...(language ? { language } : {}),
       ...(trans.changed ? { translated: trans.query } : {}),
+      ...(indexReady ? {} : { index_rebuilding: true }),
       ...(trans.error ? { translate_error: trans.error } : {}),
       ...(voice ? { voice: true } : {}),
       // Which models actually ran, so a retired one shows up in a screenshot
@@ -270,6 +273,7 @@ async function retrieveChunks(
   schema: string,
   query: string,
   citedIds: string[] = [],
+  useVector = true,
 ): Promise<ChunkResult[]> {
   // Build tsquery from words. Letters and digits in any script, plus the
   // combining marks that Indic scripts need (a Devanagari vowel sign is \p{M}
@@ -289,8 +293,13 @@ async function retrieveChunks(
   // Embed the query so retrieval can rank semantically as well as lexically.
   // Returns null when HF is unavailable — retrieval then falls back to the
   // keyword-only path inside the RPC rather than failing the request.
-  const queryEmbedding = await embedText(query);
-  if (!queryEmbedding) {
+  //
+  // `useVector` is false while this family's chunks are still being re-embedded
+  // onto the current model. Comparing a new query vector against old chunk
+  // vectors would rank by noise, so keyword-only is the correct answer until
+  // the rebuild finishes (see _shared/embeddings.ts and migration 013).
+  const queryEmbedding = useVector ? await embedQuery(query) : null;
+  if (useVector && !queryEmbedding) {
     console.warn('[rag] No query embedding — keyword-only retrieval for this request');
   }
 
@@ -737,6 +746,32 @@ Keep answers concise (1-3 sentences). Include specific details like dates, amoun
     console.warn('[rag] Groq generation failed:', err);
     return { answer: buildFallbackAnswer(chunks, 'unavailable'), degraded: true, model: usedModel };
   }
+}
+
+/**
+ * Whether this family's chunk vectors match the model we embed queries with.
+ *
+ * No row means the family was created after migration 013, so every chunk it
+ * has was embedded with the current model — ready. A row exists only for
+ * families that predate the multilingual switch, and stays "not ready" until
+ * the reembed-index function has walked all of their chunks.
+ *
+ * On any error we assume NOT ready: keyword-only retrieval is always correct,
+ * where a mismatched vector search quietly ranks by noise.
+ */
+async function isIndexReady(schema: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('family_embedding_state')
+    .select('model, completed_at')
+    .eq('storage_namespace', schema)
+    .maybeSingle();
+
+  if (error) {
+    console.warn('[rag] Could not read index state, assuming mid-rebuild:', error.message);
+    return false;
+  }
+  if (!data) return true;
+  return !!data.completed_at && data.model === EMBEDDING_MODEL;
 }
 
 /** Accept a BCP-47 tag like "hi-IN" or "en"; anything else is ignored. */

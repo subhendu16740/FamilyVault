@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, StyleSheet, Switch, Modal, Pressable,
+  ActivityIndicator,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -9,6 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../lib/auth';
 import { useFamily } from '../lib/family-context';
 import { usePreferences } from '../lib/preferences';
+import { indexStatus, type IndexStatus } from '../lib/api';
 import { VOICE_LANGUAGES, voiceLanguage } from '../lib/voice-languages';
 import { hasVoiceFor } from '../lib/speech';
 
@@ -38,14 +40,75 @@ const settingsGroups = [
   },
 ];
 
+/** Supabase function errors arrive in several shapes; show something a person can read. */
+function readableError(err: unknown): string {
+  const message = (err as { message?: string })?.message ?? String(err);
+  if (/not a member|admin/i.test(message)) return 'Only a family admin can update this';
+  return message.slice(0, 80);
+}
+
 export default function SettingsScreen() {
   const { user, signOut } = useAuth();
-  const { membership } = useFamily();
+  const { membership, currentFamily } = useFamily();
   const { voiceMode, voiceLanguage: voiceLang, setVoiceMode, setVoiceLanguage } = usePreferences();
   const [langPickerOpen, setLangPickerOpen] = useState(false);
   // Which languages this phone can actually speak. Unknown until checked;
   // a missing entry means "not checked yet", never "unavailable".
   const [voiceAvailable, setVoiceAvailable] = useState<Record<string, boolean>>({});
+
+  // ─── Search index ───────────────────────────────────────
+  // One-time rebuild after the move to a multilingual embedding model.
+  // Until it runs, Indian-language documents are found by exact words only.
+  const [index, setIndex] = useState<IndexStatus | null>(null);
+  const [rebuilding, setRebuilding] = useState(false);
+  const [indexError, setIndexError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!currentFamily) return;
+    let cancelled = false;
+    indexStatus(currentFamily.id)
+      .then(s => { if (!cancelled) setIndex(s); })
+      .catch(err => { if (!cancelled) setIndexError(readableError(err)); });
+    return () => { cancelled = true; };
+  }, [currentFamily?.id]);
+
+  // Each call embeds what it can inside its time budget, so keep calling
+  // until it reports done. Progress updates between calls.
+  const rebuildIndex = async () => {
+    if (!currentFamily || rebuilding) return;
+    setRebuilding(true);
+    setIndexError(null);
+    try {
+      for (let pass = 0; pass < 200; pass++) {
+        const result = await indexStatus(currentFamily.id, false);
+        setIndex(result);
+        if (result.error) { setIndexError(result.error); break; }
+        if (result.done) break;
+        // Not done but nothing embedded either: something is wrong at the far
+        // end, and calling again would spin rather than finish.
+        if (result.processed === 0) {
+          setIndexError('Stalled — try again in a few minutes');
+          break;
+        }
+      }
+    } catch (err) {
+      setIndexError(readableError(err));
+    } finally {
+      setRebuilding(false);
+    }
+  };
+
+  const indexSubtitle = () => {
+    if (indexError) return indexError;
+    if (!index) return 'Checking…';
+    if (rebuilding) {
+      const of = index.total_count > 0 ? ` of ${index.total_count}` : '';
+      return `Updating… ${index.done_count}${of} passages`;
+    }
+    if (index.up_to_date) return 'Up to date — all languages searchable';
+    if (index.can_rebuild === false) return 'Needs updating — ask a family admin';
+    return 'Update needed for Indian-language documents';
+  };
 
   useEffect(() => {
     if (!langPickerOpen) return;
@@ -146,6 +209,32 @@ export default function SettingsScreen() {
               </View>
               <Text style={styles.settingValue}>{voiceLanguage(voiceLang).native}</Text>
               <Feather name="chevron-right" size={18} color="#9CA3AF" />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Search index — live, and only actionable when a rebuild is due */}
+        <View style={styles.group}>
+          <Text style={styles.groupTitle}>Search</Text>
+          <View style={styles.groupCard}>
+            <TouchableOpacity
+              style={styles.settingRow}
+              activeOpacity={index && !index.up_to_date && index.can_rebuild !== false ? 0.7 : 1}
+              disabled={rebuilding || !index || index.up_to_date || index.can_rebuild === false}
+              onPress={rebuildIndex}
+            >
+              <View style={styles.settingIconWrap}>
+                <Feather name="refresh-cw" size={18} color="#2A3D66" />
+              </View>
+              <View style={styles.settingText}>
+                <Text style={styles.settingLabel}>Search index</Text>
+                <Text style={styles.settingSub}>{indexSubtitle()}</Text>
+              </View>
+              {rebuilding
+                ? <ActivityIndicator size="small" color="#2A3D66" />
+                : index && !index.up_to_date && index.can_rebuild !== false
+                  ? <Text style={styles.settingAction}>Update</Text>
+                  : null}
             </TouchableOpacity>
           </View>
         </View>
@@ -273,6 +362,7 @@ const styles = StyleSheet.create({
   settingLabel: { fontSize: 15, fontWeight: '500', color: '#1F2937' },
   settingSub: { fontSize: 12, color: '#9CA3AF', marginTop: 1 },
   settingValue: { fontSize: 15, color: '#4B5563' },
+  settingAction: { fontSize: 15, fontWeight: '600', color: '#2A3D66' },
   sheetBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(13, 17, 23, 0.45)',
