@@ -6,7 +6,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { embedQuery, EMBEDDING_MODEL } from '../_shared/embeddings.ts';
 import { requireFamilyMember } from '../_shared/auth.ts';
-import { groqChat, hasGroqKey } from '../_shared/groq.ts';
+import { groqChat, groqText, hasGroqKey } from '../_shared/groq.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -151,6 +151,7 @@ Deno.serve(async (req) => {
       retrieveChunks(schema, standalone, citedIds, indexReady),
     ]);
     const pinned = pin.chunks;
+    const retrievedChunks = retrieved.chunks;
     if (pinned.length) console.log(`[rag] Pinned ${pinned.length} chunk(s) from cited documents`);
     if (pin.error) console.warn(`[rag] Pin error: ${pin.error}`);
 
@@ -159,7 +160,7 @@ Deno.serve(async (req) => {
     // considered — and then the judge decides, like everything else. That is
     // what stops last turn's document crowding out this turn's answer when
     // the user changes subject.
-    const candidates = dedupeChunks([...pinned, ...retrieved]);
+    const candidates = dedupeChunks([...pinned, ...retrievedChunks]);
     console.log(`[rag] ${candidates.length} candidate chunks`);
 
     // 3. Judge every candidate against the question; keep only the relevant.
@@ -176,7 +177,7 @@ Deno.serve(async (req) => {
       history_turns: history.length,
       client_sent_sources: clientSentSources,
       pinned_docs: uniqNames(pinned),
-      retrieved_docs: uniqNames(retrieved),
+      retrieved_docs: uniqNames(retrievedChunks),
       candidate_count: candidates.length,
       kept_count: chunks.length,
       kept_docs: uniqNames(chunks),
@@ -184,6 +185,11 @@ Deno.serve(async (req) => {
       ...(language ? { language } : {}),
       ...(trans.changed ? { translated: trans.query } : {}),
       ...(indexReady ? {} : { index_rebuilding: true }),
+      // Did the question actually get a vector? Without one, retrieval is
+      // keyword-only, which finds nothing when the question and the documents
+      // are in different scripts. This is the difference between "the index
+      // is not ready", "embedding failed" and "there is genuinely no match".
+      embedded: retrieved.embedded,
       ...(trans.error ? { translate_error: trans.error } : {}),
       ...(voice ? { voice: true } : {}),
       // Which models actually ran, so a retired one shows up in a screenshot
@@ -274,7 +280,7 @@ async function retrieveChunks(
   query: string,
   citedIds: string[] = [],
   useVector = true,
-): Promise<ChunkResult[]> {
+): Promise<{ chunks: ChunkResult[]; embedded: boolean }> {
   // Build tsquery from words. Letters and digits in any script, plus the
   // combining marks that Indic scripts need (a Devanagari vowel sign is \p{M}
   // — strip it and the word is gone). Everything else, including tsquery
@@ -288,7 +294,7 @@ async function retrieveChunks(
   // Use OR for broader matching
   const tsquery = words.join(' | ');
 
-  if (!tsquery) return [];
+  if (!tsquery) return { chunks: [], embedded: false };
 
   // Embed the query so retrieval can rank semantically as well as lexically.
   // Returns null when HF is unavailable — retrieval then falls back to the
@@ -314,7 +320,7 @@ async function retrieveChunks(
 
   if (error) {
     console.warn('[rag] Chunk retrieval RPC failed, trying direct query:', error.message);
-    return await fallbackRetrieve(schema, query, words);
+    return { chunks: await fallbackRetrieve(schema, query, words), embedded: false };
   }
 
   const results = (data ?? []) as ChunkResult[];
@@ -328,7 +334,7 @@ async function retrieveChunks(
       Number(cited.has(b.document_id)) - Number(cited.has(a.document_id)));
   }
 
-  return results;
+  return { chunks: results, embedded: !!queryEmbedding };
 }
 
 // ─── Conversation helpers ──────────────────────────────────────
@@ -453,7 +459,7 @@ Reply with JSON only: {"scores":[{"i":0,"s":7}, ...]} — exactly one entry per 
     }
 
     const result = await response.json();
-    const raw = result.choices?.[0]?.message?.content ?? '';
+    const raw = groqText(result);
     const parsed = JSON.parse(raw) as { scores?: { i: number; s: number }[] };
     if (!Array.isArray(parsed.scores)) return fallback('no scores array');
 
@@ -518,7 +524,7 @@ Output ONLY the English translation on one line. No label, no quotes, no explana
     }
 
     const result = await response.json();
-    const raw: string = result.choices?.[0]?.message?.content ?? '';
+    const raw = groqText(result);
     const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
     let text = lines[lines.length - 1] ?? '';
     text = text
@@ -526,10 +532,14 @@ Output ONLY the English translation on one line. No label, no quotes, no explana
       .replace(/^["'\u201c\u2018]+|["'\u201d\u2019]+$/g, '')
       .trim();
 
-    // A translation that still has no Latin letters didn't translate.
+    // A translation that still has no Latin letters didn't translate. Report
+    // WHAT came back, not just that it was unusable: this runs on a phone
+    // where the diagnostic line is the only view of the pipeline, and
+    // "unusable output" alone sends everyone to the server logs.
     if (!text || text.length > 400 || !/[a-z]{2,}/i.test(text)) {
-      console.warn(`[rag] Translate rejected output: ${JSON.stringify(raw).slice(0, 200)}`);
-      return { query, changed: false, error: 'unusable output', model };
+      console.warn(`[rag] Translate rejected output: ${JSON.stringify(raw).slice(0, 300)}`);
+      const seen = raw ? `"${raw.replace(/\s+/g, ' ').slice(0, 60)}"` : 'empty reply';
+      return { query, changed: false, error: `unusable output — ${seen}`, model };
     }
     return { query: text, changed: true, model };
   } catch (err) {
@@ -584,7 +594,7 @@ Output ONLY the rewritten query on one line. No label, no quotes, no explanation
     }
 
     const result = await response.json();
-    const raw: string = result.choices?.[0]?.message?.content ?? '';
+    const raw = groqText(result);
 
     // Small models add preambles ("Here is the rewritten query:") despite
     // instructions. Take the last non-empty line and strip labels and quotes,
@@ -597,8 +607,9 @@ Output ONLY the rewritten query on one line. No label, no quotes, no explanation
       .trim();
 
     if (!text || text.length > 300) {
-      console.warn(`[rag] Condense rejected output: ${JSON.stringify(raw).slice(0, 200)}`);
-      return { query, changed: false, error: 'unusable output', model };
+      console.warn(`[rag] Condense rejected output: ${JSON.stringify(raw).slice(0, 300)}`);
+      const seen = raw ? `"${raw.replace(/\s+/g, ' ').slice(0, 60)}"` : 'empty reply';
+      return { query, changed: false, error: `unusable output — ${seen}`, model };
     }
 
     const changed = text.toLowerCase() !== query.trim().toLowerCase();
