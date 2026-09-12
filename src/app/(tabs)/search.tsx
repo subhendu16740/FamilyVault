@@ -425,8 +425,10 @@ export default function SearchScreen() {
           <View style={styles.indexStrip}>
             <ActivityIndicator size="small" color="#2A3D66" />
             <Text style={styles.indexStripText} numberOfLines={1}>
-              Improving search across languages… {indexFix.done_count}
-              {indexFix.total_count > 0 ? ` of ${indexFix.total_count}` : ''} passages
+              {indexFix.rechunking
+                ? 'Improving search across languages… re-reading your documents'
+                : `Improving search across languages… ${indexFix.done_count}` +
+                  `${indexFix.total_count > 0 ? ` of ${indexFix.total_count}` : ''} passages`}
             </Text>
           </View>
         )}
@@ -435,6 +437,15 @@ export default function SearchScreen() {
             <Feather name="check-circle" size={14} color="#2F7D5C" />
             <Text style={styles.indexStripText}>
               Search is ready. Ask again for a better answer.
+            </Text>
+          </View>
+        )}
+        {!!indexFix?.unindexed?.length && (
+          <View style={[styles.indexStrip, styles.indexStripError]}>
+            <Feather name="alert-triangle" size={14} color="#9A6200" />
+            <Text style={[styles.indexStripText, styles.indexStripErrorText]} numberOfLines={2}>
+              Not searchable, nothing could be read from {indexFix.unindexed.length === 1 ? 'it' : 'them'}:{' '}
+              {indexFix.unindexed.join(', ')}. Try uploading again.
             </Text>
           </View>
         )}

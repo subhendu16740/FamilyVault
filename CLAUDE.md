@@ -421,6 +421,29 @@ To close the gap: `pg_dump --schema-only` against the live project, commit as
 
 All three handle CORS preflight explicitly.
 
+### Chunking — sized to the model's window, not to taste
+
+`_shared/chunking.ts` owns the splitter for ingest and for the rebuild.
+
+- **The embedding model reads 512 tokens and silently ignores the rest.** A
+  chunk longer than that is embedded from its opening only: the tail is in the
+  database, findable by keyword, invisible to a question asked in other words.
+  This vault had chunks averaging ~1,750 characters and reaching 3,642, so most
+  passages were partly outside the window. Target is 320 tokens, hard ceiling
+  400.
+- **Tokens are not characters, and the ratio depends on the script.** "1 token
+  ≈ 4 characters" holds for English and is roughly double the truth for
+  Devanagari, Bengali and Tamil, where the tokenizer emits a token every 1-2
+  characters. `estimateTokens()` counts non-ASCII at double weight, so Indic
+  documents chunk smaller by themselves. Sizing Hindi by the English rule
+  overflows the window badly.
+- **The cascade matters more than it looks.** Paragraphs → lines → sentences
+  (including the danda `।`) → clauses → a hard cut. OCR output often has no
+  blank lines and sometimes no punctuation at all; the previous splitter gave
+  up on exactly that case and emitted one enormous chunk.
+- Changing the target means re-splitting stored documents: migration 016's
+  `rechunked_at` drives that as the first phase of `reembed-index`.
+
 ### Embeddings — one model, two prefixes, one registry
 
 `_shared/embeddings.ts` owns the model for **both** ingest and search;
@@ -457,6 +480,16 @@ neither calls HuggingFace directly. Three things matter:
   and a stale one leaves the vault with no vectors indefinitely. The work is
   shared in `_shared/reembed.ts` and takes a lease (a conditional update on
   `updated_at`) so parallel searches cannot trample one cursor.
+- **The rebuild has two phases.** First it re-splits every document from
+  `documents.ocr_text` with the current splitter — pure text work, no OCR and
+  no network, so it is cheap — and only then embeds. That order is forced:
+  splitting decides what the chunks *are*, so embedding first would be wasted.
+  Each phase has its own cursor (`rechunk_cursor`, `cursor_id`), so a run can
+  stop anywhere and resume.
+- **Documents with no chunks are reported, not hidden.** `rag_unindexed_documents`
+  lists them and the app names them; this vault had a PDF stuck at
+  `ingestion_status = 'pending'` for a month, never searchable, with nobody
+  told.
 
 ### RAG pipeline
 
