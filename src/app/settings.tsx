@@ -12,6 +12,7 @@ import { useFamily } from '../lib/family-context';
 import { usePreferences } from '../lib/preferences';
 import { indexStatus, type IndexStatus } from '../lib/api';
 import { VOICE_LANGUAGES, voiceLanguage } from '../lib/voice-languages';
+import { OCR_LANGUAGES, describeOcrLanguages } from '../lib/ocr-languages';
 import { hasVoiceFor } from '../lib/speech';
 
 const settingsGroups = [
@@ -50,8 +51,22 @@ function readableError(err: unknown): string {
 export default function SettingsScreen() {
   const { user, signOut } = useAuth();
   const { membership, currentFamily } = useFamily();
-  const { voiceMode, voiceLanguage: voiceLang, setVoiceMode, setVoiceLanguage } = usePreferences();
+  const {
+    voiceMode, voiceLanguage: voiceLang, documentLanguages,
+    setVoiceMode, setVoiceLanguage, setDocumentLanguages,
+  } = usePreferences();
   const [langPickerOpen, setLangPickerOpen] = useState(false);
+  const [docLangPickerOpen, setDocLangPickerOpen] = useState(false);
+
+  // Multi-select: tapping toggles, and English is never removable because OCR
+  // always reads it alongside whatever else is chosen.
+  const toggleDocLanguage = (code: string) => {
+    if (code === 'eng') return;
+    const current = documentLanguages ?? [];
+    setDocumentLanguages(
+      current.includes(code) ? current.filter(c => c !== code) : [...current, code],
+    );
+  };
   // Which languages this phone can actually speak. Unknown until checked;
   // a missing entry means "not checked yet", never "unavailable".
   const [voiceAvailable, setVoiceAvailable] = useState<Record<string, boolean>>({});
@@ -213,6 +228,30 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        {/* Documents — which languages scanning should read */}
+        <View style={styles.group}>
+          <Text style={styles.groupTitle}>Documents</Text>
+          <View style={styles.groupCard}>
+            <TouchableOpacity
+              style={styles.settingRow}
+              activeOpacity={0.7}
+              onPress={() => setDocLangPickerOpen(true)}
+            >
+              <View style={styles.settingIconWrap}>
+                <Feather name="file-text" size={18} color="#2A3D66" />
+              </View>
+              <View style={styles.settingText}>
+                <Text style={styles.settingLabel}>Document languages</Text>
+                <Text style={styles.settingSub}>What scanning should read on the page</Text>
+              </View>
+              <Text style={styles.settingValue} numberOfLines={1}>
+                {describeOcrLanguages(documentLanguages)}
+              </Text>
+              <Feather name="chevron-right" size={18} color="#9CA3AF" />
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {/* Search index — live, and only actionable when a rebuild is due */}
         <View style={styles.group}>
           <Text style={styles.groupTitle}>Search</Text>
@@ -279,6 +318,49 @@ export default function SettingsScreen() {
                       </Text>
                     </View>
                     {selected && <Feather name="check" size={20} color="#2A3D66" />}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={docLangPickerOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDocLangPickerOpen(false)}
+      >
+        <Pressable style={styles.sheetBackdrop} onPress={() => setDocLangPickerOpen(false)}>
+          <Pressable style={styles.sheet} onPress={() => {}}>
+            <Text style={styles.sheetTitle}>Document languages</Text>
+            <Text style={styles.sheetNote}>
+              Pick every language your scanned documents use. English is always read.
+              Each added language is downloaded once, the first time you scan.
+            </Text>
+            <ScrollView style={styles.sheetList}>
+              {OCR_LANGUAGES.map((l, i) => {
+                const selected = l.code === 'eng' || (documentLanguages ?? []).includes(l.code);
+                return (
+                  <TouchableOpacity
+                    key={l.code}
+                    style={[styles.langRow, i > 0 && styles.settingRowBorder]}
+                    activeOpacity={l.code === 'eng' ? 1 : 0.7}
+                    disabled={l.code === 'eng'}
+                    onPress={() => toggleDocLanguage(l.code)}
+                  >
+                    <View style={styles.settingText}>
+                      <Text style={[styles.langNative, selected && styles.langSelected]}>{l.native}</Text>
+                      <Text style={styles.settingSub}>
+                        {l.english}{l.code === 'eng' ? ' · always on' : ''}
+                      </Text>
+                    </View>
+                    <Feather
+                      name={selected ? 'check-square' : 'square'}
+                      size={20}
+                      color={selected ? '#2A3D66' : '#D1D5DB'}
+                    />
                   </TouchableOpacity>
                 );
               })}
@@ -361,7 +443,7 @@ const styles = StyleSheet.create({
   settingText: { flex: 1 },
   settingLabel: { fontSize: 15, fontWeight: '500', color: '#1F2937' },
   settingSub: { fontSize: 12, color: '#9CA3AF', marginTop: 1 },
-  settingValue: { fontSize: 15, color: '#4B5563' },
+  settingValue: { fontSize: 15, color: '#4B5563', maxWidth: 140 },
   settingAction: { fontSize: 15, fontWeight: '600', color: '#2A3D66' },
   sheetBackdrop: {
     flex: 1,
@@ -377,6 +459,7 @@ const styles = StyleSheet.create({
     maxHeight: '75%',
   },
   sheetTitle: { fontSize: 17, fontWeight: '700', color: '#2A3D66', paddingHorizontal: 20, marginBottom: 8 },
+  sheetNote: { fontSize: 12, color: '#6B7280', paddingHorizontal: 20, marginBottom: 12, lineHeight: 17 },
   sheetList: { paddingHorizontal: 4 },
   langRow: {
     flexDirection: 'row',

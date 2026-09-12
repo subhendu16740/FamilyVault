@@ -12,7 +12,11 @@ import * as ImagePicker from 'expo-image-picker';
 import { useFamily } from '../../lib/family-context';
 import { useAuth } from '../../lib/auth';
 import { fetchCategories, uploadDocument } from '../../lib/api';
-import { extractTextFromImage, isImageFile, type OcrProgress } from '../../lib/ocr';
+import {
+  extractTextFromImage, isImageFile, ocrLanguageGapOnThisDevice, type OcrProgress,
+} from '../../lib/ocr';
+import { usePreferences } from '../../lib/preferences';
+import { describeOcrLanguages } from '../../lib/ocr-languages';
 import type { Database } from '../../lib/database.types';
 
 type DocumentCategory = Database['public']['Tables']['document_categories']['Row'];
@@ -32,6 +36,13 @@ function getFileExtension(name: string): string {
 export default function UploadScreen() {
   const { user } = useAuth();
   const { currentFamily, members } = useFamily();
+  const { documentLanguages } = usePreferences();
+  // Shown while scanning, so it is obvious which languages are being read —
+  // and obvious what to change in Settings if a page comes back as nonsense.
+  const languageLabel = describeOcrLanguages(documentLanguages);
+  // Non-empty only on a phone app whose bundled recogniser cannot read a
+  // script the person selected.
+  const languageGap = ocrLanguageGapOnThisDevice(documentLanguages);
   const [pickedFile, setPickedFile] = useState<PickedFile | null>(null);
   const [selectedPerson, setSelectedPerson] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
@@ -147,7 +158,7 @@ export default function UploadScreen() {
     setOcrRunning(true);
     setOcrProgress({ stage: 'loading', progress: 0 });
     try {
-      const text = await extractTextFromImage(file.uri, setOcrProgress);
+      const text = await extractTextFromImage(file.uri, setOcrProgress, documentLanguages);
       setOcrText(text);
       console.log(`[OCR] Extracted ${text.length} chars from ${file.name}`);
     } catch (err) {
@@ -282,14 +293,26 @@ export default function UploadScreen() {
               </Text>
             </View>
 
+            {/* This build cannot read a script the person chose */}
+            {languageGap.length > 0 && (
+              <View style={styles.ocrGapCard}>
+                <Feather name="alert-triangle" size={16} color="#9A6200" />
+                <Text style={styles.ocrGapText}>
+                  This app can't read {languageGap.map(l => l.english).join(', ')} yet.
+                  Scanning still works, but only the English on the page will be found.
+                </Text>
+              </View>
+            )}
+
             {/* OCR Progress */}
             {ocrRunning && ocrProgress && (
               <View style={styles.ocrCard}>
                 <View style={styles.ocrHeader}>
                   <ActivityIndicator size="small" color="#2A3D66" />
                   <Text style={styles.ocrLabel}>
-                    {ocrProgress.stage === 'loading' ? 'Loading OCR engine...' :
-                     ocrProgress.stage === 'recognizing' ? 'Reading text from image...' : 'Done'}
+                    {ocrProgress.downloading ? `Getting ${languageLabel} language data...` :
+                     ocrProgress.stage === 'loading' ? 'Loading OCR engine...' :
+                     ocrProgress.stage === 'recognizing' ? `Reading ${languageLabel} text from image...` : 'Done'}
                   </Text>
                 </View>
                 <View style={styles.ocrBarBg}>
@@ -574,6 +597,18 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#2A3D66',
   },
+  ocrGapCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: '#FFF7E6',
+    borderWidth: 1,
+    borderColor: '#F5D9A0',
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 12,
+  },
+  ocrGapText: { flex: 1, fontSize: 12, color: '#7A5200', lineHeight: 17 },
   ocrBarBg: {
     height: 6,
     borderRadius: 3,

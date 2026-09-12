@@ -269,8 +269,9 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `family-context.tsx` | `FamilyProvider`: currentFamily, members, membership, needsFamily |
 | `drawer-context.tsx` | Profile drawer open/close state |
 | `api.ts` | **All** Supabase queries — documents, search, upload, RAG, notifications, invitations |
-| `ocr.ts` | Platform-split OCR with progress callback |
-| `preferences.tsx` | `PreferencesProvider`: voice assistant toggle + language, cached locally, stored on `public.users` |
+| `ocr.ts` | Platform-split OCR with progress callback; reads the person's chosen languages |
+| `ocr-languages.ts` | The document-language picker list, and `resolveOcrLanguages()` which always appends English |
+| `preferences.tsx` | `PreferencesProvider`: voice toggle + language, document languages. Cached locally, stored on `public.users`; reads and writes fall back to the older column set so an unapplied migration degrades one setting rather than all of them |
 | `speech.ts` | Voice: `listen`/`stopListening` (platform-split recogniser) and `speak`/`stopSpeaking` (expo-speech) |
 | `speech-text.ts` | `toSpeech()`: strips markdown and spells out ID numbers before they are read aloud |
 | `voice-languages.ts` | The language picker list and the few phrases the app itself says, per language |
@@ -298,6 +299,13 @@ Plus 8 `Platform.OS === 'web'` branches across `src/`. The important ones:
 - **`src/lib/ocr.ts`** runs two entirely different OCR engines —
   `tesseract.js` (WASM) on web, `react-native-mlkit-ocr` (native module) on
   Android/iOS. Touching this file means reasoning about both.
+  **Languages diverge here.** Tesseract reads every Indian script, fetching
+  each ~10-20MB model from a CDN on first use, so the web build honours the
+  person's Settings › Documents choice in full. The bundled ML Kit package
+  (`play-services-mlkit-text-recognition`) reads **Latin script only** —
+  Devanagari and the rest are separate ML Kit artifacts needing a native
+  build — so the upload screen warns via `ocrLanguageGapOnThisDevice()`
+  rather than silently returning garbage.
 - **`src/lib/supabase.ts`** only `require`s AsyncStorage on native; importing
   it unconditionally breaks the web build with "window is not defined".
   `src/lib/storage.ts` follows the same pattern.
@@ -348,7 +356,8 @@ create_expiry_alert          get_document_chunks
 other ten still exist only in the live database. Migration `012` adds the two
 voice-preference columns to `public.users`; the app tolerates their absence
 (falls back to the local cache) but the setting won't follow the account until
-it is applied. Migration `013` adds `public.family_embedding_state` plus three
+it is applied. Migration `014` adds `public.users.document_languages` on the
+same terms. Migration `013` adds `public.family_embedding_state` plus three
 service-role helpers (`rag_chunk_total`, `rag_chunks_to_embed`,
 `rag_set_chunk_embedding`) and must be applied before `reembed-index` can run.
 
@@ -427,6 +436,12 @@ neither calls HuggingFace directly. Three things matter:
 
 ### RAG pipeline
 
+**OCR is English-only in one remaining place:** the server-side OCR.space
+fallback, used for PDFs whose text could not be extracted. An unrecognised
+language code fails that request outright, so it stays on `eng`. Images are
+OCR'd on the client in the chosen languages; a *scanned Indian-language PDF*
+is the case still limited to English.
+
 ```
 INGEST  upload → client OCR (Tesseract web / ML Kit native) → upload file + text
         → ingest-document → OCR.space fallback if needed → chunk → embed
@@ -459,6 +474,11 @@ SEARCH  question → rag-search → embed query → retrieve chunks
   (e.g. `router.replace('/home' as any)`).
 - Re-fetch on focus with `useFocusEffect`, not `useEffect` — plain `useEffect`
   leaves lists stale after a delete on another screen.
+- **Language settings are two separate things.** Settings › Accessibility ›
+  *Voice language* is what the person speaks and hears. Settings › Documents ›
+  *Document languages* is what OCR reads off the page. A family can speak
+  Hindi and hold English papers, or the reverse, so never collapse them into
+  one setting.
 - **Voice mode** (Settings › Accessibility) is built for elderly users: one
   big control, one state at a time, everything spoken is also shown. Keep the
   four mic states (idle / listening / thinking / speaking) and never add a
