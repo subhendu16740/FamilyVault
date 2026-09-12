@@ -220,6 +220,8 @@ export interface IndexStatus {
   can_rebuild?: boolean;
   /** True while documents are still being re-split, before embedding starts. */
   rechunking?: boolean;
+  /** True while PDFs are being read again with a new extractor. */
+  reextracting?: boolean;
   /** Documents with no searchable text at all — an ingestion that never finished. */
   unindexed?: string[];
   error?: string;

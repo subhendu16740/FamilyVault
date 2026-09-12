@@ -434,6 +434,31 @@ To close the gap: `pg_dump --schema-only` against the live project, commit as
 
 All three handle CORS preflight explicitly.
 
+### PDF text — read by position, not by content-stream order
+
+`_shared/pdf-text.ts` extracts PDF text with PDF.js (`pdfjs-serverless`, a
+single-file build for runtimes without a filesystem) and rebuilds the page
+layout from coordinates.
+
+- **A PDF has no lines, paragraphs or table rows** — only glyphs at positions,
+  written in whatever order the producing program chose. Reading that stream
+  in order returns a table COLUMN BY COLUMN. The placements report stored
+  `Operations` and its `27 - 44` two hundred characters apart with nine other
+  functions in between, so no question about a row was answerable.
+- `reconstructLayout()` groups pieces sharing a baseline, orders them left to
+  right, and emits two spaces at a visible column gap. It is pure and
+  synchronous **on purpose**: the ordering rules are the fragile part, and
+  they can be exercised without a PDF engine.
+- Paragraph breaks compare against the page's **median line step**, not the
+  font size. A table on 22-unit rows in 10-point type is a table, not a page
+  of one-line paragraphs, and judging by font size says otherwise.
+- Fallbacks, in order: layout extraction → the old regex parser (no positions,
+  so no tables) → OCR.space. A PDF with no text layer yields nothing from the
+  first two, which is the signal that it is scanned.
+- `EXTRACTOR_VERSION` in `_shared/ingest.ts` records which reader produced a
+  family's stored text. Bumping it re-runs extraction over stored PDFs, the
+  same way changing the embedding model re-runs embedding.
+
 ### Chunking — sized to the model's window, not to taste
 
 `_shared/chunking.ts` owns the splitter for ingest and for the rebuild.
@@ -493,12 +518,18 @@ neither calls HuggingFace directly. Three things matter:
   and a stale one leaves the vault with no vectors indefinitely. The work is
   shared in `_shared/reembed.ts` and takes a lease (a conditional update on
   `updated_at`) so parallel searches cannot trample one cursor.
-- **The rebuild has two phases.** First it re-splits every document from
-  `documents.ocr_text` with the current splitter — pure text work, no OCR and
-  no network, so it is cheap — and only then embeds. That order is forced:
-  splitting decides what the chunks *are*, so embedding first would be wasted.
-  Each phase has its own cursor (`rechunk_cursor`, `cursor_id`), so a run can
-  stop anywhere and resume.
+- **The rebuild has four phases, and the order is forced.**
+  1. **Re-extract** stored PDFs when `extractor_version` has moved. Downloads
+     every file, so much the slowest; first because it rewrites text *and*
+     chunks, discarding anything the later phases had done.
+  2. **Retry** documents that were never indexed (migration 017).
+  3. **Re-split** from `documents.ocr_text` with the current splitter — pure
+     text work, no OCR and no network, so it is cheap.
+  4. **Embed.** Last because splitting decides what the chunks *are*, so
+     embedding before it would be wasted.
+
+  Each phase has its own cursor (`reextract_cursor`, `rechunk_cursor`,
+  `cursor_id`), so a run can stop anywhere and resume.
 - **Documents with no chunks are retried, then reported.** The rebuild's first
   phase gives each one a single attempt through the full ingest pipeline
   (migration 017). It is bounded by construction: a document that yields text

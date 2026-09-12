@@ -23,7 +23,7 @@
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { embedPassages, EMBEDDING_MODEL } from './embeddings.ts';
 import { chunkText } from './chunking.ts';
-import { ingestDocument } from './ingest.ts';
+import { ingestDocument, reextractDocument, EXTRACTOR_VERSION } from './ingest.ts';
 
 /** One HF call per batch: small enough that a failure costs little. */
 export const BATCH_SIZE = 32;
@@ -42,6 +42,9 @@ export interface StateRow {
   rechunk_cursor?: string | null;
   /** Set once every document has been split with the current splitter. */
   rechunked_at?: string | null;
+  /** Which text extractor produced this family's stored text (migration 018). */
+  extractor_version?: string | null;
+  reextract_cursor?: string | null;
 }
 
 export interface ReembedProgress {
@@ -52,6 +55,8 @@ export interface ReembedProgress {
   error?: string;
   /** True while documents are still being re-split, before embedding starts. */
   rechunking?: boolean;
+  /** True while PDFs are being read again, the slowest phase. */
+  reextracting?: boolean;
 }
 
 export async function loadState(
@@ -59,13 +64,14 @@ export async function loadState(
   schema: string,
 ): Promise<StateRow | null> {
   const BASE = 'storage_namespace, model, cursor_id, done_count, total_count, completed_at, updated_at';
+  const NEWEST = `${BASE}, rechunk_cursor, rechunked_at, extractor_version, reextract_cursor`;
   // Ask for the newest shape, then fall back. A column a migration has not
   // added yet fails the WHOLE select, and a rebuild that cannot read its own
   // state never starts — which is exactly how migration 016 being unapplied
   // stopped every rebuild instead of just the re-chunk phase.
   let { data, error } = await supabase
     .from('family_embedding_state')
-    .select(`${BASE}, rechunk_cursor, rechunked_at`)
+    .select(NEWEST)
     .eq('storage_namespace', schema)
     .maybeSingle();
   if (error) {
@@ -74,9 +80,13 @@ export async function loadState(
       .select(BASE)
       .eq('storage_namespace', schema)
       .maybeSingle());
-    // Without 016 there is no re-chunk phase to run, so claim it is done and
-    // let the embedding phase proceed rather than blocking on a missing column.
-    if (data) (data as StateRow).rechunked_at = new Date(0).toISOString();
+    // Without 016 and 018 there are no re-chunk or re-extract phases to run,
+    // so claim both are done and let the embedding phase proceed rather than
+    // blocking on a missing column.
+    if (data) {
+      (data as StateRow).rechunked_at = new Date(0).toISOString();
+      (data as StateRow).extractor_version = EXTRACTOR_VERSION;
+    }
   }
   if (error) {
     console.warn('[reembed] Could not read state:', error.message);
@@ -97,7 +107,11 @@ export async function saveState(
   if (error) {
     // Same reasoning as the read: drop the columns migration 016 adds rather
     // than losing the progress this run actually made.
-    const { rechunk_cursor: _c, rechunked_at: _a, ...older } = row as Record<string, unknown>;
+    const {
+      rechunk_cursor: _c, rechunked_at: _a,
+      extractor_version: _v, reextract_cursor: _r,
+      ...older
+    } = row as Record<string, unknown>;
     ({ error } = await supabase
       .from('family_embedding_state')
       .upsert(older, { onConflict: 'storage_namespace' }));
@@ -111,6 +125,60 @@ export function isUpToDate(state: StateRow | null): boolean {
   // it has was embedded with the current model, by the current splitter.
   if (!state) return true;
   return !!state.completed_at && state.model === EMBEDDING_MODEL;
+}
+
+/**
+ * Read every stored PDF again with the current extractor, a few at a time.
+ *
+ * The slowest phase by far — each document is downloaded and parsed — and the
+ * only one that cannot work from documents.ocr_text, because that text is
+ * what is wrong. It runs first because it rewrites both the text AND the
+ * chunks, so anything the later phases did to the old chunks is discarded.
+ */
+async function reextractPhase(
+  supabase: SupabaseClient,
+  schema: string,
+  state: StateRow,
+  deadline: number,
+): Promise<{ done: boolean; documents: number; cursor: string | null; error?: string }> {
+  let cursor = state.reextract_cursor ?? null;
+  let documents = 0;
+
+  while (Date.now() < deadline) {
+    const { data, error } = await supabase.rpc('rag_documents_to_reextract', {
+      p_schema: schema, p_after: cursor, p_limit: 2,
+    });
+    if (error) {
+      // Migration 018 not applied: skip the phase rather than block the rest.
+      if (/find the function|schema cache|does not exist/i.test(error.message)) {
+        return { done: true, documents, cursor };
+      }
+      return { done: false, documents, cursor, error: `Could not list PDFs: ${error.message}` };
+    }
+
+    const docs = (data ?? []) as { id: string; storage_path: string; file_name: string }[];
+    if (docs.length === 0) return { done: true, documents, cursor };
+
+    for (const doc of docs) {
+      try {
+        const result = await reextractDocument(supabase, schema, doc.id, doc.storage_path);
+        if (result.empty) {
+          console.warn(`[reembed] Re-extract produced nothing for ${doc.file_name} — keeping existing text`);
+        } else {
+          console.log(`[reembed] Re-extracted ${doc.file_name}: ${result.chars} chars, ${result.chunks} chunks`);
+          documents++;
+        }
+      } catch (err) {
+        // One unreadable file must not stall the whole family. Its existing
+        // text and chunks are untouched, so it stays as searchable as it was.
+        console.warn(`[reembed] Re-extract failed for ${doc.file_name}:`, err);
+      }
+      cursor = doc.id;
+      if (Date.now() >= deadline) break;
+    }
+  }
+
+  return { done: false, documents, cursor };
 }
 
 /**
@@ -277,6 +345,33 @@ export async function runReembed(
   let cursor = state.cursor_id;
   let doneCount = state.done_count;
   let total = state.total_count;
+
+  // ── Phase A: read stored PDFs again when extraction itself has changed.
+  // Ahead of everything else because it rewrites text and chunks together,
+  // which would discard any work the later phases had done.
+  if (state.extractor_version !== EXTRACTOR_VERSION) {
+    const reextract = await reextractPhase(supabase, schema, state, deadline);
+    await saveState(supabase, schema, {
+      model: EMBEDDING_MODEL,
+      reextract_cursor: reextract.cursor,
+      ...(reextract.done
+        ? { extractor_version: EXTRACTOR_VERSION, rechunked_at: new Date().toISOString(), cursor_id: null, done_count: 0 }
+        : {}),
+      completed_at: null,
+    });
+    if (reextract.error || !reextract.done) {
+      return {
+        done: false, processed: 0, done_count: doneCount, total_count: total,
+        ...(reextract.error ? { error: reextract.error } : {}), reextracting: true,
+      };
+    }
+    console.log(`[reembed] ${schema}: re-extracted ${reextract.documents} PDF(s)`);
+    // Chunks were rewritten by extraction, so embedding starts over and the
+    // separate re-chunk phase has nothing left to do.
+    state.rechunked_at = new Date().toISOString();
+    cursor = null;
+    doneCount = 0;
+  }
 
   // ── Phase 0: give one attempt to documents that were never indexed, so a
   // failed upload is repaired rather than sitting in the vault unsearchable.

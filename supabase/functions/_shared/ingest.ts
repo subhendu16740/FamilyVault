@@ -17,6 +17,10 @@
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { embedPassages } from './embeddings.ts';
 import { chunkText } from './chunking.ts';
+import { extractPdfLayoutText } from './pdf-text.ts';
+
+/** Bumped when extraction changes enough that stored text should be redone. */
+export const EXTRACTOR_VERSION = 'pdfjs-layout-1';
 
 const OCR_SPACE_API_KEY = Deno.env.get('OCR_SPACE_API_KEY') ?? '';
 
@@ -124,6 +128,60 @@ export async function ingestDocument(
   };
 }
 
+/**
+ * Read one stored document again and replace its text and chunks.
+ *
+ * Used when extraction itself has changed, where re-chunking is not enough:
+ * documents.ocr_text is the thing that was wrong, so the file has to come
+ * back out of storage. Vectors are deliberately NOT written here — the
+ * embedding phase does that, and keeping the two apart means a slow
+ * re-extraction pass never holds up a cheap one.
+ *
+ * Text is stored before chunks, so a failure in between leaves the document
+ * searchable on its old chunks rather than on nothing.
+ */
+export async function reextractDocument(
+  supabase: SupabaseClient,
+  schema: string,
+  documentId: string,
+  storagePath: string,
+): Promise<{ chars: number; chunks: number; empty: boolean }> {
+  const { data: fileData, error: dlError } = await supabase.storage
+    .from('documents')
+    .download(storagePath);
+  if (dlError || !fileData) {
+    throw new Error(`Download failed: ${dlError?.message ?? 'No data'}`);
+  }
+
+  const text = storagePath.toLowerCase().endsWith('.pdf')
+    ? await extractTextFromPdf(fileData)
+    : await fileData.text();
+
+  if (!text.trim()) return { chars: 0, chunks: 0, empty: true };
+
+  const chunks = chunkText(text);
+  if (chunks.length === 0) return { chars: text.length, chunks: 0, empty: true };
+
+  const { error: textErr } = await supabase.rpc('rag_set_document_text', {
+    p_schema: schema, p_document_id: documentId, p_ocr_text: text,
+  });
+  if (textErr) throw new Error(`Could not store text: ${textErr.message}`);
+
+  const { error: chunkErr } = await supabase.rpc('rag_replace_document_chunks', {
+    p_schema: schema,
+    p_document_id: documentId,
+    p_chunks: chunks.map(c => ({
+      chunk_index: c.chunk_index,
+      content: c.content,
+      token_count: c.token_count,
+      embedding: null,
+    })),
+  });
+  if (chunkErr) throw new Error(`Could not store chunks: ${chunkErr.message}`);
+
+  return { chars: text.length, chunks: chunks.length, empty: false };
+}
+
 async function createExpiryAlert(
   supabase: SupabaseClient,
   familyId: string,
@@ -154,7 +212,24 @@ async function extractTextFromPdf(blob: Blob): Promise<string> {
     const buffer = await blob.arrayBuffer();
     const bytes = new Uint8Array(buffer);
 
-    // Try simple PDF text extraction first (works for digital/text PDFs)
+    // Layout-aware first: PDF.js gives every piece of text with its position
+    // on the page, which is the only way to recover table rows. Reading the
+    // content stream in order — what the simple parser below does — returns a
+    // table column by column, with the labels in one run and the figures in
+    // another, and no question about a row can then be answered.
+    try {
+      const laid = await extractPdfLayoutText(bytes);
+      if (laid.trim().length > 50) {
+        console.log(`[ingest] PDF layout extraction: ${laid.length} chars`);
+        return laid;
+      }
+      console.log('[ingest] PDF has no text layer — likely scanned');
+    } catch (err) {
+      console.warn('[ingest] Layout extraction failed, falling back:', err);
+    }
+
+    // Older regex parser: no positions, so no table structure, but it costs
+    // nothing and still beats nothing if PDF.js cannot open the file.
     const text = extractPdfTextSimple(bytes);
 
     if (text.trim().length > 50) {
