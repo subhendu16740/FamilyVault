@@ -353,7 +353,9 @@ export default function SearchScreen() {
                             {msg.debug.models?.answer ? ` · ${shortModel(msg.debug.models.answer)}` : ''}
                             {msg.debug.history_turns > 0 && !msg.debug.client_sent_sources ? ' · old client' : ''}
                             {msg.debug.index_rebuilding ? ' · index rebuilding — run Settings › Search' : ''}
-                            {msg.debug.embedded === false && !msg.debug.index_rebuilding ? ' · no query vector, keywords only' : ''}
+                            {msg.debug.embedded === false && !msg.debug.index_rebuilding
+                              ? ` · no query vector${msg.debug.embed_error ? `: ${msg.debug.embed_error}` : ', keywords only'}`
+                              : ''}
                             {msg.debug.pin_error ? ` · pin: ${msg.debug.pin_error}` : ''}
                             {msg.debug.rerank_error ? ` · rerank: ${msg.debug.rerank_error}` : ''}
                             {msg.debug.condense_error ? ` · condense: ${msg.debug.condense_error}` : ''}

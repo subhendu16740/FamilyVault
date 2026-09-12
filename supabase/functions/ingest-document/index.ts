@@ -91,8 +91,15 @@ Deno.serve(async (req) => {
     console.log(`[ingest] Created ${chunks.length} chunks`);
 
     // 4. Generate embeddings
-    const embeddings = await embedPassages(chunks.map(c => c.content));
+    const { vectors: embeddings, error: embedError } = await embedPassages(chunks.map(c => c.content));
     const embedded = embeddings.filter(Boolean).length;
+    if (embedError) {
+      // This used to be a warning nobody saw, and every chunk in the vault
+      // ended up with a NULL vector because of it. An error is not fatal —
+      // the document is still stored and still found by keyword — but it
+      // must be visible.
+      console.error(`[ingest] NO EMBEDDINGS STORED: ${embedError}`);
+    }
     console.log(`[ingest] Embedded ${embedded}/${chunks.length} chunks`);
 
     // 5. Prepare chunks with embeddings. A null vector is not fatal: the chunk

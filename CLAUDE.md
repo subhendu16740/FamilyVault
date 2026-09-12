@@ -400,7 +400,14 @@ To close the gap: `pg_dump --schema-only` against the live project, commit as
   (answer, condense, rerank) has a preference list, a secret of the role's name
   (`GROQ_MODEL`, `GROQ_CONDENSE_MODEL`, `GROQ_RERANK_MODEL`) always goes first,
   Groq's `/models` endpoint prunes names that no longer exist, and a call that
-  still hits a retired model is retried once on the next candidate. Groq
+  still hits a retired model is retried once on the next candidate.
+  **The condense, translate and rerank steps all use JSON mode**
+  (`response_format: {type:'json_object'}`). These are reasoning models: asked
+  for a bare line they answer with their thinking ("We need to translate the
+  user's message…") and the real answer is buried inside it. A JSON contract
+  puts it in a field reasoning cannot occupy. `groqText()` reads `content`,
+  `reasoning_content` and `reasoning` and strips channel markers, because the
+  text is not always where you expect. Groq
   retires free-tier models on short notice (`llama-3.3-70b-versatile` in June
   2026, `llama-3.1-8b-instant` in August 2026) — when adding a fallback, confirm
   the name on Groq's models page first. The models that actually ran are
@@ -426,6 +433,15 @@ neither calls HuggingFace directly. Three things matter:
 - **E5 requires prefixes.** Passages are embedded as `passage: …` and questions
   as `query: …`. Omitting them degrades retrieval sharply and silently. Use
   `embedPassages` / `embedQuery`, never a raw call.
+- **The endpoint moved, and the silence cost us the whole feature.**
+  `api-inference.huggingface.co` now answers `410 Gone`; HuggingFace serves
+  inference from `router.huggingface.co`. Every chunk in the live vault sat
+  with a NULL embedding for the life of the project because of it, and the
+  only sign was a `console.warn`. `embedPassages` / `embedQuery` now return
+  the reason alongside the vectors, callers surface it (`debug.embed_error`
+  in search, an error on the Settings › Search row, `console.error` in
+  ingest), and the host is a list to try rather than one name to be wrong
+  about. A token is now required — `HF_API_TOKEN` must be set.
 - **Query and chunk vectors must come from the same model.** Mixing ranks by
   noise instead of failing. `public.family_embedding_state` (migration 013)
   records which model a family's chunks use and whether the rebuild finished;
