@@ -451,7 +451,12 @@ neither calls HuggingFace directly. Three things matter:
   `reembed-index` for every family.** The search screen starts that rebuild
   by itself when an answer reports `debug.index_rebuilding`, so nobody has to
   find the Settings row for search to work; Settings › Search remains the
-  manual route and the place errors are shown in full.
+  manual route and the place errors are shown in full. **`rag-search` also
+  starts one server-side**, after its response, whenever it sees a stale
+  index — the client path depends on the browser having the current bundle,
+  and a stale one leaves the vault with no vectors indefinitely. The work is
+  shared in `_shared/reembed.ts` and takes a lease (a conditional update on
+  `updated_at`) so parallel searches cannot trample one cursor.
 
 ### RAG pipeline
 
@@ -471,10 +476,14 @@ SEARCH  question → rag-search → embed query → retrieve chunks
 ```
 
 **Retrieval fetches 40 and judges 15, with no document allowed more than 4 of
-those slots** (`diversify()`). A long document mentioning the search term on
-every page will otherwise fill every candidate slot: a 111-chunk tax return
-buried the one-chunk PAN card that actually answered the question. The cap is
-what lets a short, exactly-right document reach the judge.
+those slots.** The cap is applied **in SQL** (`rag_retrieve_chunks`'s
+`p_per_doc`, migration 015) because applying it to the rows the RPC returns is
+too late: when one document supplies every row there is nothing left to
+diversify with. Measured on the live vault, for `what | arpita | mobile |
+number`, 36 of the top 40 keyword hits were a 111-chunk tax return — Indian tax
+forms say "mobile" and "number" on every page — and the resume carrying the
+actual number scored zero slots. `diversify()` in `rag-search` applies the same
+rule again once pinned chunks are mixed in.
 
 ---
 

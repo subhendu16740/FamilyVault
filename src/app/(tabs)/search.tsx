@@ -68,9 +68,14 @@ export default function SearchScreen() {
         setIndexFix(result);
         if (result.error || result.done || result.processed === 0) break;
       }
-    } catch {
-      // Not an admin, or the service is down. Search still works on keywords.
-      setIndexFix(null);
+    } catch (err) {
+      // A non-admin gets a 403 and should see nothing; anything else is worth
+      // showing, because a silent failure here is what kept the index stale.
+      const message = (err as { message?: string })?.message ?? String(err);
+      setIndexFix(/403|admin/i.test(message) ? null : {
+        up_to_date: false, done: false, processed: 0,
+        done_count: 0, total_count: 0, model: '', error: message.slice(0, 120),
+      });
     }
   }, []);
 
@@ -433,6 +438,14 @@ export default function SearchScreen() {
             </Text>
           </View>
         )}
+        {indexFix?.error && (
+          <View style={[styles.indexStrip, styles.indexStripError]}>
+            <Feather name="alert-triangle" size={14} color="#9A6200" />
+            <Text style={[styles.indexStripText, styles.indexStripErrorText]} numberOfLines={2}>
+              Couldn't finish improving search: {indexFix.error}
+            </Text>
+          </View>
+        )}
 
         {/* Input Bar */}
         <View style={styles.inputBar}>
@@ -630,6 +643,8 @@ const styles = StyleSheet.create({
     borderTopColor: '#DBE7FB',
   },
   indexStripText: { flex: 1, fontSize: 12, color: '#2A3D66' },
+  indexStripError: { backgroundColor: '#FFF7E6', borderTopColor: '#F5D9A0' },
+  indexStripErrorText: { color: '#7A5200' },
   // ─── Input Bar ────────────────────────────────────────
   inputBar: {
     backgroundColor: '#FFFFFF',
