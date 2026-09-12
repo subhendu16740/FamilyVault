@@ -22,6 +22,7 @@
 
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { embedPassages, EMBEDDING_MODEL } from './embeddings.ts';
+import { chunkText } from './chunking.ts';
 
 /** One HF call per batch: small enough that a failure costs little. */
 export const BATCH_SIZE = 32;
@@ -36,6 +37,10 @@ export interface StateRow {
   total_count: number;
   completed_at: string | null;
   updated_at?: string;
+  /** Document cursor for the re-chunk phase (migration 016). */
+  rechunk_cursor?: string | null;
+  /** Set once every document has been split with the current splitter. */
+  rechunked_at?: string | null;
 }
 
 export interface ReembedProgress {
@@ -44,6 +49,8 @@ export interface ReembedProgress {
   done_count: number;
   total_count: number;
   error?: string;
+  /** True while documents are still being re-split, before embedding starts. */
+  rechunking?: boolean;
 }
 
 export async function loadState(
@@ -52,7 +59,7 @@ export async function loadState(
 ): Promise<StateRow | null> {
   const { data, error } = await supabase
     .from('family_embedding_state')
-    .select('storage_namespace, model, cursor_id, done_count, total_count, completed_at, updated_at')
+    .select('storage_namespace, model, cursor_id, done_count, total_count, completed_at, updated_at, rechunk_cursor, rechunked_at')
     .eq('storage_namespace', schema)
     .maybeSingle();
   if (error) {
@@ -80,9 +87,69 @@ export async function saveState(
 /** True when this family's vectors match the model queries are embedded with. */
 export function isUpToDate(state: StateRow | null): boolean {
   // No row means the family was created after migration 013, so every chunk
-  // it has was embedded with the current model.
+  // it has was embedded with the current model, by the current splitter.
   if (!state) return true;
   return !!state.completed_at && state.model === EMBEDDING_MODEL;
+}
+
+/**
+ * Re-split every document with the current splitter, a few at a time.
+ *
+ * Pure text work against documents.ocr_text — no OCR, no network — so it is
+ * far cheaper than embedding and runs first, as its own phase with its own
+ * cursor. It has to run first because it decides what the chunks ARE;
+ * embedding chunks that are about to be replaced would be wasted.
+ *
+ * Chunks are written without vectors here. They stay findable by keyword
+ * throughout, and the embedding phase fills the vectors in.
+ */
+async function rechunkPhase(
+  supabase: SupabaseClient,
+  schema: string,
+  state: StateRow,
+  deadline: number,
+): Promise<{ done: boolean; documents: number; cursor: string | null; error?: string }> {
+  let cursor = state.rechunk_cursor ?? null;
+  let documents = 0;
+
+  while (Date.now() < deadline) {
+    const { data, error } = await supabase.rpc('rag_documents_to_rechunk', {
+      p_schema: schema, p_after: cursor, p_limit: 3,
+    });
+    if (error) {
+      console.error('[reembed] Could not list documents to re-chunk:', error.message);
+      return { done: false, documents, cursor, error: `Could not read documents: ${error.message}` };
+    }
+
+    const docs = (data ?? []) as { id: string; ocr_text: string }[];
+    if (docs.length === 0) return { done: true, documents, cursor };
+
+    for (const doc of docs) {
+      const chunks = chunkText(doc.ocr_text);
+      if (chunks.length === 0) { cursor = doc.id; continue; }
+
+      const { error: replaceErr } = await supabase.rpc('rag_replace_document_chunks', {
+        p_schema: schema,
+        p_document_id: doc.id,
+        p_chunks: chunks.map(c => ({
+          chunk_index: c.chunk_index,
+          content: c.content,
+          token_count: c.token_count,
+          embedding: null,
+        })),
+      });
+      if (replaceErr) {
+        // Leave the cursor before this document so the next run retries it,
+        // rather than marching past a document that lost its chunks.
+        console.error(`[reembed] Could not replace chunks for ${doc.id}: ${replaceErr.message}`);
+        return { done: false, documents, cursor, error: `Could not rewrite chunks: ${replaceErr.message}` };
+      }
+      cursor = doc.id;
+      documents++;
+    }
+  }
+
+  return { done: false, documents, cursor };
 }
 
 /**
@@ -126,26 +193,54 @@ export async function runReembed(
     return { done: false, processed: 0, done_count: state.done_count, total_count: state.total_count };
   }
 
+  const startedAt = Date.now();
+  const deadline = startedAt + opts.budgetMs;
+
   let cursor = state.cursor_id;
   let doneCount = state.done_count;
   let total = state.total_count;
+
+  // ── Phase 1: re-split documents, if this family has not been through the
+  // current splitter yet. Cheap, and it must finish before anything is
+  // embedded, because it decides what the chunks are.
+  if (!state.rechunked_at) {
+    const rechunk = await rechunkPhase(supabase, schema, state, deadline);
+    await saveState(supabase, schema, {
+      model: EMBEDDING_MODEL,
+      rechunk_cursor: rechunk.cursor,
+      ...(rechunk.done ? { rechunked_at: new Date().toISOString(), cursor_id: null, done_count: 0 } : {}),
+      completed_at: null,
+    });
+    if (rechunk.error) {
+      return { done: false, processed: 0, done_count: doneCount, total_count: total, error: rechunk.error, rechunking: true };
+    }
+    if (!rechunk.done) {
+      // Out of budget mid-split. Come back and carry on; nothing is embedded
+      // until every document has been re-split.
+      return { done: false, processed: 0, done_count: doneCount, total_count: total, rechunking: true };
+    }
+    console.log(`[reembed] ${schema}: re-split ${rechunk.documents} document(s)`);
+    // Chunk ids and counts all changed, so the embedding phase starts over.
+    cursor = null;
+    doneCount = 0;
+  }
 
   // A different model means the previous run's progress counts for nothing.
   if (state.model !== EMBEDDING_MODEL) {
     cursor = null;
     doneCount = 0;
-    const { data: freshTotal } = await supabase.rpc('rag_chunk_total', { p_schema: schema });
-    total = typeof freshTotal === 'number' ? freshTotal : total;
-    await saveState(supabase, schema, {
-      model: EMBEDDING_MODEL, cursor_id: null, done_count: 0, total_count: total, completed_at: null,
-    });
   }
 
-  const startedAt = Date.now();
+  {
+    const { data: freshTotal } = await supabase.rpc('rag_chunk_total', { p_schema: schema });
+    if (typeof freshTotal === 'number') total = freshTotal;
+  }
+
   let processed = 0;
   let finished = false;
 
-  while (Date.now() - startedAt < opts.budgetMs) {
+  // ── Phase 2: embed.
+  while (Date.now() < deadline) {
     const { data: batch, error: batchErr } = await supabase.rpc('rag_chunks_to_embed', {
       p_schema: schema, p_after: cursor, p_limit: BATCH_SIZE,
     });

@@ -218,6 +218,10 @@ export interface IndexStatus {
   model: string;
   /** Whether the signed-in member is allowed to start a rebuild. */
   can_rebuild?: boolean;
+  /** True while documents are still being re-split, before embedding starts. */
+  rechunking?: boolean;
+  /** Documents with no searchable text at all — an ingestion that never finished. */
+  unindexed?: string[];
   error?: string;
 }
 

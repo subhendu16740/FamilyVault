@@ -117,10 +117,16 @@ export default function SettingsScreen() {
     if (indexError) return indexError;
     if (!index) return 'Checking…';
     if (rebuilding) {
+      if (index.rechunking) return 'Updating… re-reading your documents';
       const of = index.total_count > 0 ? ` of ${index.total_count}` : '';
       return `Updating… ${index.done_count}${of} passages`;
     }
-    if (index.up_to_date) return 'Up to date — all languages searchable';
+    if (index.up_to_date) {
+      const stuck = index.unindexed?.length ?? 0;
+      return stuck > 0
+        ? `Up to date, but ${stuck} document${stuck === 1 ? '' : 's'} could not be read`
+        : 'Up to date — all languages searchable';
+    }
     if (index.can_rebuild === false) return 'Needs updating — ask a family admin';
     return 'Update needed for Indian-language documents';
   };

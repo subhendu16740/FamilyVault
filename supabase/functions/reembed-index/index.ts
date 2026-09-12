@@ -74,6 +74,7 @@ Deno.serve(async (req) => {
         total_count: state?.total_count ?? 0,
         model: EMBEDDING_MODEL,
         can_rebuild: isAdmin,
+        unindexed: await unindexedDocuments(schema),
       });
     }
 
@@ -88,6 +89,9 @@ Deno.serve(async (req) => {
       up_to_date: progress.done,
       model: EMBEDDING_MODEL,
       can_rebuild: isAdmin,
+      // Only worth naming once the rebuild is done: until then a document may
+      // simply be waiting its turn rather than genuinely unreadable.
+      ...(progress.done ? { unindexed: await unindexedDocuments(schema) } : {}),
     }, progress.error ? 503 : 200);
 
   } catch (err) {
@@ -95,6 +99,21 @@ Deno.serve(async (req) => {
     return json({ error: String(err) }, 500);
   }
 });
+
+/**
+ * Documents with no chunks at all: nothing for search to match, so they can
+ * never appear in an answer. Usually an ingestion that failed or never ran —
+ * this vault had a PDF sitting at status 'pending' for a month with nobody
+ * told. Naming them beats letting them look like documents with no answer.
+ */
+async function unindexedDocuments(schema: string): Promise<string[]> {
+  const { data, error } = await supabase.rpc('rag_unindexed_documents', { p_schema: schema });
+  if (error) {
+    console.warn('[reembed] Could not list unindexed documents:', error.message);
+    return [];
+  }
+  return ((data ?? []) as { file_name: string }[]).map(d => d.file_name);
+}
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {

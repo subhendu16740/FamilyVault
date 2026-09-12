@@ -9,13 +9,12 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { requireFamilyMember } from '../_shared/auth.ts';
 import { embedPassages } from '../_shared/embeddings.ts';
+import { chunkText, type Chunk } from '../_shared/chunking.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const OCR_SPACE_API_KEY = Deno.env.get('OCR_SPACE_API_KEY') ?? ''; // supabase secrets set OCR_SPACE_API_KEY=...
 
-const CHUNK_SIZE = 500;     // target tokens per chunk
-const CHUNK_OVERLAP = 50;   // overlap between chunks
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
@@ -87,7 +86,7 @@ Deno.serve(async (req) => {
     console.log(`[ingest] Extracted ${extractedText.length} chars`);
 
     // 3. Chunk the text
-    const chunks = chunkText(extractedText, CHUNK_SIZE, CHUNK_OVERLAP);
+    const chunks = chunkText(extractedText);
     console.log(`[ingest] Created ${chunks.length} chunks`);
 
     // 4. Generate embeddings
@@ -322,103 +321,6 @@ async function ocrWithOcrSpace(blob: Blob, type: 'pdf' | 'image'): Promise<strin
 
 // ─── Chunking ───────────────────────────────────────────────────
 
-interface Chunk {
-  content: string;
-  chunk_index: number;
-  token_count: number;
-}
-
-function chunkText(text: string, targetSize: number, overlap: number): Chunk[] {
-  if (!text.trim()) return [];
-
-  // Estimate tokens (rough: 1 token ≈ 4 chars)
-  const estimatedTokens = Math.ceil(text.length / 4);
-
-  // If text fits in a single chunk, return as-is
-  if (estimatedTokens <= targetSize * 1.5) {
-    return [{
-      content: text.trim(),
-      chunk_index: 0,
-      token_count: estimatedTokens,
-    }];
-  }
-
-  // Structure-aware splitting: prefer paragraph and sentence boundaries
-  const paragraphs = text.split(/\n\n+/);
-  const chunks: Chunk[] = [];
-  let currentChunk = '';
-  let chunkIndex = 0;
-
-  for (const para of paragraphs) {
-    const combined = currentChunk ? `${currentChunk}\n\n${para}` : para;
-    const combinedTokens = Math.ceil(combined.length / 4);
-
-    if (combinedTokens > targetSize && currentChunk) {
-      // Save current chunk
-      chunks.push({
-        content: currentChunk.trim(),
-        chunk_index: chunkIndex++,
-        token_count: Math.ceil(currentChunk.length / 4),
-      });
-
-      // Start new chunk with overlap
-      const overlapChars = overlap * 4;
-      const overlapText = currentChunk.slice(-overlapChars);
-      currentChunk = overlapText + '\n\n' + para;
-    } else {
-      currentChunk = combined;
-    }
-  }
-
-  // Don't forget the last chunk
-  if (currentChunk.trim()) {
-    chunks.push({
-      content: currentChunk.trim(),
-      chunk_index: chunkIndex,
-      token_count: Math.ceil(currentChunk.length / 4),
-    });
-  }
-
-  // If we only got one chunk from paragraph splitting but it's too long,
-  // fall back to sentence-level splitting
-  if (chunks.length === 1 && chunks[0].token_count > targetSize * 2) {
-    return chunkBySentences(text, targetSize, overlap);
-  }
-
-  return chunks;
-}
-
-function chunkBySentences(text: string, targetSize: number, overlap: number): Chunk[] {
-  const sentences = text.match(/[^.!?\n]+[.!?\n]+/g) ?? [text];
-  const chunks: Chunk[] = [];
-  let current = '';
-  let idx = 0;
-
-  for (const sentence of sentences) {
-    const combined = current + sentence;
-    if (Math.ceil(combined.length / 4) > targetSize && current) {
-      chunks.push({
-        content: current.trim(),
-        chunk_index: idx++,
-        token_count: Math.ceil(current.length / 4),
-      });
-      const overlapChars = overlap * 4;
-      current = current.slice(-overlapChars) + sentence;
-    } else {
-      current = combined;
-    }
-  }
-
-  if (current.trim()) {
-    chunks.push({
-      content: current.trim(),
-      chunk_index: idx,
-      token_count: Math.ceil(current.length / 4),
-    });
-  }
-
-  return chunks;
-}
 
 // ─── Embeddings (HuggingFace Inference API) ───────────────────
 
