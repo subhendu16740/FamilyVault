@@ -45,14 +45,20 @@ Deno.serve(async (req) => {
     const { family_id, status_only } = await req.json();
     if (!family_id) return json({ error: 'Missing family_id' }, 400);
 
-    // Any member may ask how the index is doing; only an admin may rebuild
-    // it, because that rewrites every vector in the family's schema.
+    // Any member may rebuild, not only an admin.
+    //
+    // This looked like a privileged operation and is not one. It recomputes
+    // derived data — chunks and vectors — from documents the caller can
+    // already read and search; it cannot reveal anything they could not
+    // already ask for, and it writes nothing a person authored. Gating it on
+    // a role meant a viewer's search stayed permanently degraded while the
+    // app told them to go and find an admin, and the server does exactly the
+    // same work unprompted on every stale search anyway, so the gate was
+    // protecting nothing.
+    //
+    // Thrashing is handled where it belongs: the lease in _shared/reembed.ts.
     const auth = await requireFamilyMember(req, supabase, family_id);
     if (!auth.ok) return auth.response;
-    const isAdmin = auth.member.role === 'admin';
-    if (!status_only && !isAdmin) {
-      return json({ error: 'Only a family admin can rebuild the search index' }, 403);
-    }
 
     const { data: family, error: famErr } = await supabase
       .from('families')
@@ -73,7 +79,7 @@ Deno.serve(async (req) => {
         done_count: state?.done_count ?? 0,
         total_count: state?.total_count ?? 0,
         model: EMBEDDING_MODEL,
-        can_rebuild: isAdmin,
+        can_rebuild: true,
         unindexed: await unindexedDocuments(schema),
       });
     }
@@ -88,7 +94,7 @@ Deno.serve(async (req) => {
       ...progress,
       up_to_date: progress.done,
       model: EMBEDDING_MODEL,
-      can_rebuild: isAdmin,
+      can_rebuild: true,
       // Only worth naming once the rebuild is done: until then a document may
       // simply be waiting its turn rather than genuinely unreadable.
       ...(progress.done ? { unindexed: await unindexedDocuments(schema) } : {}),
