@@ -543,6 +543,34 @@ neither calls HuggingFace directly. Three things matter:
   a real passage at search time and hides the failure. `ingestDocument` now
   returns `empty: true` and the caller marks the document instead.
 
+### A scan is told from a text layer PER PAGE, not per document
+
+"Did any text come out?" cannot distinguish them. A scanned PDF carries a
+digital-signature stamp, and one line of `Digitally Signed by …` per page
+looks exactly like a document that was read. `Harrier Insurance 2026-27.pdf`
+sat in this vault for a month looking ingested on the strength of 149
+characters that were *entirely* that stamp — and because the old test was
+"more than 50 characters in the whole document", OCR was never attempted.
+
+- `hasTextLayer()` in `_shared/ingest.ts` requires **200 characters per page**
+  (`MIN_CHARS_PER_PAGE`), so `extractPdfLayoutText` returns the page count
+  alongside the text. A page of prose or a table runs to hundreds of
+  characters; a stamp runs to a few dozen. Averaging over the document keeps
+  one sparse page from condemning a good file. 200 rather than 100 because
+  149 characters clear 100 if the file turns out to be a single page.
+- **Over-triggering is harmless by construction:** the OCR result is kept only
+  when it reads *more* than the text layer did, so a genuinely sparse page
+  keeps its own text and only a real scan is replaced.
+- **A scan OCR cannot rescue is reported, not stored.** `thin: true` comes
+  back with a reason, and `ingestDocument` returns `empty` rather than storing
+  a signature stamp as a passage — the same failure the placeholder chunk
+  caused.
+- **`OCR_SPACE_API_KEY` missing is a CONFIGURATION failure, not a bad
+  document**, and the two must not look alike: one is fixed by setting a
+  secret, the other by replacing the file. Such a document comes back
+  `retryable: true` and the rebuild does **not** mark it permanently failed,
+  so setting the secret is enough to make it readable.
+
 ### RAG pipeline
 
 **OCR is English-only in one remaining place:** the server-side OCR.space

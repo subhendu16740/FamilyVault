@@ -20,7 +20,40 @@ import { chunkText } from './chunking.ts';
 import { extractPdfLayoutText } from './pdf-text.ts';
 
 /** Bumped when extraction changes enough that stored text should be redone. */
-export const EXTRACTOR_VERSION = 'pdfjs-layout-1';
+export const EXTRACTOR_VERSION = 'pdfjs-layout-2';
+
+/**
+ * Below this many characters per page, a PDF has no real text layer and is a
+ * scan that needs OCR.
+ *
+ * The test used to be "more than 50 characters in the whole document", which
+ * a single digital-signature stamp clears. "Harrier Insurance 2026-27.pdf"
+ * sat in this vault for a month looking successfully ingested on the
+ * strength of 149 characters that read, in their entirety:
+ *
+ *     Digitally Signed by: … Date: 13/08/2026 Location: Mumbai
+ *
+ * The policy itself is a scan, and OCR was never even attempted, because by
+ * the old rule the file had text. A page carrying real prose or a table runs
+ * to hundreds of characters; a stamp runs to a few dozen, and averaging over
+ * the document keeps one sparse page from condemning a good file.
+ *
+ * Set above the stamp rather than just above nothing: that policy's 149
+ * characters clear a threshold of 100 if the file turns out to be a single
+ * page, and the whole point is that it must not. Sending a genuinely sparse
+ * page to OCR costs one request and nothing else, because the OCR result is
+ * only kept when it reads MORE than the text layer did.
+ */
+const MIN_CHARS_PER_PAGE = 200;
+
+/** Whether extracted text is substantial enough to be a real text layer. */
+function hasTextLayer(text: string, pages?: number): boolean {
+  const chars = text.trim().length;
+  // Pages unknown (PDF.js could not open the file): fall back to the old
+  // absolute rule, which is all there is to go on.
+  if (!pages || pages < 1) return chars > 50;
+  return chars / pages >= MIN_CHARS_PER_PAGE;
+}
 
 const OCR_SPACE_API_KEY = Deno.env.get('OCR_SPACE_API_KEY') ?? '';
 
@@ -39,6 +72,14 @@ export interface IngestResult {
   /** True when nothing readable came out of the file. */
   empty: boolean;
   embedError?: string;
+  /** Why the file could not be read, in words a person can act on. */
+  reason?: string;
+  /**
+   * True when the failure is configuration, not the document: OCR was needed
+   * and no key is set. Such a file must NOT be marked permanently failed —
+   * setting the secret fixes it, and marking it would bury it for good.
+   */
+  retryable?: boolean;
 }
 
 /**
@@ -73,6 +114,18 @@ export async function ingestDocument(
       if (pdf.layoutError) {
         console.error(`[ingest] PDF.js unavailable (${pdf.layoutError}) — tables in this document will have lost their rows`);
       }
+      // A scan OCR could not read. What little text there is will be a
+      // signature stamp or a form field; storing it as a passage makes the
+      // document look indexed while it answers nothing, which is the exact
+      // failure the placeholder chunk used to cause.
+      if (pdf.thin) {
+        console.warn(`[ingest] ${storagePath} is a scan with no usable text: ${pdf.ocrError}`);
+        return {
+          chunks: 0, metadata: 0, extractedChars: pdf.text.length, empty: true,
+          reason: pdf.ocrError,
+          retryable: !OCR_SPACE_API_KEY,
+        };
+      }
     } else if (['jpg', 'jpeg', 'png'].includes(fileType)) {
       extractedText = await extractTextFromImage(fileData);
     } else {
@@ -85,7 +138,10 @@ export async function ingestDocument(
   // time, and it hides the fact that the document was never read.
   if (!extractedText.trim()) {
     console.warn(`[ingest] No text extracted from ${storagePath}`);
-    return { chunks: 0, metadata: 0, extractedChars: 0, empty: true };
+    return {
+      chunks: 0, metadata: 0, extractedChars: 0, empty: true,
+      reason: 'Nothing readable could be extracted from this file',
+    };
   }
 
   console.log(`[ingest] Extracted ${extractedText.length} chars`);
@@ -162,6 +218,11 @@ export async function reextractDocument(
     : { text: await fileData.text(), extractor: 'layout' };
   const { text, extractor, layoutError } = pdf;
 
+  // A scan OCR could not read. Leave the document exactly as it was: its
+  // existing text and chunks are no worse than what this pass produced, and
+  // replacing them with a signature stamp would lose even that.
+  if (pdf.thin) return { chars: text.length, chunks: 0, empty: true, extractor, layoutError };
+
   if (!text.trim()) return { chars: 0, chunks: 0, empty: true, extractor, layoutError };
 
   const chunks = chunkText(text);
@@ -230,6 +291,12 @@ export interface PdfText {
   extractor: PdfExtractor;
   /** Set when PDF.js threw, as opposed to the file simply having no text. */
   layoutError?: string;
+  /** Why server-side OCR could not run, or ran and found nothing. */
+  ocrError?: string;
+  /** Pages PDF.js reported, when it could open the file. */
+  pages?: number;
+  /** True when this is a scan and OCR did not rescue it. */
+  thin?: boolean;
 }
 
 async function extractTextFromPdf(blob: Blob): Promise<PdfText> {
@@ -243,13 +310,24 @@ async function extractTextFromPdf(blob: Blob): Promise<PdfText> {
     // table column by column, with the labels in one run and the figures in
     // another, and no question about a row can then be answered.
     let layoutError: string | undefined;
+    let pages: number | undefined;
+    // The best text seen so far, kept so a scan that OCR cannot rescue is
+    // still stored with whatever little it had rather than with nothing.
+    let best = '';
+    let bestExtractor: PdfExtractor = 'none';
+
     try {
       const laid = await extractPdfLayoutText(bytes);
-      if (laid.trim().length > 50) {
-        console.log(`[ingest] PDF layout extraction: ${laid.length} chars`);
-        return { text: laid, extractor: 'layout' };
+      pages = laid.pages;
+      if (hasTextLayer(laid.text, pages)) {
+        console.log(`[ingest] PDF layout extraction: ${laid.text.length} chars over ${pages} page(s)`);
+        return { text: laid.text, extractor: 'layout', pages };
       }
-      console.log('[ingest] PDF has no text layer — likely scanned');
+      best = laid.text;
+      bestExtractor = 'layout';
+      console.log(
+        `[ingest] PDF has no real text layer (${laid.text.trim().length} chars over ${pages} page(s)) — likely scanned`,
+      );
     } catch (err) {
       // Distinguish "PDF.js broke" from "this file has no text layer". The
       // first means every PDF is about to be read the old way.
@@ -261,20 +339,47 @@ async function extractTextFromPdf(blob: Blob): Promise<PdfText> {
     // nothing and still beats nothing if PDF.js cannot open the file.
     const text = extractPdfTextSimple(bytes);
 
-    if (text.trim().length > 50) {
+    if (hasTextLayer(text, pages)) {
       console.log(`[ingest] PDF text parser extracted ${text.length} chars`);
-      return { text, extractor: 'regex', layoutError };
+      return { text, extractor: 'regex', layoutError, pages };
+    }
+    if (text.trim().length > best.trim().length) {
+      best = text;
+      bestExtractor = 'regex';
     }
 
-    // Fallback: use OCR.space API for scanned/compressed PDFs
-    console.log('[ingest] Simple parser failed, trying OCR.space...');
-    const ocrText = await ocrWithOcrSpace(blob, 'pdf');
-    if (ocrText.trim().length > 10) {
-      return { text: ocrText, extractor: 'ocr', layoutError };
+    // Fallback: OCR.space, for the scans neither reader can help with.
+    console.log('[ingest] No usable text layer, trying OCR.space...');
+    const ocr = await ocrWithOcrSpace(blob, 'pdf');
+    // Only if it read MORE than the text layer did. This is what makes a
+    // wrongly-suspected page safe: a sparse but genuine page keeps its own
+    // text, and only a real scan — where the text layer held a stamp and OCR
+    // holds the document — is replaced.
+    if (ocr.text.trim().length > 10 && ocr.text.trim().length > best.trim().length) {
+      console.log(`[ingest] OCR read ${ocr.text.length} chars, beating ${best.length} from the text layer`);
+      return { text: ocr.text, extractor: 'ocr', layoutError, pages };
+    }
+    if (ocr.text.trim().length > 10) {
+      console.log(`[ingest] OCR read ${ocr.text.length} chars, no better than the ${best.length} already extracted`);
+      return { text: best, extractor: bestExtractor, layoutError, pages };
     }
 
-    // Last resort: extract any readable text from the binary
-    return { text: extractReadableText(bytes), extractor: 'binary', layoutError };
+    // A scan that OCR could not read — or was never offered to, because no
+    // key is configured. Either way the caller must be told, because the
+    // stored text is a signature stamp and the document will answer nothing.
+    const binary = extractReadableText(bytes);
+    if (binary.trim().length > best.trim().length) {
+      best = binary;
+      bestExtractor = 'binary';
+    }
+    return {
+      text: best,
+      extractor: bestExtractor,
+      layoutError,
+      pages,
+      thin: true,
+      ocrError: ocr.error ?? 'OCR found no text in this scan',
+    };
   } catch (err) {
     console.warn('[ingest] PDF extraction error:', err);
     return { text: '', extractor: 'none', layoutError: String(err) };
@@ -353,16 +458,25 @@ function extractReadableText(bytes: Uint8Array): string {
 async function extractTextFromImage(blob: Blob): Promise<string> {
   // Use OCR.space as server-side fallback (client-side OCR is preferred)
   console.log('[ingest] Running server-side OCR for image...');
-  const text = await ocrWithOcrSpace(blob, 'image');
-  return text || '[Image document — OCR extraction failed]';
+  const { text } = await ocrWithOcrSpace(blob, 'image');
+  return text;
 }
 
 // ─── OCR.space API (free tier: 25K requests/month) ─────────────
 
-async function ocrWithOcrSpace(blob: Blob, type: 'pdf' | 'image'): Promise<string> {
+/**
+ * Reads the reason back to the caller as well as the text. A scan that could
+ * not be OCR'd because no key is configured is an operator problem, not a
+ * bad document, and the two must not look the same: one is fixed by setting
+ * a secret, the other by replacing the file.
+ */
+async function ocrWithOcrSpace(
+  blob: Blob,
+  type: 'pdf' | 'image',
+): Promise<{ text: string; error?: string }> {
   if (!OCR_SPACE_API_KEY) {
     console.warn('[ingest] OCR_SPACE_API_KEY is not set — skipping server-side OCR fallback');
-    return '';
+    return { text: '', error: 'This file is a scan and needs OCR, but OCR_SPACE_API_KEY is not set on this project' };
   }
 
   try {
@@ -392,24 +506,24 @@ async function ocrWithOcrSpace(blob: Blob, type: 'pdf' | 'image'): Promise<strin
 
     if (!response.ok) {
       console.warn(`[ingest] OCR.space HTTP error: ${response.status}`);
-      return '';
+      return { text: '', error: `OCR service returned HTTP ${response.status}` };
     }
 
     const result = await response.json();
 
     if (result.IsErroredOnProcessing) {
       console.warn('[ingest] OCR.space processing error:', result.ErrorMessage);
-      return '';
+      return { text: '', error: `OCR service: ${String(result.ErrorMessage).slice(0, 120)}` };
     }
 
     // Concatenate text from all pages
     const pages = result.ParsedResults ?? [];
     const text = pages.map((p: { ParsedText: string }) => p.ParsedText).join('\n');
     console.log(`[ingest] OCR.space extracted ${text.length} chars`);
-    return text;
+    return { text };
   } catch (err) {
     console.warn('[ingest] OCR.space failed:', err);
-    return '';
+    return { text: '', error: `OCR service unreachable: ${String(err).slice(0, 120)}` };
   }
 }
 

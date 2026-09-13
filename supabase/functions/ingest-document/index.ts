@@ -50,7 +50,12 @@ Deno.serve(async (req) => {
       return jsonResponse({
         success: false,
         empty: true,
-        error: 'No text could be read from this file',
+        // The reason matters: "this is a scan and OCR is not configured" is
+        // fixed by setting a secret, "nothing readable in this file" by
+        // replacing it. Saying only the second sends people after the wrong
+        // problem.
+        error: result.reason ?? 'No text could be read from this file',
+        ...(result.retryable ? { retryable: true } : {}),
       }, 422);
     }
 

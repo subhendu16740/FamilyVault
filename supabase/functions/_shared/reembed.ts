@@ -302,8 +302,13 @@ async function retryStuckDocuments(
       const result = await ingestDocument(supabase, {
         familyId, documentId: doc.id, storagePath: doc.storage_path,
       });
-      if (result.empty) {
-        console.warn(`[reembed] Nothing readable in ${doc.file_name} — marking failed`);
+      if (result.empty && result.retryable) {
+        // Configuration, not the document: OCR was needed and no key is set.
+        // Marking it failed would bury it for good, and setting the secret is
+        // all that stands between this file and being readable.
+        console.warn(`[reembed] ${doc.file_name} needs OCR: ${result.reason}`);
+      } else if (result.empty) {
+        console.warn(`[reembed] Nothing readable in ${doc.file_name} — marking failed: ${result.reason ?? 'no reason given'}`);
         await supabase.rpc('rag_mark_ingestion_failed', { p_schema: schema, p_document_id: doc.id });
       } else {
         console.log(`[reembed] Recovered ${doc.file_name}: ${result.chunks} chunks`);
