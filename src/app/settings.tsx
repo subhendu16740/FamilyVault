@@ -8,6 +8,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../lib/auth';
+import { isProduction, environmentDescription } from '../lib/environment';
 import { useFamily } from '../lib/family-context';
 import { usePreferences } from '../lib/preferences';
 import { indexStatus, type IndexStatus } from '../lib/api';
@@ -36,7 +37,9 @@ const settingsGroups = [
     title: 'Support',
     items: [
       { icon: 'help-circle', label: 'Help & FAQ', sub: 'How FamilyVault works' },
-      { icon: 'info', label: 'About', sub: 'Version 1.0.0' },
+      // The badge says WHICH build this is at a glance; this says what that
+      // means, in the one place someone goes to check.
+      { icon: 'info', label: 'About', sub: isProduction ? 'Version 1.0.0' : `Version 1.0.0 · ${environmentDescription}` },
     ],
   },
 ];

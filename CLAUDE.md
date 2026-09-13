@@ -58,22 +58,74 @@ Verification today means: `npm run typecheck` (error count must not grow past
 
 ---
 
-## What merging deploys — and what it doesn't
+## Branches — `dev` is the integration branch, `main` is live
 
-**Merging to `main` deploys the web bundle and nothing else.** Vercel builds
-`src/` into static files. Every server-side change ships by hand, from a
-machine with the Supabase CLI. This is the single easiest thing to get wrong:
-a merged PR that changes an Edge Function has changed *nothing* in production
-until the command below is run.
+```
+feature branch  ──▶  dev   ──▶  main
+                      │          │
+                      ▼          ▼
+                     DEV       PROD
+```
+
+Work happens on feature branches and merges to **`dev`**. A release is `dev`
+merged to **`main`**. Nothing is committed straight to either.
+
+**The branch decides the backend, and the mechanism differs per layer** —
+this is the part that is easy to get silently wrong:
+
+| Layer | How the branch maps to a project |
+|---|---|
+| Web bundle | Vercel: `main` is the Production branch → PROD env vars; every other branch builds as a Preview → DEV env vars |
+| Edge Functions | `.github/workflows/deploy-edge-functions.yml`: push to `main` → PROD, push to `dev` → DEV |
+| Migrations | Neither. Always by hand, in the SQL editor |
+
+**`EXPO_PUBLIC_*` values are compiled into the bundle at build time**, so a
+build is permanently bound to whichever project it was built against. That is
+what makes the Vercel environment split a real boundary rather than a
+convention: a preview physically cannot reach PROD data.
+
+**Before `dev` existed, `main` WAS the integration branch and deployed
+functions to DEV.** If that mapping is ever restored while `main` is the
+release branch, every production release will quietly ship its functions to
+DEV and leave PROD on old code. The workflow resolves the target from
+`github.ref` for exactly this reason, and anything unrecognised falls to DEV —
+the safe direction for a mistake is the test project.
+
+### What merging deploys — and what it doesn't
+
+Every server-side change other than Edge Functions ships by hand. This is the
+single easiest thing to get wrong: a merged PR that changes a migration has
+changed *nothing* until someone pastes it into the SQL editor.
 
 | Changed | Deployed by | How |
 |---|---|---|
-| `src/**`, `app.config.ts`, `vercel.json` | **Vercel**, automatically on merge to `main` | nothing to do |
-| `supabase/functions/**` | **GitHub Actions**, on merge to `main` | nothing to do (DEV); PROD is a manual `workflow_dispatch` |
+| `src/**`, `app.config.ts`, `vercel.json` | **Vercel**, automatically | `main` → PROD, any other branch → DEV |
+| `supabase/functions/**` | **GitHub Actions**, automatically | `main` → PROD, `dev` → DEV; `workflow_dispatch` for either by hand |
 | `supabase/migrations/**` | **you** | paste into the SQL editor |
-| Edge Function secrets | **you** | `secrets set` |
+| Edge Function secrets | **you** | `secrets set`, per project |
 | Storage buckets | **you** | dashboard only — no CLI, no migration |
 | Vercel env vars | **you** | dashboard, then **redeploy** |
+
+**Order still matters within a release:** the migration goes first, the Edge
+Function second, per [Order of operations](#order-of-operations). Merging to
+`main` ships the function immediately, so apply the migration to PROD *before*
+you merge, not after.
+
+### Which build am I looking at?
+
+`src/lib/environment.ts` derives this from `EXPO_PUBLIC_SUPABASE_URL` — **not**
+from a separate `EXPO_PUBLIC_ENV` flag, deliberately. A separate flag can be
+wrong independently of the database; the Supabase URL is the value that
+actually decides whose documents are on screen, so a marker computed from it
+cannot disagree with reality.
+
+`<EnvBadge />` is mounted once in `src/app/_layout.tsx`, after the `Stack`, so
+it draws over every screen and a new screen cannot be added without it. It
+renders **nothing** in production, and production requires an exact match on
+the PROD project ref — DEV, a preview, an unrecognised project and a missing
+URL all show the badge. The direction is deliberate: a build that cannot
+identify itself should shout rather than pass silently for production.
+Settings › About carries the longer description.
 
 ### Project refs
 
