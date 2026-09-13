@@ -50,7 +50,15 @@ const MAX_CHUNKS_PER_DOC = 4;      // of those, per document, before judging
 const RERANK_CANDIDATES = 15;      // how many reach the judge
 const RERANK_KEEP = 5;             // how many survive into the prompt
 const RERANK_MIN_SCORE = 4;        // 0–10; below this a chunk is dropped outright
-const RERANK_SNIPPET_CHARS = 350;  // per candidate, keeps the judge call small
+// The judge must see the WHOLE passage. At 350 characters it saw about the
+// first third of one: 228 of this vault's 229 chunks are longer than that.
+// The placements table is the clearest case — "Operations  28,73,765
+// 31,61,743  27 - 44" sits at character 485 of its chunk, so the judge read
+// Telecom, Urban Mobility, Analytics and Consulting, never saw the row it
+// was asked about, and correctly scored the passage as not answering the
+// question. The chunker already caps a chunk at 400 tokens (~1,600
+// characters) precisely so a passage is small enough to handle whole.
+const RERANK_SNIPPET_CHARS = 1600; // per candidate: a full chunk, not its opening
 
 /** A document an earlier answer cited — enough to rebuild a ChunkResult. */
 interface CitedSource {
@@ -78,7 +86,12 @@ interface HistoryTurn {
 // genuine topic change.
 const PIN_MAX_DOCS = 2;
 const PIN_CHUNKS_PER_DOC = 2;
-const PIN_MAX_CHARS_PER_CHUNK = 900;
+// A whole chunk, for the same reason the judge gets one: 900 characters cut
+// a table off partway down, so a follow-up about a pinned document could not
+// be answered from the very passage that was pinned to answer it.
+// buildContext() re-budgets everything afterwards anyway, so this second,
+// tighter truncation only ever removed rows.
+const PIN_MAX_CHARS_PER_CHUNK = 1600;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
@@ -474,7 +487,15 @@ async function rerankChunks(
 
   const listing = candidates.map((c, i) => {
     const type = c.category_name ? ` · ${c.category_name}` : '';
-    const snippet = c.content.slice(0, RERANK_SNIPPET_CHARS).replace(/\s+/g, ' ');
+    // Do NOT flatten whitespace. The line breaks and the two-space column
+    // gaps ARE the table: collapsing them hands the judge the same
+    // run-together text that reading a PDF in content-stream order produced,
+    // and undoes the layout reader entirely. Only blank runs are tidied.
+    const snippet = c.content
+      .slice(0, RERANK_SNIPPET_CHARS)
+      .replace(/[ \t]+$/gm, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
     return `[${i}] ${c.file_name}${type}\n${snippet}`;
   }).join('\n\n');
 
@@ -493,7 +514,8 @@ async function rerankChunks(
 Score how well each passage answers the question, 0 to 10.
 10 = directly contains the answer. 5 = related, partial. 0 = unrelated, even if it shares a word or a year with the question.
 Use the document type: an insurance question is not answered by a tax return, a placements question is not answered by a resume.
-Reply with JSON only: {"scores":[{"i":0,"s":7}, ...]} — exactly one entry per passage index.`,
+A passage may be a TABLE, one row per line with columns separated by two spaces. Read every row before scoring it: the row that answers the question is often not the first one, and a table whose other rows are irrelevant still scores 10 if any single row answers it.
+Reply with JSON only: {"scores":[{"i":0,"s":7}, ...]} — one entry for EVERY passage index, including the ones you score 0.`,
         },
         {
           role: 'user',
@@ -518,14 +540,26 @@ Reply with JSON only: {"scores":[{"i":0,"s":7}, ...]} — exactly one entry per 
       if (Number.isInteger(e?.i) && typeof e?.s === 'number') score.set(e.i, e.s);
     }
 
+    // A passage the judge did not mention is UNJUDGED, not irrelevant. These
+    // models routinely score ten of fifteen and stop; defaulting the rest to
+    // zero threw away passages nobody had looked at. Neutral keeps them in
+    // their retrieval order, behind anything explicitly scored higher.
     const kept = candidates
-      .map((c, i) => ({ c, s: score.get(i) ?? 0 }))
+      .map((c, i) => ({ c, s: score.get(i) ?? RERANK_MIN_SCORE }))
       .filter(x => x.s >= RERANK_MIN_SCORE)
       .sort((a, b) => b.s - a.s)
       .slice(0, RERANK_KEEP)
       .map(x => x.c);
 
     console.log(`[rag] Rerank scores: ${candidates.map((c, i) => `${c.file_name.slice(0, 18)}=${score.get(i) ?? '?'}`).join(', ')}`);
+
+    // A judge that rejects EVERY passage has failed, not filtered. Retrieval
+    // had already ranked these by meaning and by keyword; discarding the lot
+    // turns a vault that holds the answer into one that reports it has
+    // nothing, which is the worst outcome available and indistinguishable
+    // from an empty vault. Rank, then, is all the judge is trusted with: it
+    // may reorder and it may trim, but it may not empty the list.
+    if (kept.length === 0) return fallback('judge kept nothing');
     return { kept, model };
   } catch (err) {
     return fallback(String(err).slice(0, 120));
