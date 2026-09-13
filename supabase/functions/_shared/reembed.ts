@@ -124,7 +124,20 @@ export function isUpToDate(state: StateRow | null): boolean {
   // No row means the family was created after migration 013, so every chunk
   // it has was embedded with the current model, by the current splitter.
   if (!state) return true;
-  return !!state.completed_at && state.model === EMBEDDING_MODEL;
+  // extractor_version belongs here as much as the model does. Without it,
+  // bumping EXTRACTOR_VERSION — the documented way to re-read stored PDFs —
+  // was a silent no-op for any family that had already finished a rebuild:
+  // completed_at was set, the model matched, the family read as up to date,
+  // and the re-extract phase never ran. Migration 018 only worked because it
+  // explicitly cleared completed_at, which a code change cannot do.
+  //
+  // A NULL version means the family predates the column and has never been
+  // re-extracted, so it is due. loadState() fakes the current version when
+  // the column does not exist at all, so a database without migration 018
+  // still settles rather than rebuilding forever.
+  return !!state.completed_at
+    && state.model === EMBEDDING_MODEL
+    && state.extractor_version === EXTRACTOR_VERSION;
 }
 
 /**
