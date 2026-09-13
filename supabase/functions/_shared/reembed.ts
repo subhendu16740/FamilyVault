@@ -143,6 +143,20 @@ async function reextractPhase(
 ): Promise<{ done: boolean; documents: number; cursor: string | null; error?: string }> {
   let cursor = state.reextract_cursor ?? null;
   let documents = 0;
+  let attempted = 0;
+  let layoutFailures = 0;
+  let layoutError: string | undefined;
+
+  /**
+   * Every PDF falling back to the old reader is not a run of scanned files —
+   * it is PDF.js not loading. Left unsaid, the rebuild reports success, the
+   * same column-by-column text is stored again, and the only symptom is an
+   * answer that cannot be found. So say it.
+   */
+  const layoutVerdict = (): { error?: string } =>
+    attempted > 0 && layoutFailures === attempted
+      ? { error: `Could not read any PDF by position, so tables lost their rows: ${layoutError}` }
+      : {};
 
   while (Date.now() < deadline) {
     const { data, error } = await supabase.rpc('rag_documents_to_reextract', {
@@ -157,15 +171,22 @@ async function reextractPhase(
     }
 
     const docs = (data ?? []) as { id: string; storage_path: string; file_name: string }[];
-    if (docs.length === 0) return { done: true, documents, cursor };
+    if (docs.length === 0) return { done: true, documents, cursor, ...layoutVerdict() };
 
     for (const doc of docs) {
       try {
         const result = await reextractDocument(supabase, schema, doc.id, doc.storage_path);
+        // A PDF read by anything other than the layout reader kept none of
+        // its rows. Counted, because one such file is a scanned document and
+        // ALL of them means PDF.js itself never loaded.
+        if (result.layoutError) {
+          layoutFailures++;
+          layoutError = result.layoutError;
+        }
         if (result.empty) {
           console.warn(`[reembed] Re-extract produced nothing for ${doc.file_name} — keeping existing text`);
         } else {
-          console.log(`[reembed] Re-extracted ${doc.file_name}: ${result.chars} chars, ${result.chunks} chunks`);
+          console.log(`[reembed] Re-extracted ${doc.file_name} via ${result.extractor}: ${result.chars} chars, ${result.chunks} chunks`);
           documents++;
         }
       } catch (err) {
@@ -173,12 +194,13 @@ async function reextractPhase(
         // text and chunks are untouched, so it stays as searchable as it was.
         console.warn(`[reembed] Re-extract failed for ${doc.file_name}:`, err);
       }
+      attempted++;
       cursor = doc.id;
       if (Date.now() >= deadline) break;
     }
   }
 
-  return { done: false, documents, cursor };
+  return { done: false, documents, cursor, ...layoutVerdict() };
 }
 
 /**
