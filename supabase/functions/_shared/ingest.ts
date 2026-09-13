@@ -68,7 +68,11 @@ export async function ingestDocument(
 
     const fileType = storagePath.split('.').pop()?.toLowerCase() ?? '';
     if (fileType === 'pdf') {
-      extractedText = await extractTextFromPdf(fileData);
+      const pdf = await extractTextFromPdf(fileData);
+      extractedText = pdf.text;
+      if (pdf.layoutError) {
+        console.error(`[ingest] PDF.js unavailable (${pdf.layoutError}) — tables in this document will have lost their rows`);
+      }
     } else if (['jpg', 'jpeg', 'png'].includes(fileType)) {
       extractedText = await extractTextFromImage(fileData);
     } else {
@@ -145,7 +149,7 @@ export async function reextractDocument(
   schema: string,
   documentId: string,
   storagePath: string,
-): Promise<{ chars: number; chunks: number; empty: boolean }> {
+): Promise<{ chars: number; chunks: number; empty: boolean; extractor: PdfExtractor; layoutError?: string }> {
   const { data: fileData, error: dlError } = await supabase.storage
     .from('documents')
     .download(storagePath);
@@ -153,14 +157,15 @@ export async function reextractDocument(
     throw new Error(`Download failed: ${dlError?.message ?? 'No data'}`);
   }
 
-  const text = storagePath.toLowerCase().endsWith('.pdf')
+  const pdf: PdfText = storagePath.toLowerCase().endsWith('.pdf')
     ? await extractTextFromPdf(fileData)
-    : await fileData.text();
+    : { text: await fileData.text(), extractor: 'layout' };
+  const { text, extractor, layoutError } = pdf;
 
-  if (!text.trim()) return { chars: 0, chunks: 0, empty: true };
+  if (!text.trim()) return { chars: 0, chunks: 0, empty: true, extractor, layoutError };
 
   const chunks = chunkText(text);
-  if (chunks.length === 0) return { chars: text.length, chunks: 0, empty: true };
+  if (chunks.length === 0) return { chars: text.length, chunks: 0, empty: true, extractor, layoutError };
 
   const { error: textErr } = await supabase.rpc('rag_set_document_text', {
     p_schema: schema, p_document_id: documentId, p_ocr_text: text,
@@ -179,7 +184,7 @@ export async function reextractDocument(
   });
   if (chunkErr) throw new Error(`Could not store chunks: ${chunkErr.message}`);
 
-  return { chars: text.length, chunks: chunks.length, empty: false };
+  return { chars: text.length, chunks: chunks.length, empty: false, extractor, layoutError };
 }
 
 async function createExpiryAlert(
@@ -207,7 +212,27 @@ async function createExpiryAlert(
 
 // ─── Text Extraction ────────────────────────────────────────────
 
-async function extractTextFromPdf(blob: Blob): Promise<string> {
+/**
+ * Which reader produced a document's text.
+ *
+ * Worth reporting, because 'layout' is the only one that preserves table
+ * rows and the others are indistinguishable from it once the text is
+ * stored. When PDF.js cannot load at all — a broken module URL, a runtime
+ * that rejects the import — EVERY PDF quietly falls through to the regex
+ * parser, the same column-by-column text gets stored again, and the rebuild
+ * reports success. That failure cost a full round trip to notice, so the
+ * reader now says which one it was.
+ */
+export type PdfExtractor = 'layout' | 'regex' | 'ocr' | 'binary' | 'none';
+
+export interface PdfText {
+  text: string;
+  extractor: PdfExtractor;
+  /** Set when PDF.js threw, as opposed to the file simply having no text. */
+  layoutError?: string;
+}
+
+async function extractTextFromPdf(blob: Blob): Promise<PdfText> {
   try {
     const buffer = await blob.arrayBuffer();
     const bytes = new Uint8Array(buffer);
@@ -217,14 +242,18 @@ async function extractTextFromPdf(blob: Blob): Promise<string> {
     // content stream in order — what the simple parser below does — returns a
     // table column by column, with the labels in one run and the figures in
     // another, and no question about a row can then be answered.
+    let layoutError: string | undefined;
     try {
       const laid = await extractPdfLayoutText(bytes);
       if (laid.trim().length > 50) {
         console.log(`[ingest] PDF layout extraction: ${laid.length} chars`);
-        return laid;
+        return { text: laid, extractor: 'layout' };
       }
       console.log('[ingest] PDF has no text layer — likely scanned');
     } catch (err) {
+      // Distinguish "PDF.js broke" from "this file has no text layer". The
+      // first means every PDF is about to be read the old way.
+      layoutError = err instanceof Error ? err.message : String(err);
       console.warn('[ingest] Layout extraction failed, falling back:', err);
     }
 
@@ -234,21 +263,21 @@ async function extractTextFromPdf(blob: Blob): Promise<string> {
 
     if (text.trim().length > 50) {
       console.log(`[ingest] PDF text parser extracted ${text.length} chars`);
-      return text;
+      return { text, extractor: 'regex', layoutError };
     }
 
     // Fallback: use OCR.space API for scanned/compressed PDFs
     console.log('[ingest] Simple parser failed, trying OCR.space...');
     const ocrText = await ocrWithOcrSpace(blob, 'pdf');
     if (ocrText.trim().length > 10) {
-      return ocrText;
+      return { text: ocrText, extractor: 'ocr', layoutError };
     }
 
     // Last resort: extract any readable text from the binary
-    return extractReadableText(bytes);
+    return { text: extractReadableText(bytes), extractor: 'binary', layoutError };
   } catch (err) {
     console.warn('[ingest] PDF extraction error:', err);
-    return '';
+    return { text: '', extractor: 'none', layoutError: String(err) };
   }
 }
 
