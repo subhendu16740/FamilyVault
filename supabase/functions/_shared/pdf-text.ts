@@ -123,14 +123,22 @@ function medianStep(baselines: number[]): number {
 }
 
 /**
- * Extract every page of a PDF as laid-out text.
+ * Extract every page of a PDF as laid-out text, with the page count.
+ *
+ * The COUNT is what tells a real text layer from a scan. "Did any text come
+ * out?" cannot: a scanned policy carries a digital-signature stamp, and one
+ * line of "Digitally Signed by …" per page looks exactly like a document
+ * that was read successfully. Per page, the two are not close — a page of
+ * prose or a table runs to hundreds of characters, a stamp to a few dozen.
  *
  * Throws rather than returning something plausible-but-wrong, so the caller
  * can fall back to the older extractor and then to OCR. A PDF that is purely
  * scanned images has no text pieces at all and comes back empty, which is
  * the signal to try OCR.
  */
-export async function extractPdfLayoutText(bytes: Uint8Array): Promise<string> {
+export async function extractPdfLayoutText(
+  bytes: Uint8Array,
+): Promise<{ text: string; pages: number }> {
   const { getDocument } = await import('https://esm.sh/pdfjs-serverless@1.3.1');
 
   const doc = await getDocument({
@@ -167,5 +175,5 @@ export async function extractPdfLayoutText(bytes: Uint8Array): Promise<string> {
   }
 
   // Page breaks are paragraph breaks as far as chunking is concerned.
-  return pages.join('\n\n');
+  return { text: pages.join('\n\n'), pages: doc.numPages };
 }
