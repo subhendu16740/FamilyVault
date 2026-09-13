@@ -6,6 +6,7 @@ import { Feather } from '@expo/vector-icons';
 import { AuthProvider, useAuth } from '../lib/auth';
 import { FamilyProvider } from '../lib/family-context';
 import { PreferencesProvider } from '../lib/preferences';
+import { EnvBadge } from '../components/env-badge';
 
 function AuthGate() {
   const { session, loading: authLoading } = useAuth();
@@ -61,6 +62,9 @@ export default function RootLayout() {
           <Stack.Screen name="document/[id]" />
           <Stack.Screen name="notifications" />
         </Stack>
+        {/* After the Stack, so it draws over every screen. Renders nothing
+            in production. */}
+        <EnvBadge />
       </FamilyProvider>
       </PreferencesProvider>
     </AuthProvider>

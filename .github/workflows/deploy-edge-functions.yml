@@ -4,12 +4,24 @@
 # separately — so a merged PR touching supabase/functions/ used to change
 # nothing until someone ran the CLI by hand. This closes that gap.
 #
-# DEV deploys automatically on merge. PROD is manual only: reaching real
-# family data should always be a deliberate act, never a side effect of
-# merging.
+# The branch decides the project:
+#
+#   dev  -> DEV  (tkqsfoppwlyupentuixy)   the integration branch
+#   main -> PROD (yrcmdixqgvmhqxejvlor)   what is live
+#
+# This inversion is the whole point, and getting it wrong is silent. Before
+# `dev` existed, main WAS the integration branch and deployed to DEV. Leaving
+# that in place while making main the release branch would mean every
+# production release quietly shipped its functions to DEV and left PROD on
+# old code — which is exactly the class of failure this workflow was written
+# to end.
+#
+# workflow_dispatch still targets either project by hand, for a redeploy or
+# when a branch build is not what you want.
 #
 # Migrations are deliberately NOT automated. Running SQL against a database
-# holding real documents needs a human who has read the diff.
+# holding real documents needs a human who has read the diff — and per
+# CLAUDE.md the migration goes FIRST, the function second.
 #
 # Requires one repository secret:
 #   SUPABASE_ACCESS_TOKEN — https://supabase.com/dashboard/account/tokens
@@ -18,7 +30,7 @@ name: Deploy Edge Functions
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
     paths:
       - 'supabase/functions/**'
       - '.github/workflows/deploy-edge-functions.yml'
@@ -48,9 +60,18 @@ jobs:
       - name: Resolve target project
         id: target
         run: |
-          # Anything other than an explicit prod dispatch goes to DEV.
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] \
-             && [ "${{ inputs.target }}" = "prod" ]; then
+          # An explicit dispatch wins. Otherwise the branch decides, and
+          # anything unrecognised falls to DEV: the safe direction for a
+          # mistake is shipping to the test project, never to real data.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TARGET="${{ inputs.target }}"
+          elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            TARGET="prod"
+          else
+            TARGET="dev"
+          fi
+
+          if [ "$TARGET" = "prod" ]; then
             echo "ref=${PROD_PROJECT_REF}" >> "$GITHUB_OUTPUT"
             echo "name=PROD" >> "$GITHUB_OUTPUT"
           else
