@@ -28,8 +28,20 @@
 -- Requires: upgrade_family_schema_for_search() and the `vector` extension,
 -- both already present on DEV and PROD.
 --
--- Apply: paste into the SQL editor — DEV first, then PROD.
+-- The DROP below is load-bearing, for the same reason it was in migrations 011
+-- and 015. PROD was carrying a FOUR-argument create_family (no p_is_personal)
+-- alongside this one. CREATE OR REPLACE only replaces an identical argument
+-- list, so the old one survived — and PostgREST resolves an RPC by the exact
+-- argument names it is given, so src/lib/api.ts, which passes exactly those
+-- four, would have kept calling the OLD body: the one that does not create the
+-- search columns. The fix would have looked applied and done nothing.
+--
+-- Dropping it is safe: p_is_personal has a DEFAULT, so the same four-argument
+-- call resolves to this function instead. That is how DEV has always worked —
+-- it only ever had this one overload.
 -- ============================================================================
+
+DROP FUNCTION IF EXISTS public.create_family(uuid, character varying, text, character varying);
 
 CREATE OR REPLACE FUNCTION public.create_family(
   p_user_id       uuid,

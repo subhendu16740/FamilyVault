@@ -13,11 +13,13 @@ Expo / React Native app (SDK 55) with expo-router. Backend is Supabase
 
 Two things will mislead you if you assume otherwise:
 
-1. **The committed SQL migrations cannot rebuild the database.** They are a
-   snapshot from an earlier stage. 11 RPCs the app calls at runtime are not
-   defined anywhere in this repo, and the committed `document_chunks` table
-   has no `vector` column. See [Database](#database) — do not assume
-   `supabase/migrations/` is the source of truth.
+1. **The schema-taking RPCs are service-role ONLY, and that is load-bearing.**
+   Twelve functions (`rag_*`, `get_document_chunks`) take the family's schema
+   as a *parameter* and check no membership, so reachability IS the access
+   control. Migration 022 revokes them from `anon` and `authenticated`; before
+   it, any signed-in account could read or destroy any family's documents by
+   naming their schema. Never grant one of these to a client role, and never
+   add a new schema-taking function without the same revoke.
 2. **This app targets both native and web from one codebase.** Day-to-day
    review happens on the web build (deployed to Vercel), but native
    Android/iOS is a real target with platform-specific code paths. A change
@@ -47,14 +49,14 @@ npm run typecheck              # tsc --noEmit
 
 | Command | State | Why |
 |---|---|---|
-| `npm run typecheck` | **Fails — 19 errors, all in `src/lib/api.ts`** | `src/lib/database.types.ts` is stale. It predates the RPCs the app now calls, so every `.rpc()` types as `never`. Fix by regenerating types once the live schema is captured (see [Database](#database)). The 19 errors are pre-existing — don't treat them as caused by your change, but don't add more either. |
+| `npm run typecheck` | **Passes — 0 errors** | It failed with 19 errors for most of the project's life, all from a stale `src/lib/database.types.ts` in which every `.rpc()` typed as `never`. Regenerating it fixed all 19 at once. **Keep it at 0.** After any migration, regenerate the file — and re-append the hand-written block at the bottom, which the generator does not produce. |
 | `npm run lint` | **Does not work in a clean clone** | No ESLint config is committed. `expo lint` tries to download one at runtime and fails on any network-restricted machine. There is no working lint gate. |
 
 ### Testing
 
 **There is no test framework.** No Jest, no test files, no `test` script.
-Verification today means: `npm run typecheck` (error count must not grow past
-19), `npm run build` must succeed, and manual checks in the browser.
+Verification today means: `npm run typecheck` (**must stay at 0 errors**),
+`npm run build` must succeed, and manual checks in the browser.
 
 ---
 
@@ -398,44 +400,43 @@ File blobs live in a Supabase Storage bucket named `documents`. **The bucket is
 not created by any migration** — it was made by hand in the dashboard and must
 be created manually in any new project.
 
-### The migration gap
+### The migration gap — closed
 
 `.gitignore` previously contained `supabase/migrations/*.sql`, so everything
-authored after that rule landed was silently never committed. The rule has been
-removed, but the missing files were never recovered.
+authored after that rule landed was silently never committed. Migrations
+`019`–`022` recovered the rest: **the two databases now match, and every
+function the app calls is in a committed migration.**
 
-**Not defined in any committed migration, yet called at runtime:**
+Verified by diffing DEV against PROD object by object — 35 functions, 8 tables,
+22 `public` policies, 3 storage policies, 11 columns on
+`family_embedding_state`, identical on both.
 
-```
-check_expiry_notifications   delete_family_document     get_user_notifications
-hybrid_search_documents      insert_family_document     mark_notification_read
-update_family_document       complete_document_ingestion
-create_expiry_alert          get_document_chunks
-```
+What that recovery turned up, all of which had been invisible:
 
-`rag_retrieve_chunks` was in this list until migration `011` captured it — the
-other ten still exist only in the live database. Migration `012` adds the two
-voice-preference columns to `public.users`; the app tolerates their absence
-(falls back to the local cache) but the setting won't follow the account until
-it is applied. Migration `014` adds `public.users.document_languages` on the
-same terms. Migration `013` adds `public.family_embedding_state` plus three
-service-role helpers (`rag_chunk_total`, `rag_chunks_to_embed`,
-`rag_set_chunk_embedding`) and must be applied before `reembed-index` can run.
+- **Storage was not scoped to a family** (019). Every policy was
+  `bucket_id = 'documents'` for `authenticated`, with no check on the path —
+  so any signed-in account could list, download and DELETE every family's
+  files. Measured on DEV: an account owning 8 files saw all 16.
+- **`create_family()` did not create the search columns** (020). Existing
+  families have `embedding`/`search_vector`/HNSW only because
+  `upgrade_family_schema_for_search()` was run by hand, and nothing called it.
+  The next family to sign up would have had search silently broken forever.
+- **PROD carried a second, four-argument `create_family`** (020). PostgREST
+  resolves by exact argument names and `src/lib/api.ts` passes exactly those
+  four, so the fix would have applied and done nothing. The `DROP` is
+  load-bearing.
+- **Twelve schema-taking RPCs were callable by any signed-in user** (022).
+  See the warning at the top — this was the largest of the four.
+- **`REVOKE ... FROM PUBLIC` is not enough.** Migrations 013, 016 and 017 all
+  did it, and the functions stayed reachable: Supabase grants `anon` and
+  `authenticated` **explicitly**, so they must be revoked by name.
 
-Also missing: `CREATE EXTENSION vector`, and the committed `document_chunks`
-table declares `embedding_id VARCHAR(100)` rather than a `vector(384)` column
-with an HNSW index. Layer 3 exists only in the live database.
+`supabase/migrations/` is now the source of truth. Keep it that way: anything
+applied to a database belongs in a migration file, in the same change.
 
-**Consequences:** a fresh Supabase project cannot be stood up from this repo.
-Until the live schema is dumped back into `supabase/migrations/`, treat the
-live DB as the only source of truth, and never assume a migration file
-reflects production.
-
-To close the gap: `pg_dump --schema-only` against the live project, commit as
-`supabase/migrations/010_*.sql`, then regenerate `src/lib/database.types.ts`
-(which also fixes `npm run typecheck`).
-
----
+**Still true:** the `documents` storage bucket is created by hand in the
+dashboard (no CLI, no migration), and `db dump` excludes the `storage` schema,
+so storage policies live only in `019`.
 
 ## Edge Functions
 
