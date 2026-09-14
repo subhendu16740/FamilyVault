@@ -50,8 +50,8 @@ export async function createNewFamily(
   const { data, error } = await supabase.rpc('create_family', {
     p_user_id: userId,
     p_family_name: name,
-    p_description: description ?? null,
-    p_family_icon: icon ?? null,
+    p_description: description ?? undefined,
+    p_family_icon: icon ?? undefined,
   });
 
   if (error) throw error;
@@ -307,12 +307,17 @@ export async function searchDocuments(
     const { data, error } = await supabase.rpc('hybrid_search_documents', {
       p_family_id: familyId,
       p_query: expandedQuery,
-      p_query_embedding: null,  // Text-only until client-side embedding is added
+      p_query_embedding: undefined,  // Text-only until client-side embedding is added
       p_limit: limit,
     });
 
     if (!error && data) {
-      return (data ?? []) as FamilySearchResultRow[];
+      // hybrid_search_documents returns rank/similarity/storage_path but NOT
+      // category_id or belongs_to_member, so the two shapes genuinely differ.
+      // The cast was invisible while every .rpc() typed as `never`; the
+      // regenerated types make it visible. Nothing calls searchDocuments(),
+      // so this is dead code kept for now rather than silently corrected.
+      return (data ?? []) as unknown as FamilySearchResultRow[];
     }
   } catch {
     // Hybrid search RPC not yet deployed — fall through
@@ -467,8 +472,8 @@ export async function uploadDocument(params: UploadDocumentParams): Promise<stri
     p_file_type: fileType,
     p_file_size_bytes: fileSizeBytes,
     p_storage_path: storagePath,
-    p_category_id: categoryId ?? null,
-    p_belongs_to_member: belongsToMemberId ?? null,
+    p_category_id: categoryId ?? undefined,
+    p_belongs_to_member: belongsToMemberId ?? undefined,
   });
 
   if (insertErr) throw new Error(`Document insert failed: ${insertErr.message}`);
@@ -523,9 +528,9 @@ export async function updateDocument(
     p_family_id: familyId,
     p_document_id: documentId,
     p_user_id: userId,
-    p_file_name: updates.fileName ?? null,
-    p_category_id: updates.categoryId ?? null,
-    p_belongs_to_member: updates.belongsToMember ?? null,
+    p_file_name: updates.fileName ?? undefined,
+    p_category_id: updates.categoryId ?? undefined,
+    p_belongs_to_member: updates.belongsToMember ?? undefined,
   });
   if (error) throw new Error(`Update failed: ${error.message}`);
 }
