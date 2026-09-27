@@ -611,7 +611,7 @@ export type Database = {
         }[]
       }
       rag_set_chunk_embedding: {
-        Args: { p_chunk_id: string; p_embedding: string; p_schema: string }
+        Args: { p_chunk_id: string; p_embedding?: string; p_schema: string }
         Returns: undefined
       }
       rag_set_document_text: {
