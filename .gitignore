@@ -66,3 +66,6 @@ supabase/.temp/
 
 # App example
 app-example
+
+# QA run output (qa/run.mjs writes summaries and transcripts here)
+qa/out/

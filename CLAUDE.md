@@ -30,7 +30,8 @@ Three things will mislead you if you assume otherwise:
    anyone's notifications. Functions only the server calls get
    `REVOKE ... FROM PUBLIC, anon, authenticated` and a grant to
    `service_role`, nothing more. The sweep at the bottom of 023 must return
-   zero rows on both projects; run it after any change to a function.
+   zero rows on both projects; run it after any change to a function. It
+   lives in `qa/sql/sweep.sql`, and the QA workflow runs it on every run.
 3. **This app targets both native and web from one codebase.** Day-to-day
    review happens on the web build (deployed to Vercel), but native
    Android/iOS is a real target with platform-specific code paths. A change
@@ -65,9 +66,33 @@ npm run typecheck              # tsc --noEmit
 
 ### Testing
 
-**There is no test framework.** No Jest, no test files, no `test` script.
-Verification today means: `npm run typecheck` (**must stay at 0 errors**),
-`npm run build` must succeed, and manual checks in the browser.
+The app itself has no unit tests: `npm run typecheck` (**must stay at 0
+errors**) and `npm run build` are the local gates.
+
+**`qa/` is an end-to-end suite against the DEV project**, run by
+`.github/workflows/qa.yml` — after every Edge Function deploy to DEV, nightly
+at 03:10 IST, and on pushes that change `qa/`. It uploads synthetic SPECIMEN
+documents to its own vault (QA Vault A, account A), asks questions about
+them, and checks the answers on facts and sources, never wording. It also
+runs the 023 sweep and the 024 DEV/PROD fingerprint, 34 access probes (a
+logged-out visitor and a second account must be refused everywhere), and the
+full upload → ingest → expiry-notification pipeline. See `qa/README.md`.
+
+- **It spends the free Groq budget carefully, by design.** Each question is
+  ~9K tokens, mostly on the relevance judge (`gpt-oss-20b`: 8K tokens/min,
+  200K/day). Questions go one at a time, 90s apart; the run backs off on a
+  rate limit and stops if Groq pushes back twice; at most two post-deploy
+  runs a day may ask questions. A rate limit is *inconclusive*, never a
+  failure. Worst day ≈ half of `gpt-oss-20b`'s free allowance.
+- **It never touches PROD data** — the runner refuses a PROD URL. Its only
+  PROD access is the two read-only catalog queries above.
+- **Everything in `qa/fixtures/` is fictional and says so.** This repo is
+  public: never commit a real document there, or anywhere.
+- `qa/` has its own `package.json` and lockfile (like `marketing/video`), so
+  the app's `npm ci` and the Vercel build never install it.
+- **Known issues** (🐞) are real defects the suite already understands: listed
+  in every run's summary without turning it red, and they pass by themselves
+  once fixed. Currently two — see [Known issues found by QA](#known-issues-found-by-qa).
 
 ---
 
@@ -326,6 +351,11 @@ supabase/
   functions/                 # Deno Edge Functions (NOT typechecked by tsconfig)
   migrations/                # SQL — incomplete, see Database
 
+qa/                          # end-to-end QA against DEV (own package.json)
+  run.mjs  questions.yaml    # the runner, and what it asks
+  fixtures/documents.mjs     # the SPECIMEN documents and the facts they carry
+  sql/                       # the 023 sweep and the 024 fingerprint
+
 scripts/setup.sh             # cloud bootstrap
 vercel.json                  # build + SPA rewrite
 ```
@@ -433,26 +463,13 @@ proper comparison found; the three that mattered:
 - **Five functions existed only in the databases**, including the two ingest
   writes through (`complete_document_ingestion`, `create_expiry_alert`).
 
-**How "the same" is checked now** — this fingerprint, run on both projects,
-must return identical rows. After 024 it did, for all ten object types:
-
-```sql
-with objs as (
-  select 'function' k, p.oid::regprocedure::text||' '||md5(regexp_replace(pg_get_functiondef(p.oid), '\s+', ' ', 'g'))||' '||coalesce(array_to_string(p.proacl,' '),'NULL') v
-    from pg_proc p join pg_namespace n on n.oid=p.pronamespace
-    where n.nspname='public' and not exists (select 1 from pg_depend d join pg_extension e on e.oid=d.refobjid where d.objid=p.oid and d.deptype='e')
-  union all select 'column', table_name||'.'||column_name||' '||data_type||' null='||is_nullable||' def='||coalesce(column_default,'') from information_schema.columns where table_schema='public'
-  union all select 'policy', schemaname||'.'||tablename||'.'||policyname||' '||cmd||' '||array_to_string(roles,',')||' USING '||coalesce(qual,'')||' CHECK '||coalesce(with_check,'') from pg_policies where schemaname in ('public','storage')
-  union all select 'rls', c.relname||' '||c.relrowsecurity from pg_class c where c.relnamespace='public'::regnamespace and c.relkind='r'
-  union all select 'trigger(app)', event_object_schema||'.'||event_object_table||'.'||trigger_name||' '||action_timing||' '||event_manipulation||' '||action_statement from information_schema.triggers where event_object_schema in ('public','auth')
-  union all select 'index', indexname||' '||indexdef from pg_indexes where schemaname='public'
-  union all select 'constraint', conrelid::regclass::text||'.'||conname||' '||pg_get_constraintdef(oid) from pg_constraint where connamespace='public'::regnamespace
-  union all select 'tablegrant', table_name||' '||grantee||' '||privilege_type from information_schema.role_table_grants where table_schema='public' and grantee in ('anon','authenticated','service_role')
-  union all select 'bucket', id||' public='||public from storage.buckets
-  union all select 'category', name from public.document_categories
-)
-select k, count(*) n, md5(string_agg(v, E'\n' order by v)) h from objs group by k order by k;
-```
+**How "the same" is checked now** — a fingerprint, run on both projects,
+must return identical rows: one per object type (functions with their bodies
+and grants, columns, policies, RLS flags, app triggers, indexes, constraints,
+table grants, buckets, categories), each with a count and a hash. After 024 it
+did, for all ten types. The query lives in **`qa/sql/fingerprint.sql`** —
+paste it into the SQL editor of each project, or let the QA workflow compare
+the two for you on every run.
 
 Run it after applying any migration to both projects. **Changing a database
 by hand without a migration is what caused every item above** — if something
@@ -571,6 +588,25 @@ layout from coordinates.
 - `EXTRACTOR_VERSION` in `_shared/ingest.ts` records which reader produced a
   family's stored text. Bumping it re-runs extraction over stored PDFs, the
   same way changing the embedding model re-runs embedding.
+
+### Known issues found by QA
+
+The QA suite reports these on every run (🐞) until they are fixed; each
+check passes by itself once the defect is gone.
+
+- **Browser-made Hindi PDFs lose letters in the server's text layer.**
+  pdfjs-serverless drops Devanagari conjuncts, reph and the pre-base vowel
+  sign when their glyphs carry no ToUnicode mapping: "आशा वर्मा" is stored
+  as "आशा वमा", "संपत्ति" as "संप", "विभाग" as "वभाग". Digits and Latin text
+  survive, so amounts, dates and ID numbers are still found; Hindi names and
+  words are not. Poppler reads the same file correctly, so this is the
+  reader, not the file. The server's OCR fallback is English-only, so it
+  cannot rescue these either. Found by `qa/tools/check-fixtures.mjs`.
+- **Every DD/MM/YYYY expiry is stored twice, once truncated.** The second
+  expiry pattern in `extractMetadata()` (`_shared/ingest.ts`) is meant for
+  YYYY-first dates but also matches "17/10/2026" and keeps "17/10/20". The
+  expiry alert uses the first, correct value, but the document viewer lists
+  every metadata row, so people see a bogus expiry beside the real one.
 
 ### Chunking — sized to the model's window, not to taste
 

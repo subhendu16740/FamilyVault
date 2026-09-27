@@ -1,0 +1,177 @@
+# ─── The questions QA asks, and what a correct answer must contain ─
+#
+# Every fact comes from a SPECIMEN document in fixtures/documents.mjs, all
+# held in QA Vault A. Answers are judged on facts, never wording:
+#
+#   date: 2033-07-19     any common form — 19/07/2033, 19 July 2033, 19 जुलाई 2033
+#   amount: 300000       ₹3,00,000, 300000, 3 lakh
+#   text: Z7391046       case, spaces and punctuation ignored
+#   phone: "9822041937"  however it is spaced or prefixed
+#   refuses: true        says the documents do not answer it
+#   not_*                must NOT appear (someone else's value, an invented one)
+#   source: <file>       that document must be among the answer's sources
+#   answer_language, script, no_markdown   for Hindi and voice mode
+#
+# Every question also checks the pipeline itself: the query must have been
+# embedded and the index must not be mid-rebuild.
+#
+# Tiers, chosen to fit the free Groq budget (about 9K tokens a question,
+# most of it on the relevance judge — see lib/budget.mjs):
+#
+#   smoke    3 questions, after every deploy to DEV
+#   core     2 more, every night
+#   rotate   one group per night, chosen by the date; all of them every
+#            3 nights. A nightly run is 8–9 questions, about a third of one
+#            model's free daily allowance.
+#
+# `after: <id>` asks the question as a follow-up in the same conversation.
+# `guards:` names the past failure the question exists to catch.
+
+questions:
+  # ── smoke ──────────────────────────────────────────────────────
+  - id: passport-expiry
+    tier: smoke
+    ask: When does Asha Verma's passport expire?
+    expect:
+      date: 2033-07-19
+      source: passport_asha_verma_specimen_v1.pdf
+    guards: dates survive extraction, and the question is embedded (the HuggingFace 410 left every vector NULL)
+
+  - id: policy-table-row
+    tier: smoke
+    ask: What is the sum insured for Kamala Verma under our health insurance policy?
+    expect:
+      amount: 300000
+      not_amount: 1000000
+      source: health_policy_verma_specimen_v1.pdf
+    guards: tables keep their rows (PDFs were once read column by column)
+
+  - id: no-such-document
+    tier: smoke
+    ask: What is the chassis number of our car?
+    expect:
+      refuses: true
+      not_regex: "\\b[A-HJ-NPR-Z0-9]{17}\\b"
+    guards: nothing is invented when no document answers the question
+
+  # ── core ───────────────────────────────────────────────────────
+  - id: mobile-among-crowding-document
+    tier: core
+    ask: What is Mira Verma's mobile number?
+    expect:
+      phone: "9822041937"
+      not_phone: "9011023452"
+      source: resume_mira_verma_specimen_v1.pdf
+    guards: an eight-page tax return saying "Mobile Number" everywhere — and printing her father's — must not crowd out her résumé (the per-document cap)
+
+  - id: hindi-question
+    tier: core
+    ask: आशा वर्मा का पासपोर्ट कब समाप्त होगा?
+    language: hi-IN
+    expect:
+      date: 2033-07-19
+      answer_language: hi
+      script: devanagari
+      source: passport_asha_verma_specimen_v1.pdf
+    guards: a Hindi question is translated for retrieval and answered in Hindi (the JSON-mode translate step)
+
+  # ── rotate, group 1 ────────────────────────────────────────────
+  - id: passport-number
+    tier: rotate
+    group: 1
+    ask: What is Asha Verma's passport number?
+    expect:
+      text: Z7391046
+      source: passport_asha_verma_specimen_v1.pdf
+    guards: identifiers come back exactly
+
+  - id: passport-issue-follow-up
+    tier: rotate
+    group: 1
+    after: passport-expiry
+    ask: And when was it issued?
+    expect:
+      date: 2023-07-20
+      source: passport_asha_verma_specimen_v1.pdf
+    guards: a follow-up keeps its subject (condense step, pinned sources)
+
+  - id: rent-from-scan
+    tier: rotate
+    group: 1
+    ask: How much is the monthly rent for the flat in Baner?
+    expect:
+      amount: 32000
+      source: rent_agreement_scan_specimen_v1.pdf
+    guards: a scan whose only text is a signature stamp is still OCR'd (the Harrier Insurance case)
+
+  # ── rotate, group 2 ────────────────────────────────────────────
+  - id: policy-end-date
+    tier: rotate
+    group: 2
+    ask: When does our family health insurance policy end?
+    expect:
+      date: 2027-03-31
+      source: health_policy_verma_specimen_v1.pdf
+    guards: policy periods are read correctly
+
+  - id: policy-condition
+    tier: rotate
+    group: 2
+    ask: Which pre-existing condition is declared for Asha Verma in the health policy?
+    expect:
+      text: hypothyroidism
+      source: health_policy_verma_specimen_v1.pdf
+    guards: a table row pairs a person with their own condition
+
+  - id: warranty-serial-from-photo
+    tier: rotate
+    group: 2
+    ask: What is the serial number of the air conditioner on the warranty card?
+    expect:
+      text: SXA2609114
+      source: warranty_card_photo_specimen_v1.jpg
+    guards: a photographed card is read by server-side OCR
+
+  # ── rotate, group 3 ────────────────────────────────────────────
+  # The Hindi notice's text layer is known to lose conjuncts and vowel
+  # signs in the server's PDF reader (see fixtures/documents.mjs); the
+  # facts asked about here — an amount and a date — survive it.
+  - id: hindi-document-in-hindi
+    tier: rotate
+    group: 3
+    ask: आशा वर्मा को कितना संपत्ति कर देना है?
+    language: hi-IN
+    expect:
+      amount: 14250
+      answer_language: hi
+      script: devanagari
+      source: property_tax_notice_hindi_specimen_v1.pdf
+    guards: a Hindi document answers a Hindi question
+
+  - id: hindi-document-in-english
+    tier: rotate
+    group: 3
+    ask: What is the last date to pay the property tax?
+    expect:
+      date: 2026-11-30
+      source: property_tax_notice_hindi_specimen_v1.pdf
+    guards: an English question finds a Hindi document (multilingual embeddings)
+
+  - id: absent-detail
+    tier: rotate
+    group: 3
+    ask: What is Mira Verma's blood group?
+    expect:
+      refuses: true
+      not_regex: "\\b(?:AB|A|B|O)\\s?(?:[+−-]|positive|negative)"
+    guards: nothing is invented about a person the vault does know
+
+  - id: voice-mode
+    tier: rotate
+    group: 3
+    ask: When does Asha Verma's passport expire?
+    voice: true
+    expect:
+      date: 2033-07-19
+      no_markdown: true
+    guards: voice answers are plain speakable sentences
