@@ -1,0 +1,990 @@
+<title>FamilyVault Go-To-Market</title>
+<meta name="description" content="Go-to-market strategy for FamilyVault, written like a design doc.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Noto+Sans+Devanagari:wght@500;600&display=swap">
+<style>
+:root {
+  --bg: #F8F9FC;
+  --surface: #FFFFFF;
+  --surface-2: #EFF2F8;
+  --ink: #172033;
+  --ink-2: #394560;
+  --muted: #5F6A82;
+  --line: #E1E6EF;
+  --line-2: #CDD4E1;
+  --navy: #2A3D66;
+  --navy-2: #4A6491;
+  --navy-tint: #E8EDF7;
+  --link: #2F4F8F;
+  --coral: #D4807B;
+  --coral-ink: #A9504A;
+  --coral-tint: #FBEDEB;
+  --good: #1F7A52;
+  --good-tint: #E4F4EC;
+  --warn: #8A5A00;
+  --warn-tint: #FFF3D9;
+  --bad: #B42318;
+  --bad-tint: #FDE8E6;
+  --code: #EDF0F6;
+  --shadow: 0 1px 2px rgba(23, 32, 51, 0.05), 0 8px 24px -12px rgba(23, 32, 51, 0.18);
+  --display: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif;
+  --sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  --deva: 'Noto Sans Devanagari', 'IBM Plex Sans', sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0D1117; --surface: #161B22; --surface-2: #1C232D; --ink: #E6EDF3; --ink-2: #C5CEDA;
+    --muted: #93A0B1; --line: #28313C; --line-2: #36414E; --navy: #AFC3EC; --navy-2: #8EA6D6;
+    --navy-tint: #1E2A40; --link: #9DB8EE; --coral: #D4807B; --coral-ink: #EAA49F; --coral-tint: #3A2524;
+    --good: #5CC596; --good-tint: #15291F; --warn: #E6B654; --warn-tint: #2E2512; --bad: #F2877C;
+    --bad-tint: #33191A; --code: #1B222C; --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px -12px rgba(0,0,0,0.6);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0D1117; --surface: #161B22; --surface-2: #1C232D; --ink: #E6EDF3; --ink-2: #C5CEDA;
+  --muted: #93A0B1; --line: #28313C; --line-2: #36414E; --navy: #AFC3EC; --navy-2: #8EA6D6;
+  --navy-tint: #1E2A40; --link: #9DB8EE; --coral: #D4807B; --coral-ink: #EAA49F; --coral-tint: #3A2524;
+  --good: #5CC596; --good-tint: #15291F; --warn: #E6B654; --warn-tint: #2E2512; --bad: #F2877C;
+  --bad-tint: #33191A; --code: #1B222C; --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px -12px rgba(0,0,0,0.6);
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: calc(env(safe-area-inset-top, 0px) + 24px); }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 400 16.5px/1.65 var(--sans); -webkit-font-smoothing: antialiased; }
+a { color: var(--link); text-underline-offset: 3px; text-decoration-thickness: 1px; }
+a:hover { text-decoration-thickness: 2px; }
+:focus-visible { outline: 2px solid var(--coral); outline-offset: 2px; border-radius: 4px; }
+code, .mono { font-family: var(--mono); font-size: 0.86em; }
+code { background: var(--code); padding: 0.08em 0.36em; border-radius: 5px; white-space: nowrap; }
+.deva { font-family: var(--deva); }
+strong { font-weight: 600; }
+
+.page { max-width: 1200px; margin: 0 auto; padding-inline: 24px; }
+@media (max-width: 560px) { .page { padding-inline: 16px; } }
+
+/* ─── Masthead ─────────────────────────────────────────────── */
+.masthead { padding-block: 56px 28px; display: grid; gap: 18px; }
+.masthead > .eyebrow, .masthead > h1, .masthead > .lede { max-width: 900px; }
+.hero-grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(320px, 1fr); gap: 28px; align-items: start; margin-top: 10px; }
+.hero-grid .film { margin: 0; }
+.hero-grid .spec { margin: 0; }
+.hero-grid .spec dl { grid-template-columns: 1fr; }
+.hero-grid .spec dt { padding: 12px 0 2px; border-bottom: 0; }
+.hero-grid .spec dd { padding: 0 0 12px; font-size: 15px; line-height: 1.5; }
+@media (max-width: 1020px) {
+  .hero-grid { grid-template-columns: 1fr; }
+  .hero-grid .spec dl { grid-template-columns: 150px minmax(0, 1fr); }
+  .hero-grid .spec dt { padding: 13px 16px 13px 0; border-bottom: 1px solid var(--line); }
+  .hero-grid .spec dd { padding: 13px 0; font-size: 16px; }
+  .hero-grid .spec dl > :nth-last-child(-n+2) { border-bottom: 0; }
+}
+@media (max-width: 620px) {
+  .hero-grid .spec dl { grid-template-columns: 1fr; }
+  .hero-grid .spec dt { padding: 12px 0 2px; border-bottom: 0; }
+  .hero-grid .spec dd { padding: 0 0 12px; border-bottom: 1px solid var(--line); }
+}
+.eyebrow { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; font: 600 12.5px/1 var(--sans); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.eyebrow .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--line-2); }
+.tag-internal { color: var(--coral-ink); }
+h1 { margin: 0; font: 700 clamp(40px, 6.2vw, 72px)/1.02 var(--display); letter-spacing: -0.035em; font-variation-settings: 'opsz' 96; text-wrap: balance; color: var(--ink); }
+.lede { margin: 0; font-size: clamp(18px, 2.1vw, 21px); line-height: 1.55; color: var(--ink-2); max-width: 62ch; text-wrap: pretty; }
+
+/* ─── Film ─────────────────────────────────────────────────── */
+.film { margin: 8px 0 0; display: grid; gap: 14px; }
+.film-stage { position: relative; border-radius: 18px; overflow: hidden; background: #070a12; box-shadow: var(--shadow); max-width: 100%; }
+.film-stage.wide { aspect-ratio: 16 / 9; }
+.film-stage.tall { aspect-ratio: 9 / 16; max-width: 380px; }
+.film-stage video { position: absolute; inset: 0; width: 100%; height: 100%; display: block; background: #070a12; }
+.film-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; }
+.seg { display: inline-flex; background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px; padding: 3px; gap: 2px; }
+.seg button { font: 500 14px/1 var(--sans); color: var(--ink-2); background: none; border: 0; border-radius: 999px; padding: 9px 14px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
+.film figcaption { font-size: 14px; color: var(--muted); max-width: 80ch; }
+
+/* ─── Layout ───────────────────────────────────────────────── */
+.layout { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 56px; padding-block: 24px 96px; }
+.toc { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 24px); align-self: start; max-height: calc(100vh - 48px); overflow: auto; }
+.toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; counter-reset: toc; }
+.toc li { counter-increment: toc; }
+.toc a { display: grid; grid-template-columns: 26px 1fr; padding: 5px 8px; border-radius: 8px; color: var(--muted); text-decoration: none; font-size: 14px; line-height: 1.35; }
+.toc a::before { content: counter(toc, decimal-leading-zero); font: 500 11.5px/1.7 var(--mono); color: var(--line-2); }
+.toc a:hover { background: var(--surface-2); color: var(--ink); }
+.toc a.active { background: var(--navy-tint); color: var(--ink); font-weight: 500; }
+.toc a.active::before { color: var(--coral-ink); }
+.toc-title { font: 600 12px/1 var(--sans); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin: 0 0 12px 8px; }
+@media (max-width: 1020px) {
+  .layout { grid-template-columns: 1fr; gap: 8px; }
+  .toc { position: static; max-height: none; }
+  .toc ol { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+  .toc-wrap { border: 1px solid var(--line); border-radius: 14px; padding: 14px 8px; background: var(--surface); }
+}
+
+main { min-width: 0; }
+section { padding-top: 12px; margin-bottom: 72px; }
+section > h2 { margin: 0 0 6px; font: 700 clamp(28px, 3.4vw, 38px)/1.1 var(--display); letter-spacing: -0.025em; font-variation-settings: 'opsz' 60; text-wrap: balance; }
+.sec-num { display: block; font: 500 13px/1 var(--mono); color: var(--coral-ink); margin-bottom: 12px; letter-spacing: 0.04em; }
+.sec-lede { margin: 10px 0 26px; font-size: 18.5px; line-height: 1.55; color: var(--ink-2); max-width: 64ch; }
+h3 { margin: 38px 0 10px; font: 650 21px/1.25 var(--display); letter-spacing: -0.012em; }
+p, ul, ol { max-width: 70ch; }
+p { margin: 0 0 14px; }
+ul, ol { padding-left: 1.25em; margin: 0 0 16px; }
+li { margin-bottom: 6px; }
+li::marker { color: var(--muted); }
+
+/* One-screen spec */
+.spec { margin: 36px 0 0; background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 8px 26px; box-shadow: var(--shadow); }
+.spec-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 18px 0 12px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.spec-head h2 { margin: 0; font: 700 22px/1.2 var(--display); letter-spacing: -0.015em; }
+.spec-head span { font: 500 13px/1 var(--mono); color: var(--muted); }
+.spec dl { margin: 0; display: grid; grid-template-columns: 150px minmax(0, 1fr); }
+.spec dt, .spec dd { padding: 13px 0; border-bottom: 1px solid var(--line); margin: 0; }
+.spec dl > :nth-last-child(-n+2) { border-bottom: 0; }
+.spec dt { font: 500 13.5px/1.6 var(--mono); color: var(--coral-ink); padding-right: 16px; }
+.spec dd { color: var(--ink); }
+@media (max-width: 620px) {
+  .spec { padding: 6px 18px; }
+  .spec dl { grid-template-columns: 1fr; }
+  .spec dt { border-bottom: 0; padding-bottom: 0; }
+}
+
+/* Tables */
+.tbl { overflow-x: auto; margin: 18px 0 22px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+table { width: 100%; border-collapse: collapse; font-size: 14.5px; line-height: 1.5; }
+th, td { text-align: left; vertical-align: top; padding: 11px 14px; border-bottom: 1px solid var(--line); }
+tr:last-child td { border-bottom: 0; }
+th { font: 600 12px/1.3 var(--sans); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); background: var(--surface-2); white-space: nowrap; }
+td:first-child { font-weight: 500; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tbl-wide table { min-width: 760px; }
+.tbl-med table { min-width: 620px; }
+
+/* Callouts */
+.analogy { margin: 22px 0; padding: 18px 20px 16px; border-radius: 14px; background: var(--navy-tint); border: 1px solid color-mix(in srgb, var(--navy) 18%, transparent); max-width: 74ch; }
+.analogy-label { display: flex; align-items: center; gap: 8px; font: 600 12px/1 var(--sans); letter-spacing: 0.09em; text-transform: uppercase; color: var(--navy); margin-bottom: 8px; }
+.analogy p:last-child { margin-bottom: 0; }
+.note { margin: 18px 0; padding: 14px 18px; border-radius: 12px; border: 1px dashed var(--line-2); color: var(--ink-2); font-size: 15px; max-width: 74ch; }
+.note p:last-child { margin: 0; }
+
+pre.code { margin: 18px 0 22px; padding: 18px 20px; background: var(--code); border-radius: 14px; overflow-x: auto; font: 400 13.5px/1.65 var(--mono); color: var(--ink); max-width: 100%; }
+pre.code .c { color: var(--muted); }
+pre.code .k { color: var(--coral-ink); }
+pre.code .s { color: var(--good); }
+
+/* Incident card */
+.incident { margin: 8px 0 26px; background: var(--surface); border: 1px solid var(--line); border-radius: 18px; overflow: hidden; box-shadow: var(--shadow); }
+.incident-top { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 20px; padding: 16px 22px; border-bottom: 1px solid var(--line); background: var(--surface-2); }
+.incident-id { font: 600 13px/1.4 var(--mono); color: var(--coral-ink); }
+.incident-title { font: 650 18px/1.35 var(--display); margin-top: 4px; }
+.incident-meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.incident-meta div { padding: 14px 22px; border-right: 1px solid var(--line); }
+.incident-meta div:last-child { border-right: 0; }
+.incident-meta b { display: block; font: 600 11.5px/1.3 var(--sans); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+.incident-meta span { font-size: 14.5px; }
+@media (max-width: 640px) { .incident-meta { grid-template-columns: 1fr; } .incident-meta div { border-right: 0; border-bottom: 1px solid var(--line); } }
+.timeline { list-style: none; margin: 0; padding: 12px 22px 18px; max-width: none; border-top: 1px solid var(--line); }
+.timeline li { display: grid; grid-template-columns: 64px 1fr; gap: 12px; padding: 7px 0; margin: 0; border-bottom: 1px dashed var(--line); font-size: 15px; }
+.timeline li:last-child { border-bottom: 0; }
+.timeline time { font: 500 13.5px/1.6 var(--mono); color: var(--coral-ink); font-variant-numeric: tabular-nums; }
+
+/* Evidence tiles */
+.tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 22px 0 14px; }
+@media (max-width: 900px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 420px) { .tiles { grid-template-columns: 1fr; } }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px 16px 14px; display: flex; flex-direction: column; gap: 6px; }
+.tile .label { font-size: 13.5px; color: var(--ink-2); line-height: 1.4; }
+.tile .value { font: 600 30px/1.1 var(--sans); letter-spacing: -0.02em; color: var(--ink); }
+.tile .value small { font-size: 17px; font-weight: 500; color: var(--ink-2); letter-spacing: 0; }
+.tile .src { margin-top: auto; font-size: 12.5px; color: var(--muted); line-height: 1.4; }
+.tile.lead { background: var(--navy); border-color: var(--navy); }
+.tile.lead .label, .tile.lead .src { color: color-mix(in srgb, var(--bg) 80%, transparent); }
+.tile.lead .value, .tile.lead .value small { color: var(--bg); }
+blockquote { margin: 18px 0 22px; padding: 4px 0 4px 20px; border-left: 3px solid var(--coral); max-width: 66ch; }
+blockquote p { font: 500 20px/1.45 var(--display); letter-spacing: -0.01em; margin: 0 0 6px; color: var(--ink); }
+blockquote cite { font-style: normal; font-size: 13.5px; color: var(--muted); }
+
+/* Figures */
+figure.diagram { margin: 24px 0 28px; }
+.dia-scroll { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 18px; color: var(--ink); }
+.dia-scroll svg { display: block; width: 100%; height: auto; }
+.dia-scroll.min720 svg { min-width: 720px; }
+.dia-scroll.min640 svg { min-width: 600px; }
+figure.diagram figcaption { margin-top: 10px; font-size: 14px; color: var(--muted); max-width: 76ch; }
+svg text { font-family: var(--sans); }
+svg .t-strong { font-weight: 600; }
+svg .t-mono { font-family: var(--mono); }
+svg .muted { fill: var(--muted); }
+svg .coral { fill: var(--coral-ink); }
+svg .node { fill: var(--surface-2); stroke: var(--line-2); }
+svg .node-accent { fill: var(--coral-tint); stroke: var(--coral); }
+svg .node-navy { fill: var(--navy-tint); stroke: var(--navy-2); }
+svg .edge { stroke: currentColor; stroke-width: 1.4; fill: none; }
+svg .edge-muted { stroke: var(--muted); stroke-width: 1.2; fill: none; }
+svg .edge-accent { stroke: var(--coral); stroke-width: 2; fill: none; }
+svg .dash { stroke-dasharray: 4 4; }
+
+/* Verdict chips */
+.chip { display: inline-flex; align-items: center; gap: 6px; font: 600 12.5px/1 var(--sans); padding: 6px 10px 6px 8px; border-radius: 999px; white-space: nowrap; }
+.chip i { font-style: normal; font-size: 12px; }
+.chip.ok { color: var(--good); background: var(--good-tint); }
+.chip.part { color: var(--warn); background: var(--warn-tint); }
+.chip.no { color: var(--bad); background: var(--bad-tint); }
+.pill { display: inline-block; font: 600 11.5px/1 var(--sans); letter-spacing: 0.04em; padding: 5px 8px; border-radius: 6px; background: var(--surface-2); color: var(--ink-2); white-space: nowrap; }
+.pill.first { background: var(--coral-tint); color: var(--coral-ink); }
+
+/* Message stack */
+.stack { list-style: none; padding: 0; margin: 20px 0 26px; display: grid; gap: 8px; max-width: 760px; }
+.stack li { margin: 0; display: grid; grid-template-columns: 110px 1fr; gap: 16px; align-items: baseline; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; }
+.stack li:nth-child(1) { margin-right: 0; }
+.stack li:nth-child(2) { margin-right: 24px; }
+.stack li:nth-child(3) { margin-right: 48px; }
+.stack li:nth-child(4) { margin-right: 72px; }
+.stack .lay { font: 600 12px/1.4 var(--sans); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.stack .lay b { display: block; font: 500 12px/1.4 var(--mono); color: var(--coral-ink); letter-spacing: 0; text-transform: none; }
+.stack q { font: 600 18.5px/1.4 var(--display); letter-spacing: -0.01em; quotes: '“' '”'; }
+@media (max-width: 640px) { .stack li { grid-template-columns: 1fr; gap: 6px; margin-right: 0 !important; } }
+
+.two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 18px 0 22px; }
+@media (max-width: 720px) { .two { grid-template-columns: 1fr; } }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; }
+.card h4 { margin: 0 0 8px; font: 650 16.5px/1.3 var(--display); }
+.card p, .card ul { font-size: 15px; margin-bottom: 8px; }
+.card ul { padding-left: 1.1em; }
+.card :last-child { margin-bottom: 0; }
+
+.sources { font-size: 14.5px; }
+.sources li { margin-bottom: 9px; }
+.sources .conf { font-size: 12.5px; color: var(--muted); }
+footer { padding-block: 32px 64px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
+</style>
+
+<div class="page">
+  <header class="masthead" id="top">
+    <div class="eyebrow"><span class="tag-internal">Internal draft</span><span class="dot"></span><span>Go-to-market v1</span><span class="dot"></span><span>27 September 2026</span></div>
+    <h1>FamilyVault go-to-market</h1>
+    <p class="lede">How FamilyVault finds its first thousand families, written the way you would write a design doc. The problem is an incident report, the customer is a type, the funnel is a pipeline with named events, and the rollout ships behind gates.</p>
+
+    <div class="hero-grid">
+    <figure class="film" aria-label="Intro film">
+      <div class="film-bar">
+        <div class="seg" role="group" aria-label="Choose a cut">
+          <button type="button" id="cut-full" aria-pressed="true" data-src="media/familyvault-intro-16x9.mp4" data-poster="media/poster-16x9.jpg" data-shape="wide">Full film · 16:9 · 1:39</button>
+          <button type="button" id="cut-short" aria-pressed="false" data-src="media/familyvault-intro-9x16-short.mp4" data-poster="media/poster-9x16.jpg" data-shape="tall">Short cut · 9:16 · 0:56</button>
+        </div>
+      </div>
+      <div class="film-stage wide" id="film-stage">
+        <video id="film" controls playsinline preload="metadata" poster="media/poster-16x9.jpg">
+          <source src="media/familyvault-intro-16x9.mp4" type="video/mp4">
+        </video>
+      </div>
+      <figcaption>The intro film, rendered from code in <code>marketing/video</code>. The screens reuse the real app's layouts and copy. The Sharma family, their insurer and the policy are fictional, and the soundtrack is synthesised, so there is nothing to license. Captions are burned in because a large share of feed video plays muted.</figcaption>
+    </figure>
+
+    <div class="spec" aria-labelledby="spec-title">
+      <div class="spec-head"><h2 id="spec-title">The strategy on one screen</h2><span>read this if you read nothing else</span></div>
+      <dl>
+        <dt>problem</dt><dd>In an emergency a family cannot reach its own paperwork. It lives in one person's head and in three or more inboxes, apps and a cupboard.</dd>
+        <dt>customer</dt><dd>Salaried, 25 to 38, in a metro, parents in another city, holding several policies and investments. NRIs with parents in India come next.</dd>
+        <dt>promise</dt><dd>Anyone in the family can ask “What is Papa's health policy number?” and get the answer and the document in seconds, by voice and in Hindi too.</dd>
+        <dt>category</dt><dd>Family emergency readiness. Competing as “document storage” means losing to free Google Drive and DigiLocker.</dd>
+        <dt>north_star</dt><dd>Ready families: a vault with the essentials in it where someone other than the uploader has already found a document on their own (<a href="#funnel">section 6</a>).</dd>
+        <dt>channels</dt><dd>Founder-led LinkedIn, then short video, search, advisor and HR partners. Paid acquisition comes last.</dd>
+        <dt>spend_gate</dt><dd>No paid acquisition until activation is at least 40% and 30-day family retention is at least 30%.</dd>
+        <dt>first_90_days</dt><dd>Instrument the app and fix the claims, onboard 50 families by hand, fix the leakiest stage, then earn the right to spend.</dd>
+      </dl>
+    </div>
+    </div>
+  </header>
+
+  <div class="layout">
+    <nav class="toc" aria-label="Contents">
+      <div class="toc-wrap">
+        <p class="toc-title">Contents</p>
+        <ol>
+          <li><a href="#translate">Marketing, translated</a></li>
+          <li><a href="#problem">The problem, as an incident</a></li>
+          <li><a href="#customer">Who it is for</a></li>
+          <li><a href="#positioning">Positioning</a></li>
+          <li><a href="#message">What we say</a></li>
+          <li><a href="#funnel">The funnel is a pipeline</a></li>
+          <li><a href="#loops">Growth loops</a></li>
+          <li><a href="#channels">Channels, ranked</a></li>
+          <li><a href="#claims">What we can claim today</a></li>
+          <li><a href="#product">Product work that is marketing</a></li>
+          <li><a href="#pricing">Pricing hypothesis</a></li>
+          <li><a href="#plan">The first 90 days</a></li>
+          <li><a href="#metrics">Metrics and experiments</a></li>
+          <li><a href="#film-use">Using the film</a></li>
+          <li><a href="#risks">Risks</a></li>
+          <li><a href="#sources">Sources</a></li>
+        </ol>
+      </div>
+    </nav>
+
+    <main>
+      <!-- 1 ─────────────────────────────────────────────────────────── -->
+      <section id="translate">
+        <span class="sec-num">01</span>
+        <h2>Marketing, translated</h2>
+        <p class="sec-lede">Most marketing vocabulary maps onto something you already reason about every day. Keep this table open while you read the rest.</p>
+        <div class="tbl tbl-med">
+          <table>
+            <thead><tr><th>Term</th><th>What it means</th><th>Engineering equivalent</th></tr></thead>
+            <tbody>
+              <tr><td>ICP (ideal customer profile)</td><td>The narrow group you build and sell for first</td><td>The target-user spec. Everyone else is out of scope for v1.</td></tr>
+              <tr><td>Positioning</td><td>The category you compete in and why you win there</td><td>An interface contract: what callers can rely on, and what you never promise</td></tr>
+              <tr><td>Funnel</td><td>The stages from first hearing of you to paying</td><td>A pipeline. Throughput is the product of every stage's pass rate.</td></tr>
+              <tr><td>Conversion rate</td><td>Share of people who reach the next stage</td><td>A stage's pass rate</td></tr>
+              <tr><td>Activation, aha moment</td><td>The first time someone gets the value</td><td>First successful run. Time-to-value is its latency.</td></tr>
+              <tr><td>Retention, churn</td><td>Who still uses it after N days, and who left</td><td>A survival curve per weekly cohort</td></tr>
+              <tr><td>North Star Metric</td><td>The one number that tracks value delivered</td><td>An SLO for value instead of uptime</td></tr>
+              <tr><td>CAC</td><td>Total cost to acquire one paying customer</td><td>Fully loaded cost per successful request</td></tr>
+              <tr><td>LTV</td><td>Gross profit from a customer over their lifetime</td><td>Margin per request × requests per lifetime</td></tr>
+              <tr><td>Payback period</td><td>Months until a customer's profit covers their CAC</td><td>Break-even on a capital expense</td></tr>
+              <tr><td>Viral coefficient (k)</td><td>New users each user brings in</td><td>A branching factor. Below 1 it dies out, but still multiplies reach by 1/(1−k).</td></tr>
+              <tr><td>Attribution, UTM tags</td><td>Which channel brought a user</td><td>Distributed tracing. A UTM tag is a trace header on the first request.</td></tr>
+              <tr><td>A/B test</td><td>Two versions shown to random halves of traffic</td><td>A feature-flag experiment with the metric fixed in advance</td></tr>
+              <tr><td>Cohort</td><td>Users grouped by the week they signed up</td><td>A batch. Compare batches with each other, never against running totals.</td></tr>
+              <tr><td>Top, middle, bottom of funnel</td><td>Content for awareness, consideration, decision</td><td>Cold, warm and hot paths</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 2 ─────────────────────────────────────────────────────────── -->
+      <section id="problem">
+        <span class="sec-num">02</span>
+        <h2>The problem, as an incident report</h2>
+        <p class="sec-lede">Lead every conversation with the problem, not the product. Written as a postmortem, the problem is easy to state precisely, and the precision is what makes the marketing credible.</p>
+
+        <div class="incident">
+          <div class="incident-top">
+            <div><div class="incident-id">INC-0214</div><div class="incident-title">A family cannot retrieve a health policy during a hospital admission</div></div>
+          </div>
+          <div class="incident-meta">
+            <div><b>Severity</b><span>High: care and money at risk</span></div>
+            <div><b>Detected by</b><span>Maa, at the hospital desk</span></div>
+            <div><b>Single point of failure</b><span>Rohan, two states away</span></div>
+          </div>
+          <ol class="timeline">
+            <li><time>02:14</time><span>Papa is admitted. The TPA desk asks for the health card or policy number, and a photo ID.</span></li>
+            <li><time>02:14</time><span>Maa messages Rohan in Bengaluru: <em>“Insurance ka policy number maang rahe hain. Kahan rakha hai??”</em></span></li>
+            <li><time>02:16</time><span>Rohan searches his personal inbox for “policy number”: 2,847 results.</span></li>
+            <li><time>02:19</time><span>The group cover documents were in his previous employer's mailbox. Access ended when he left.</span></li>
+            <li><time>02:23</time><span>The policy schedule PDF is password protected.</span></li>
+            <li><time>02:26</time><span>The insurer's app sends its OTP to Papa's phone. Papa is on a stretcher.</span></li>
+            <li><time>02:31</time><span>The paper original is in the almirah in Lucknow.</span></li>
+          </ol>
+        </div>
+
+        <h3>Impact, measured</h3>
+        <p>The emergency is the story. The unclaimed money is the proof that the problem is systemic and not anecdotal.</p>
+        <div class="tiles" role="list">
+          <div class="tile lead" role="listitem"><span class="label">Financial assets lying unclaimed in India</span><span class="value">₹1.84 <small>lakh crore</small></span><span class="src">Finance Minister, citing DFS · Oct 2025</span></div>
+          <div class="tile" role="listitem"><span class="label">Bank deposits moved to RBI's DEAF</span><span class="value">₹86,917 <small>crore</small></span><span class="src">MoS Finance in Parliament · as of 30 Jun 2026</span></div>
+          <div class="tile" role="listitem"><span class="label">Unclaimed amounts held by insurers</span><span class="value">₹8,974 <small>crore</small></span><span class="src">Rajya Sabha reply · as of 28 Feb 2026</span></div>
+          <div class="tile" role="listitem"><span class="label">Unclaimed mutual fund dividends and redemptions</span><span class="value">₹3,811 <small>crore</small></span><span class="src">SEBI annual report via ET · as of 31 Mar 2026</span></div>
+        </div>
+        <blockquote><p>“In many cases, families are simply unaware that such assets exist.”</p><cite>Press Information Bureau, Government of India, 26 December 2025</cite></blockquote>
+        <p>Two more numbers for the narrative. In a June 2025 survey of more than 5,000 people by CoverSure, an insurance vendor, <strong>60% of dependents did not know they were covered by any policy</strong>, and only one in ten could describe their cover. And the clock at the hospital is real: the TPA must be told within 24 hours of an emergency admission, and IRDAI expects a cashless decision within an hour of a complete request. Neither helps a family that cannot produce the health card and an ID.</p>
+
+        <h3>Root cause</h3>
+        <p>Each cause below is a property of a badly designed system, which is why the fix is a product and not a reminder to be more organised.</p>
+        <div class="tbl tbl-med">
+          <table>
+            <thead><tr><th>Cause</th><th>In systems terms</th><th>What FamilyVault does about it</th></tr></thead>
+            <tbody>
+              <tr><td>Only one person knows what exists and where</td><td>Bus factor of one</td><td>A shared family vault with members and roles</td></tr>
+              <tr><td>Documents are spread across inboxes, apps, chats and paper</td><td>Data sharded across providers, with no index or service discovery</td><td>One place, with text read on upload and searchable</td></tr>
+              <tr><td>Access runs through one person's passwords, OTPs and work mailbox</td><td>Every path depends on a single identity</td><td>Each member signs in as themselves</td></tr>
+              <tr><td>Password-protected PDFs and scans can't be searched</td><td>Opaque blobs</td><td>OCR on upload; policy numbers, names and expiry dates pulled out</td></tr>
+              <tr><td>The family doesn't know which policies exist</td><td>No runbook for the on-call</td><td>Ask in plain words, by voice in Hindi; reminders before things lapse</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <figure class="diagram">
+          <div class="dia-scroll min720">
+            <svg viewBox="0 0 920 330" role="img" aria-label="Before and after. Today the mother at the hospital has to reach the son, who searches five places, three of them unreachable. With FamilyVault she asks the family vault directly and gets the answer and the document back.">
+              <defs>
+                <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="currentColor"/></marker>
+                <marker id="arc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#D4807B"/></marker>
+              </defs>
+              <text x="20" y="26" class="t-strong" font-size="15" fill="currentColor">Today: Rohan is the index</text>
+              <text x="500" y="26" class="t-strong" font-size="15" fill="currentColor">With FamilyVault: the vault is the index</text>
+              <line x1="470" y1="12" x2="470" y2="318" stroke="var(--line-2)" stroke-width="1"/>
+              <!-- Left panel -->
+              <rect x="20" y="138" width="104" height="52" rx="10" class="node"/>
+              <text x="72" y="160" text-anchor="middle" font-size="13" class="t-strong" fill="currentColor">Maa</text>
+              <text x="72" y="178" text-anchor="middle" font-size="11.5" class="muted">at the hospital</text>
+              <line x1="124" y1="164" x2="172" y2="164" class="edge" marker-end="url(#ar)"/>
+              <text x="148" y="154" text-anchor="middle" font-size="11" class="muted">calls</text>
+              <circle cx="214" cy="164" r="40" class="node-accent" stroke-width="2"/>
+              <text x="214" y="160" text-anchor="middle" font-size="13" class="t-strong" fill="currentColor">Rohan</text>
+              <text x="214" y="177" text-anchor="middle" font-size="11" class="coral">bus factor 1</text>
+              <text x="290" y="58" font-size="11" class="muted">searches</text>
+              <g font-size="12">
+                <path d="M254 164 C 278 164, 276 86, 298 86" class="edge" marker-end="url(#ar)"/>
+                <rect x="300" y="70" width="158" height="32" rx="8" class="node"/><text x="312" y="90" fill="currentColor">Inbox · 2,847 hits</text>
+                <path d="M254 164 C 280 164, 278 132, 298 132" class="edge dash" marker-end="url(#ar)"/>
+                <rect x="300" y="116" width="158" height="32" rx="8" class="node"/><text x="312" y="136" fill="currentColor">Old work mail</text><text x="448" y="136" text-anchor="end" font-size="11" class="coral">locked</text>
+                <line x1="254" y1="170" x2="298" y2="178" class="edge dash" marker-end="url(#ar)"/>
+                <rect x="300" y="162" width="158" height="32" rx="8" class="node"/><text x="312" y="182" fill="currentColor">Policy PDF</text><text x="448" y="182" text-anchor="end" font-size="11" class="coral">password</text>
+                <path d="M254 166 C 280 166, 278 224, 298 224" class="edge dash" marker-end="url(#ar)"/>
+                <rect x="300" y="208" width="158" height="32" rx="8" class="node"/><text x="312" y="228" fill="currentColor">Insurer app</text><text x="448" y="228" text-anchor="end" font-size="11" class="coral">OTP to Papa</text>
+                <path d="M254 168 C 274 168, 274 270, 298 270" class="edge dash" marker-end="url(#ar)"/>
+                <rect x="300" y="254" width="158" height="32" rx="8" class="node"/><text x="312" y="274" fill="currentColor">Almirah</text><text x="448" y="274" text-anchor="end" font-size="11" class="coral">Lucknow</text>
+              </g>
+              <text x="20" y="312" font-size="11.5" class="muted">Dashed: a path that fails at 2 AM.</text>
+              <!-- Right panel -->
+              <rect x="500" y="138" width="104" height="52" rx="10" class="node"/>
+              <text x="552" y="160" text-anchor="middle" font-size="13" class="t-strong" fill="currentColor">Maa</text>
+              <text x="552" y="178" text-anchor="middle" font-size="11.5" class="muted">at the hospital</text>
+              <line x1="604" y1="152" x2="704" y2="152" class="edge-accent" marker-end="url(#arc)"/>
+              <text x="654" y="143" text-anchor="middle" font-size="11" class="coral">asks, in Hindi</text>
+              <line x1="704" y1="178" x2="606" y2="178" class="edge" marker-end="url(#ar)"/>
+              <text x="654" y="196" text-anchor="middle" font-size="11" class="muted">answer + document</text>
+              <rect x="706" y="122" width="172" height="86" rx="14" class="node-navy" stroke-width="1.5"/>
+              <text x="792" y="158" text-anchor="middle" font-size="14" class="t-strong" fill="currentColor">Family vault</text>
+              <text x="792" y="177" text-anchor="middle" font-size="11.5" class="muted">text indexed on upload</text>
+              <g font-size="12">
+                <rect x="706" y="48" width="50" height="28" rx="14" class="node"/><text x="731" y="67" text-anchor="middle" fill="currentColor">Rohan</text>
+                <rect x="767" y="48" width="50" height="28" rx="14" class="node"/><text x="792" y="67" text-anchor="middle" fill="currentColor">Priya</text>
+                <rect x="828" y="48" width="50" height="28" rx="14" class="node"/><text x="853" y="67" text-anchor="middle" fill="currentColor">Papa</text>
+                <line x1="731" y1="76" x2="755" y2="120" class="edge" marker-end="url(#ar)"/>
+                <line x1="792" y1="76" x2="792" y2="120" class="edge" marker-end="url(#ar)"/>
+                <line x1="853" y1="76" x2="829" y2="120" class="edge" marker-end="url(#ar)"/>
+                <text x="700" y="100" font-size="11" class="muted" text-anchor="end">upload once</text>
+              </g>
+              <rect x="706" y="238" width="172" height="44" rx="10" class="node"/>
+              <text x="792" y="257" text-anchor="middle" font-size="12" fill="currentColor">Reminders before</text>
+              <text x="792" y="273" text-anchor="middle" font-size="12" fill="currentColor">anything lapses</text>
+              <line x1="792" y1="208" x2="792" y2="236" class="edge" marker-end="url(#ar)"/>
+              <text x="500" y="312" font-size="11.5" class="muted">Nobody else has to be awake.</text>
+            </svg>
+          </div>
+          <figcaption>The whole pitch in one picture. Today every path to a document runs through one person, and most of those paths fail at night. FamilyVault moves the index out of Rohan's head into a vault the family can query directly.</figcaption>
+        </figure>
+      </section>
+
+      <!-- 3 ─────────────────────────────────────────────────────────── -->
+      <section id="customer">
+        <span class="sec-num">03</span>
+        <h2>Who it is for</h2>
+        <p class="sec-lede">Start narrow. A precise first customer makes every other decision (copy, channel, price, feature order) easier to make and easier to test.</p>
+<pre class="code"><span class="k">type</span> FirstCustomer = {
+  age:      25..38
+  work:     <span class="s">"salaried: IT, finance, consulting, public sector"</span>
+  city:     <span class="s">"metro: Bengaluru, Pune, Hyderabad, NCR, Mumbai, Chennai"</span>
+  parents:  <span class="s">"in another city"</span>                <span class="c">// distance is the multiplier</span>
+  holds:    [<span class="s">"group health"</span>, <span class="s">"parents' health"</span>, <span class="s">"term life"</span>, <span class="s">"vehicle"</span>, <span class="s">"SIPs"</span>, <span class="s">"demat"</span>, <span class="s">"EPF"</span>]
+  inboxes:  2..4                          <span class="c">// personal, current job, previous jobs</span>
+  role:     <span class="s">"the family's IT helpdesk and paperwork keeper"</span>
+}</pre>
+        <p>The segment is large and growing. India had <strong>23.77 crore demat accounts</strong> in August 2026, <strong>10.02 crore contributing SIP accounts</strong>, and <strong>6.19 crore unique mutual fund investors</strong> in June 2026. Every one of those accounts mails statements to somebody's inbox, and group health cover changes each time that person changes jobs.</p>
+
+        <h3>Segments, in order</h3>
+        <div class="tbl tbl-wide">
+          <table>
+            <thead><tr><th>Segment</th><th>Why the pain is sharp</th><th>Reach them through</th><th>Priority</th></tr></thead>
+            <tbody>
+              <tr><td>The migrant child: 25–35, metro job, parents in the hometown</td><td>Distance. They can't open the almirah, and they are already the family's helpdesk.</td><td>LinkedIn, Instagram, workplace groups</td><td><span class="pill first">First</span></td></tr>
+              <tr><td>NRIs with parents in India</td><td>Maximum distance plus a time difference. Pays in dollars.</td><td>NRI communities, Reddit, WhatsApp groups</td><td><span class="pill">Second, high value</span></td></tr>
+              <tr><td>Newly married, new parents</td><td>New policies, a new dependent, new nominees, all at once</td><td>Wedding and baby checklists, insurance advisors</td><td><span class="pill">Second</span></td></tr>
+              <tr><td>Parents, 55+</td><td>They are the ones searching during the crisis</td><td>Their children's invitations; WhatsApp-forwarded video</td><td><span class="pill">Users, not buyers</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="analogy">
+          <div class="analogy-label">In engineering terms</div>
+          <p>Treat it like a B2B product sold to an admin. The young professional is the <strong>admin and buyer</strong>: they set up the vault and pay. The parents are the <strong>end users</strong>. The family is the <strong>beneficiary</strong>. Marketing talks to the admin, but the admin renews only if the end users succeed, which is why voice in Hindi is a core feature and not an accessibility extra.</p>
+        </div>
+
+        <h3>Trigger events</h3>
+        <p>People don't buy this on a random Tuesday. They buy it when something happens. Subscribe to these events the way a service subscribes to a queue, and be present when they fire.</p>
+        <div class="tbl tbl-wide">
+          <table>
+            <thead><tr><th>Event</th><th>Why it opens a window</th><th>Where to be</th></tr></thead>
+            <tbody>
+              <tr><td>A parent (or a friend's parent) is hospitalised</td><td>The pain is live. Highest intent there is.</td><td>Search results, word of mouth, WhatsApp forwards</td></tr>
+              <tr><td>Changing jobs</td><td>Group health cover and the old work inbox both disappear</td><td>LinkedIn, where people announce the move</td></tr>
+              <tr><td>Marriage, a first child</td><td>New policies, a new dependent, nominee changes</td><td>Checklists, advisors, partner content</td></tr>
+              <tr><td>Buying term or health insurance</td><td>The documents are arriving right now</td><td>Advisor partnerships, post-purchase moments</td></tr>
+              <tr><td>Tax season: proofs in Jan–Mar, returns by July</td><td>Everyone is hunting for documents anyway</td><td>Search, personal-finance creators</td></tr>
+              <tr><td>A renewal notice arrives</td><td>A policy is in the inbox today</td><td>“Forward it to your vault” (<a href="#product">section 10</a>)</td></tr>
+              <tr><td>Unclaimed-money news cycles</td><td>The problem is in the headlines</td><td>PR, LinkedIn, the stat in the film</td></tr>
+              <tr><td>Moving abroad</td><td>The distance becomes permanent</td><td>NRI communities and relocation groups</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 4 ─────────────────────────────────────────────────────────── -->
+      <section id="positioning">
+        <span class="sec-num">04</span>
+        <h2>Positioning: the interface contract</h2>
+        <p class="sec-lede">Positioning decides who you are compared with. Choose the comparison you can win.</p>
+        <p>As “document storage”, FamilyVault is compared with Google Drive and DigiLocker, which are free, and the comparison is about gigabytes. As <strong>family emergency readiness</strong>, the comparison becomes “can my family get this at 2 AM without me?”, and nothing else on the list answers yes.</p>
+
+        <div class="analogy">
+          <div class="analogy-label">Positioning statement</div>
+          <p>For salaried Indians who carry their family's paperwork in their head and their inbox, FamilyVault is the family document vault that lets anyone you trust ask for a policy, ID or statement in plain words, typed or spoken, in English or Hindi, and get the answer with the document attached. Unlike a Drive folder, DigiLocker or a chat with yourself, it reads your documents, knows who “Papa” is, and tells you before anything lapses.</p>
+        </div>
+
+        <h3>The alternatives, judged on the job</h3>
+        <div class="tbl tbl-wide">
+          <table>
+            <thead><tr><th>Alternative</th><th>What it is good at</th><th>Where it fails at 2 AM</th></tr></thead>
+            <tbody>
+              <tr><td>Doing nothing</td><td>Free, zero effort</td><td>Works until the day it doesn't. This is the real competitor.</td></tr>
+              <tr><td>Google Drive or Dropbox folder</td><td>Free storage; Drive reads text in PDFs and images for search; Gemini can answer questions on paid plans</td><td>Someone has to build and share the folder. Parents won't navigate it. No reminders.</td></tr>
+              <tr><td>DigiLocker</td><td>Official copies of government-issued documents</td><td>One account per person. Not a shared, searchable family vault.</td></tr>
+              <tr><td>WhatsApp “note to self”, family group</td><td>Familiar and instant</td><td>Buried in chat history, tied to one phone, no structure</td></tr>
+              <tr><td>Spreadsheet of policy numbers</td><td>A good index</td><td>No documents, goes stale, rarely on the parents' phone</td></tr>
+              <tr><td>Password manager (e.g. 1Password Families, ~$72/yr)</td><td>Credentials and emergency kits</td><td>Built for logins, not reading documents</td></tr>
+              <tr><td>Legacy and nominee apps (Legaci, Asset Pass, One Inheritance, UnClaimedX)</td><td>Asset registers for heirs</td><td>Designed for after a death; manual entry; no OCR, questions or Hindi voice on their public pages</td></tr>
+              <tr><td>Trustworthy (US)</td><td>The closest analogue: AI questions over family documents, $10–40/month</td><td>US-only, USD pricing, no Indian documents or languages</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Why we win, ranked by how defensible it is</h3>
+        <div class="two">
+          <div class="card"><h4>1. Family-native</h4><p>Members, roles and aliases: search understands “Papa”, “Maa”, “Neha didi”. Moderately defensible, because a vault full of a family's documents and people is sticky.</p></div>
+          <div class="card"><h4>2. Built for Indian parents</h4><p>Spoken questions and answers read aloud, offered in Hindi and eight more Indian languages on the web (the browser's voices decide which work), Indian ID formats, Indian scripts in OCR. Moderately defensible.</p></div>
+          <div class="card"><h4>3. Readiness, not storage</h4><p>Expiry reminders today; a readiness score, a family drill and an emergency card next (<a href="#product">section 10</a>). Defensible once built, because nobody else is framed this way.</p></div>
+          <div class="card"><h4>4. Ask instead of search</h4><p>Answers with the source attached. Weak on its own: Gemini and ChatGPT can already answer questions over files. Never lead with “AI”.</p></div>
+        </div>
+        <p><strong>What FamilyVault is not:</strong> a will or estate planner, a password manager, or a portfolio tracker. Saying so keeps the promise small enough to keep.</p>
+      </section>
+
+      <!-- 5 ─────────────────────────────────────────────────────────── -->
+      <section id="message">
+        <span class="sec-num">05</span>
+        <h2>What we say</h2>
+        <p class="sec-lede">Messaging works like a protocol stack. Each layer answers one question, and a reader only goes down a layer when the one above has done its job.</p>
+        <ol class="stack">
+          <li><span class="lay">Hook<b>why care</b></span><q>If you were in hospital tonight, could your family find your insurance policy?</q></li>
+          <li><span class="lay">Promise<b>what changes</b></span><q>Every family document, one question away.</q></li>
+          <li><span class="lay">Proof<b>how it works</b></span><q>Photograph a policy once. FamilyVault reads it. Anyone you invite can ask for it, in English or Hindi, typed or spoken.</q></li>
+          <li><span class="lay">Trust<b>why it's safe</b></span><q>Invite-only, isolated for every family, encrypted in transit and at rest.</q></li>
+        </ol>
+
+        <h3>Headlines to test</h3>
+        <div class="tbl tbl-wide">
+          <table>
+            <thead><tr><th>Angle</th><th>Headline</th><th>Hypothesis</th></tr></thead>
+            <tbody>
+              <tr><td>Relief</td><td>Stop being your family's search engine.</td><td>Names the daily reality of the admin. Expect the best click-through with 25–35s.</td></tr>
+              <tr><td>Story</td><td>2:14 AM. The hospital needs Papa's policy number.</td><td>A story beats a feature list with cold audiences. Used as the film's hook.</td></tr>
+              <tr><td>Proof</td><td>₹1.84 lakh crore lies unclaimed in India. Families didn't know it existed.</td><td>Strongest for PR and search. Risk: fear fatigue if overused.</td></tr>
+              <tr><td>Engineer to engineer</td><td>Your family's paperwork has a bus factor of one.</td><td>Sharp on LinkedIn and X among tech workers, a large slice of the first segment.</td></tr>
+              <tr><td>For parents</td><td><span class="deva">बस पूछिए।</span> (“Just ask.”)</td><td>Opens the vertical cut when it is forwarded on WhatsApp.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>House style</h3>
+        <ul>
+          <li><strong>Be specific.</strong> Policy numbers, 2 AM, Papa. Avoid “peace of mind” and “seamless”.</li>
+          <li><strong>Show relief more than fear.</strong> The film spends as long on <em>“Tum so jao”</em> (go back to sleep) as on the crisis.</li>
+          <li><strong>Lead with the outcome.</strong> “Ask for Papa's policy” beats “AI-powered retrieval”.</li>
+          <li><strong>Claim only what the code does</strong> (<a href="#claims">section 9</a>). One false security claim costs more than every true one earns.</li>
+          <li><strong>Write for two readers.</strong> The admin reads the ad; a parent may be the one reading the WhatsApp forward.</li>
+        </ul>
+      </section>
+
+      <!-- 6 ─────────────────────────────────────────────────────────── -->
+      <section id="funnel">
+        <span class="sec-num">06</span>
+        <h2>The funnel is a pipeline</h2>
+        <p class="sec-lede">Each stage has a definition, an event that proves it happened, and a pass rate. Overall throughput is the product of the pass rates, so the cheapest growth is usually a fix to the worst stage, not more traffic at the top.</p>
+
+        <figure class="diagram">
+          <div class="dia-scroll min720">
+            <svg viewBox="0 0 960 200" role="img" aria-label="The funnel as seven stages from visit to ready family, each with the event that marks it and a starting target pass rate on the arrow between stages.">
+              <defs><marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="currentColor"/></marker></defs>
+              <g font-size="12.5">
+                <rect x="10" y="60" width="112" height="54" rx="10" class="node"/><text x="66" y="92" text-anchor="middle" class="t-strong" fill="currentColor">Visit</text>
+                <rect x="146" y="60" width="112" height="54" rx="10" class="node"/><text x="202" y="92" text-anchor="middle" class="t-strong" fill="currentColor">Sign up</text>
+                <rect x="282" y="60" width="112" height="54" rx="10" class="node"/><text x="338" y="92" text-anchor="middle" class="t-strong" fill="currentColor">Vault created</text>
+                <rect x="418" y="60" width="112" height="54" rx="10" class="node"/><text x="474" y="92" text-anchor="middle" class="t-strong" fill="currentColor">First document</text>
+                <rect x="554" y="60" width="112" height="54" rx="10" class="node-navy" stroke-width="1.5"/><text x="610" y="86" text-anchor="middle" class="t-strong" fill="currentColor">First answer</text><text x="610" y="103" text-anchor="middle" font-size="11" class="muted">the aha moment</text>
+                <rect x="690" y="60" width="112" height="54" rx="10" class="node"/><text x="746" y="92" text-anchor="middle" class="t-strong" fill="currentColor">Family joins</text>
+                <rect x="826" y="60" width="124" height="54" rx="10" class="node-accent" stroke-width="2"/><text x="888" y="86" text-anchor="middle" class="t-strong" fill="currentColor">Ready family</text><text x="888" y="103" text-anchor="middle" font-size="11" class="coral">north star</text>
+              </g>
+              <g font-size="12" class="t-mono">
+                <line x1="122" y1="87" x2="144" y2="87" class="edge" marker-end="url(#ar2)"/><text x="134" y="50" text-anchor="middle" class="coral">25%</text>
+                <line x1="258" y1="87" x2="280" y2="87" class="edge" marker-end="url(#ar2)"/><text x="270" y="50" text-anchor="middle" class="coral">85%</text>
+                <line x1="394" y1="87" x2="416" y2="87" class="edge" marker-end="url(#ar2)"/><text x="406" y="50" text-anchor="middle" class="coral">70%</text>
+                <line x1="530" y1="87" x2="552" y2="87" class="edge" marker-end="url(#ar2)"/><text x="542" y="50" text-anchor="middle" class="coral">70%</text>
+                <line x1="666" y1="87" x2="688" y2="87" class="edge" marker-end="url(#ar2)"/><text x="678" y="50" text-anchor="middle" class="coral">45%</text>
+                <line x1="802" y1="87" x2="824" y2="87" class="edge" marker-end="url(#ar2)"/><text x="814" y="50" text-anchor="middle" class="coral">60%</text>
+              </g>
+              <g font-size="10.5" class="t-mono muted">
+                <text x="66" y="136" text-anchor="middle">page_view</text>
+                <text x="202" y="136" text-anchor="middle">signup_completed</text>
+                <text x="338" y="136" text-anchor="middle">vault_created</text>
+                <text x="474" y="136" text-anchor="middle">document_uploaded</text>
+                <text x="610" y="136" text-anchor="middle">question_answered</text>
+                <text x="746" y="136" text-anchor="middle">invite_accepted</text>
+                <text x="888" y="136" text-anchor="middle">computed nightly</text>
+              </g>
+              <text x="10" y="186" font-size="11.5" class="muted">Pass rates on the arrows are starting hypotheses. Replace them with measured week-4 numbers.</text>
+            </svg>
+          </div>
+          <figcaption>At these rates about 42% of sign-ups reach a first answer (activation) and about 11% become Ready families within 30 days. The spend gate in the one-screen summary is written against these two numbers.</figcaption>
+        </figure>
+
+        <h3>The north star: Ready families</h3>
+<pre class="code"><span class="k">ready_family</span>(vault) :=
+      documents(vault)  >= 8
+  AND categories(vault) >= 3
+  AND EXISTS member m &lt;&gt; creator(vault):
+        joined(m) AND retrieved(m)   <span class="c">-- a sourced answer to their question, or a document opened</span></pre>
+        <p>Counting uploads measures effort. Counting questions measures curiosity. Neither says whether the family is ready. The last clause is what matters: someone other than the uploader has found something on their own.</p>
+        <div class="analogy">
+          <div class="analogy-label">In engineering terms</div>
+          <p>A backup you have never restored is not a backup. A vault nobody else has opened is not ready. Build the restore test into onboarding as a <strong>family drill</strong>: once the essentials are in, prompt the admin to have Maa ask for one document herself. It proves access works, and it is the single best predictor of retention you can instrument on day one.</p>
+        </div>
+
+        <h3>Tracking plan</h3>
+        <p>The app has no analytics today: nothing in <code>src/</code> sends product events. Add them before spending anything, because you cannot improve a stage you cannot see. PostHog fits well (open source, web and React Native SDKs, can be self-hosted); an append-only <code>events</code> table written by an Edge Function also works.</p>
+        <div class="tbl tbl-wide">
+          <table>
+            <thead><tr><th>Event</th><th>Fire it in</th><th>Properties</th></tr></thead>
+            <tbody>
+              <tr><td><code>signup_completed</code></td><td><code>src/lib/auth.tsx</code> signUp, signInWithGoogle</td><td>method, utm_source, utm_campaign</td></tr>
+              <tr><td><code>vault_created</code></td><td><code>src/app/setup-family.tsx</code> (the <code>create_family</code> RPC)</td><td>minutes_since_signup</td></tr>
+              <tr><td><code>document_uploaded</code></td><td><code>src/app/(tabs)/upload.tsx</code> handleUpload</td><td>source (scan, file, gallery), category, ocr_chars, file_type</td></tr>
+              <tr><td><code>question_answered</code></td><td><code>src/app/(tabs)/search.tsx</code> handleAsk</td><td>mode (text, voice), language, source_count, latency_ms</td></tr>
+              <tr><td><code>invite_sent</code>, <code>invite_accepted</code></td><td><code>src/app/family.tsx</code> handleInvite; <code>accept_pending_invitations</code></td><td>relationship, hours_to_accept</td></tr>
+              <tr><td><code>document_opened</code></td><td><code>src/app/document/[id].tsx</code></td><td>opener_is_uploader, via (search, home, notification)</td></tr>
+              <tr><td><code>reminder_opened</code></td><td><code>src/app/notifications.tsx</code> handlePress</td><td>type, days_to_expiry</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="note"><strong>Privacy rule for events:</strong> send counts, categories and timings only. Never document text, file names, names, numbers or the question itself. Unanswered questions are a key quality signal: log <code>source_count = 0</code>, not the question.</p>
+      </section>
+
+      <!-- 7 ─────────────────────────────────────────────────────────── -->
+      <section id="loops">
+        <span class="sec-num">07</span>
+        <h2>Growth loops</h2>
+        <p class="sec-lede">A funnel is a line; a loop feeds itself. FamilyVault has a natural loop because the product only works when the family is in it.</p>
+        <figure class="diagram">
+          <div class="dia-scroll min640">
+            <svg viewBox="0 0 760 360" role="img" aria-label="The retention loop runs from uploading documents, to inviting family, to a family member finding something alone, to reminders bringing everyone back. A branch leads from the spouse's parents to a new vault, which is the viral growth path.">
+              <defs>
+                <marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="currentColor"/></marker>
+                <marker id="ar3c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#D4807B"/></marker>
+              </defs>
+              <g font-size="12.5">
+                <rect x="160" y="20" width="180" height="48" rx="12" class="node"/><text x="250" y="41" text-anchor="middle" class="t-strong" fill="currentColor">Admin uploads</text><text x="250" y="57" text-anchor="middle" font-size="11.5" class="muted">the essentials</text>
+                <rect x="330" y="156" width="170" height="48" rx="12" class="node"/><text x="415" y="177" text-anchor="middle" class="t-strong" fill="currentColor">Invites the family</text><text x="415" y="193" text-anchor="middle" font-size="11.5" class="muted">2–4 people</text>
+                <rect x="160" y="292" width="180" height="48" rx="12" class="node-navy" stroke-width="1.5"/><text x="250" y="313" text-anchor="middle" class="t-strong" fill="currentColor">Maa finds one herself</text><text x="250" y="329" text-anchor="middle" font-size="11.5" class="muted">the family drill</text>
+                <rect x="10" y="156" width="160" height="48" rx="12" class="node"/><text x="90" y="177" text-anchor="middle" class="t-strong" fill="currentColor">Reminders</text><text x="90" y="193" text-anchor="middle" font-size="11.5" class="muted">bring everyone back</text>
+              </g>
+              <g font-size="11.5">
+                <path d="M340 44 C 400 50, 420 100, 418 152" class="edge" marker-end="url(#ar3)"/><text x="432" y="92" class="muted">invite</text>
+                <path d="M415 204 C 412 260, 380 300, 344 312" class="edge" marker-end="url(#ar3)"/><text x="410" y="276" class="muted">60% accept</text>
+                <path d="M160 316 C 100 310, 88 260, 90 208" class="edge" marker-end="url(#ar3)"/><text x="20" y="276" class="muted">trust, habit</text>
+                <path d="M90 156 C 92 100, 110 50, 156 44" class="edge" marker-end="url(#ar3)"/><text x="30" y="92" class="muted">renewals added</text>
+              </g>
+              <g font-size="12.5">
+                <rect x="556" y="100" width="186" height="48" rx="12" class="node-accent" stroke-width="1.5"/><text x="649" y="121" text-anchor="middle" class="t-strong" fill="currentColor">Priya's parents see it</text><text x="649" y="137" text-anchor="middle" font-size="11.5" class="coral">every marriage links two families</text>
+                <rect x="556" y="222" width="186" height="48" rx="12" class="node-accent" stroke-width="1.5"/><text x="649" y="243" text-anchor="middle" class="t-strong" fill="currentColor">A new vault</text><text x="649" y="259" text-anchor="middle" font-size="11.5" class="coral">a new admin, a new loop</text>
+                <path d="M500 172 C 525 168, 530 128, 552 125" class="edge-accent" marker-end="url(#ar3c)"/>
+                <line x1="649" y1="148" x2="649" y2="218" class="edge-accent" marker-end="url(#ar3c)"/><text x="660" y="188" font-size="11.5" class="coral t-mono">k ≈ 0.27</text>
+              </g>
+            </svg>
+          </div>
+          <figcaption>The loop on the left keeps families; the branch on the right finds new ones. Spouses matter most: a married admin's in-laws are the most natural second vault.</figcaption>
+        </figure>
+        <h3>The viral arithmetic</h3>
+        <p><span class="mono">k = invites per vault × acceptance rate × share of joiners who start their own vault</span>. With 3 × 60% × 15%, <span class="mono">k ≈ 0.27</span>. That is below 1, so it will not grow on its own, but every 100 families you acquire become about <span class="mono">100 / (1 − 0.27) ≈ 137</span>. Put differently, it cuts your effective acquisition cost by about 27%. Measure the three factors separately; each has its own fix.</p>
+      </section>
+
+      <!-- 8 ─────────────────────────────────────────────────────────── -->
+      <section id="channels">
+        <span class="sec-num">08</span>
+        <h2>Channels, ranked</h2>
+        <p class="sec-lede">Evaluate channels like infrastructure: cost, time to the first signal, whether it scales, and how well it fits the first customer. Content compounds like a cache that warms slowly. Paid is on-demand compute: instant, expensive, and it stops the moment you stop paying.</p>
+        <div class="tbl tbl-wide">
+          <table>
+            <thead><tr><th>#</th><th>Channel</th><th>Cost</th><th>First signal</th><th>Scales</th><th>First move</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td>Founder-led LinkedIn (and X)</td><td>Time only</td><td>2–4 weeks</td><td>Medium</td><td>Three posts a week: the build, the 2 AM story, what reading your own family's documents taught you (anonymised), the unclaimed-money data.</td></tr>
+              <tr><td>2</td><td>Short video: Reels, Shorts, LinkedIn video</td><td>Low</td><td>1–2 weeks</td><td>High</td><td>Post the film's short cut; 15-second hook tests; collaborations with personal-finance creators at 10k–200k followers.</td></tr>
+              <tr><td>3</td><td>Search and free tools</td><td>Time</td><td>3–6 months</td><td>High, compounding</td><td>Pages that answer crisis searches: documents for cashless hospitalisation, finding a lost policy number, claiming a parent's insurance, tracing unclaimed deposits. Plus a free family emergency checklist.</td></tr>
+              <tr><td>4</td><td>Communities</td><td>Time</td><td>1–3 weeks</td><td>Low</td><td>r/IndiaInvestments, r/personalfinanceindia, NRI groups, alumni and company channels. Answer questions; do not spam.</td></tr>
+              <tr><td>5</td><td>Partners: insurance advisors, mutual fund distributors, CAs, HR benefits</td><td>Revenue share</td><td>1–2 months</td><td>Medium</td><td>Advisors take the frantic call after every death or admission. Offer a co-branded vault for their clients; pilot with 3–5.</td></tr>
+              <tr><td>6</td><td>PR</td><td>Low</td><td>Event-driven</td><td>Spiky</td><td>Survey 500+ people: “Could your parents find your health policy tonight?” Pitch it with the unclaimed-money data and the Bima Sugam launch news.</td></tr>
+              <tr><td>7</td><td>Paid: Google Search, Meta</td><td>High</td><td>Days</td><td>High</td><td>Only after the spend gate. Start with crisis keywords on Search and retargeting people who watched the film.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h3>Seasonality</h3>
+        <ul>
+          <li><strong>January–March:</strong> tax-saving proofs and many health renewals. “Get every policy in one place before March 31.”</li>
+          <li><strong>July:</strong> income tax returns. Documents are being hunted anyway.</li>
+          <li><strong>May–June:</strong> Mother's Day and Father's Day. “Set up the vault with them, not for them.”</li>
+          <li><strong>October–November:</strong> Diwali, family time at home, festive clean-outs of the almirah.</li>
+          <li><strong>Any week:</strong> unclaimed-money and IRDAI news. Have the survey and the film ready to go.</li>
+        </ul>
+      </section>
+
+      <!-- 9 ─────────────────────────────────────────────────────────── -->
+      <section id="claims">
+        <span class="sec-num">09</span>
+        <h2>What we can claim today</h2>
+        <p class="sec-lede">A document vault sells trust. Every public claim below was checked against the code in this repository on 27 September 2026. Treat this table as a gate on copy: nothing ships in an ad, page or pitch unless its row is green.</p>
+        <div class="tbl tbl-wide">
+          <table>
+            <thead><tr><th>Claim</th><th>Verdict</th><th>Evidence and caveats</th></tr></thead>
+            <tbody>
+              <tr><td>Only the people you invite can open your vault</td><td><span class="chip ok"><i aria-hidden="true">✓</i>True today</span></td><td>Family membership plus row-level security. Storage was scoped to each family only in migration 019, and the schema-taking RPCs were locked to the service role in 022. Before those, this was not true. Get an external security review before paid acquisition.</td></tr>
+              <tr><td>Every family's documents are isolated</td><td><span class="chip ok"><i aria-hidden="true">✓</i>True</span></td><td>One Postgres schema per family (<code>family_&lt;id&gt;</code>) and a per-family storage namespace.</td></tr>
+              <tr><td>Encrypted in transit and at rest</td><td><span class="chip ok"><i aria-hidden="true">✓</i>True</span></td><td>At the infrastructure level (Supabase TLS and disk encryption). It is not application-level encryption.</td></tr>
+              <tr><td>Answers come from your own documents, with the source</td><td><span class="chip ok"><i aria-hidden="true">✓</i>True</span></td><td><code>rag-search</code> returns sources and the Ask screen shows them. An answer can still be wrong, so the document must stay one tap away.</td></tr>
+              <tr><td>Works in Hindi and other Indian languages</td><td><span class="chip part"><i aria-hidden="true">◐</i>Partly</span></td><td>On the web: spoken questions (Chrome, Safari), answers written and read in the chosen language, and photo OCR in Indian scripts. In the native app the speech recogniser is a stub and OCR reads Latin script only. Scanned Indian-language PDFs are OCR'd in English only.</td></tr>
+              <tr><td>Reminds you before documents expire</td><td><span class="chip part"><i aria-hidden="true">◐</i>Partly</span></td><td>Expiry dates are extracted and <code>create_expiry_alert</code> is called, and reminders appear in the in-app Notifications list (there are no push notifications). The SQL for <code>create_expiry_alert</code> and <code>check_expiry_notifications</code> is not in <code>supabase/migrations</code>, so the schedule can't be verified from the repo. Commit it, then promise specific lead times.</td></tr>
+              <tr><td>Your documents never leave FamilyVault</td><td><span class="chip no"><i aria-hidden="true">✕</i>Not true</span></td><td>Relevant excerpts go to Groq to write answers, text goes to Hugging Face for embeddings, and scanned PDFs go to OCR.space. Photos are read on the device. Publish a sub-processor list, and check each provider's retention and training terms before saying anything about AI training.</td></tr>
+              <tr><td>End-to-end encrypted, or “even we can't see your files”</td><td><span class="chip no"><i aria-hidden="true">✕</i>Not true</span></td><td>Search and answers need the text on the server. Say who can see what instead.</td></tr>
+              <tr><td>On Android and iOS</td><td><span class="chip no"><i aria-hidden="true">✕</i>Not yet</span></td><td>No EAS configuration, <code>android.package</code> is still <code>com.anonymous.familyvault</code>, and there is no iOS bundle ID. Say “on the web, with Android and iOS coming”.</td></tr>
+              <tr><td>Bank-grade security</td><td><span class="chip no"><i aria-hidden="true">✕</i>Avoid</span></td><td>Unverifiable. Specific statements build more trust than superlatives.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>The film only makes claims from green rows. Its reminder scene shows the in-app bell badge and Notifications screen, which is how reminders reach people today.</p>
+        <h3>Compliance you can market</h3>
+        <p>India's Digital Personal Data Protection Rules were notified on 13 November 2025, and the core obligations apply from 13 May 2027. The ones that matter here: a plain-language notice and consent, reasonable security safeguards (penalties up to ₹250 crore), breach notice to users and the Board with a detailed report within 72 hours, contracts with every processor, and verifiable parental consent for anyone under 18 (family vaults will hold children's birth certificates). Section 14 of the Act lets a person nominate someone to exercise their rights on death or incapacity, which is almost exactly the emergency access feature this product should have anyway. UIDAI tells entities not to keep Aadhaar copies unless the first eight digits are masked, and the ingest pipeline currently extracts full Aadhaar numbers into metadata. Mask them by default and say so publicly.</p>
+      </section>
+
+      <!-- 10 ────────────────────────────────────────────────────────── -->
+      <section id="product">
+        <span class="sec-num">10</span>
+        <h2>Product work that is marketing</h2>
+        <p class="sec-lede">In a product like this, the features that shorten time-to-value or create a reason to share are marketing. Ordered by what they unlock.</p>
+        <div class="tbl tbl-wide">
+          <table>
+            <thead><tr><th>Work</th><th>Size</th><th>What it unlocks</th></tr></thead>
+            <tbody>
+              <tr><td>Analytics and the tracking plan (<a href="#funnel">section 6</a>)</td><td>S</td><td>Everything else. Without it, no stage can be measured.</td></tr>
+              <tr><td>Brand assets: app icon and splash (still the Expo defaults, splash <code>#208AEF</code>), app name “familyvault” to “FamilyVault”, final Android package, link-preview image</td><td>S</td><td>Anything you share looks finished. The film's end card makes a good preview image.</td></tr>
+              <tr><td>Commit the expiry-alert SQL and mask Aadhaar by default</td><td>S</td><td>Two claims move from yellow to green (<a href="#claims">section 9</a>).</td></tr>
+              <tr><td>Family drill: prompt a member to find one document themselves</td><td>S</td><td>The north-star clause, and proof that access works</td></tr>
+              <tr><td>Readiness score: “7 of 12 essentials” across health, life, vehicle, IDs for each member, property, bank nominees</td><td>M</td><td>Activation and a number people share. It works like test coverage.</td></tr>
+              <tr><td>Forward-to-vault email address</td><td>M</td><td>Imports policies from any inbox without Gmail API access, whose restricted scopes require a third-party security assessment</td></tr>
+              <tr><td>Emergency card: a printable card with a QR code for the fridge or wallet, holding no sensitive data</td><td>S</td><td>A physical object that spreads word of mouth</td></tr>
+              <tr><td>Share one document with a link that expires, for the hospital TPA desk</td><td>S</td><td>The 2 AM moment itself. <code>getDocumentSignedUrl</code> already exists.</td></tr>
+              <tr><td>Import a CAS statement to list all mutual fund and demat holdings</td><td>M</td><td>“Upload one PDF, see every investment”</td></tr>
+              <tr><td>Emergency access for a nominee</td><td>M</td><td>Maps onto DPDP Section 14 and the core promise</td></tr>
+              <tr><td>Ask on WhatsApp</td><td>L</td><td>Meets parents where they already are</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 11 ────────────────────────────────────────────────────────── -->
+      <section id="pricing">
+        <span class="sec-num">11</span>
+        <h2>Pricing hypothesis</h2>
+        <p class="sec-lede">A starting point to test, not a decision. The one fixed rule is about trust.</p>
+        <div class="two">
+          <div class="card"><h4>Free</h4><ul><li>One family vault, every member</li><li>Up to 25 documents</li><li>Ask, by text or voice</li></ul></div>
+          <div class="card"><h4>Family: ₹99/month or ₹899/year</h4><ul><li>Unlimited documents</li><li>Reminders for everyone</li><li>Priority OCR for scanned PDFs</li><li>Later: an NRI price in dollars</li></ul></div>
+        </div>
+        <p><strong>The fixed rule: never hold documents hostage.</strong> Reading and exporting stay free forever, even after a plan lapses. It is the right thing to do for a product people rely on in an emergency, and it is a line worth printing on the pricing page.</p>
+        <p>Validate with a pricing page that records clicks before billing exists, and ask price questions in interviews (too cheap, a bargain, getting expensive, too expensive). For reference, Trustworthy charges $10–40 a month in the US, Everplans $99.99 a year, and 1Password Families about $72 a year.</p>
+        <p>Unit economics to watch, with the cost terms measured per family per month once analytics exists: <span class="mono">LTV = ARPU × gross margin × expected lifetime in months</span>. The variable costs are storage and egress, Groq tokens per question, Hugging Face embedding calls, and OCR.space pages. Aim for <span class="mono">LTV / CAC ≥ 3</span> and payback in under 12 months.</p>
+      </section>
+
+      <!-- 12 ────────────────────────────────────────────────────────── -->
+      <section id="plan">
+        <span class="sec-num">12</span>
+        <h2>The first 90 days</h2>
+        <p class="sec-lede">Four phases, each ending in a gate with explicit exit criteria. Don't pour paid traffic into a leaky funnel: it is autoscaling a service with a memory leak.</p>
+        <figure class="diagram">
+          <div class="dia-scroll min720">
+            <svg viewBox="0 0 960 230" role="img" aria-label="A 13-week timeline in four phases. Weeks 0 to 2: instrument and fix claims. Weeks 2 to 6: hand-held families. Weeks 6 to 10: fix the leakiest stage. Weeks 10 to 13: earn the right to spend. A gate closes each phase.">
+              <g font-size="11" class="t-mono muted">
+                <text x="60" y="206" text-anchor="middle">wk 0</text><text x="184" y="206" text-anchor="middle">2</text><text x="308" y="206" text-anchor="middle">4</text><text x="432" y="206" text-anchor="middle">6</text><text x="556" y="206" text-anchor="middle">8</text><text x="680" y="206" text-anchor="middle">10</text><text x="804" y="206" text-anchor="middle">12</text><text x="866" y="206" text-anchor="middle">13</text>
+              </g>
+              <line x1="60" y1="190" x2="880" y2="190" stroke="var(--line-2)"/>
+              <g font-size="12.5">
+                <rect x="60" y="20" width="124" height="34" rx="8" class="node-navy"/><text x="70" y="42" class="t-strong" fill="currentColor">Instrument, fix claims</text>
+                <rect x="184" y="62" width="248" height="34" rx="8" class="node"/><text x="194" y="84" class="t-strong" fill="currentColor">Hand-held families</text>
+                <rect x="432" y="104" width="248" height="34" rx="8" class="node"/><text x="442" y="126" class="t-strong" fill="currentColor">Fix the leakiest stage</text>
+                <rect x="680" y="146" width="186" height="34" rx="8" class="node-accent"/><text x="690" y="168" class="t-strong" fill="currentColor">Earn the right to spend</text>
+              </g>
+              <g fill="var(--coral)">
+                <path d="M184 12 l7 7 -7 7 -7 -7z"/><path d="M432 54 l7 7 -7 7 -7 -7z"/><path d="M680 96 l7 7 -7 7 -7 -7z"/><path d="M866 138 l7 7 -7 7 -7 -7z"/>
+              </g>
+              <g font-size="11" class="coral t-mono"><text x="196" y="24">G1</text><text x="444" y="66">G2</text><text x="692" y="108">G3</text><text x="878" y="150">G4</text></g>
+            </svg>
+          </div>
+          <figcaption>Each diamond is a gate. A phase does not end on a date; it ends when its exit criteria are met, or when you decide on purpose that they are wrong.</figcaption>
+        </figure>
+        <div class="tbl tbl-wide">
+          <table>
+            <thead><tr><th>Phase</th><th>Work</th><th>Exit criteria (gate)</th></tr></thead>
+            <tbody>
+              <tr><td>Weeks 0–2<br>Instrument, fix claims</td><td>Tracking plan live; brand assets; masked Aadhaar; expiry SQL in a migration; a “how your data flows” page with the sub-processor list; landing page with the film and early access; external security review booked</td><td><strong>G1:</strong> a test family's full journey shows up end to end on the dashboard, and every public claim is green</td></tr>
+              <tr><td>Weeks 2–6<br>Hand-held families</td><td>20 problem interviews; onboard 30–50 families personally on 15-minute calls; run the family drill with each; founder posts three times a week; publish the film</td><td><strong>G2:</strong> ≥ 40% of hand-held families reach Ready within 7 days, and ≥ 10 families were referred without being asked</td></tr>
+              <tr><td>Weeks 6–10<br>Fix the leakiest stage</td><td>Ship the readiness score and forward-to-vault; A/B the landing headline; 10 search pages; 1–2 creator collaborations; 3 advisor pilots</td><td><strong>G3:</strong> activation ≥ 40%, 30-day family retention ≥ 30%, and k measured for real</td></tr>
+              <tr><td>Weeks 10–13<br>Earn the right to spend</td><td>₹50k–1 lakh of paid tests against the winning message; pricing test; PR push with the survey</td><td><strong>G4:</strong> cost per Ready family known per channel, with a path to payback under 12 months. Scale the winner; iterate the rest.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h3>Interview script, short version</h3>
+        <ol>
+          <li>Tell me about the last time someone in your family needed a document urgently. What happened?</li>
+          <li>Where do your policies and statements live today? How many places?</li>
+          <li>If you were in hospital tonight, what would your parents or spouse do first?</li>
+          <li>What have you already tried? Why did you stop?</li>
+          <li>Who else in the family would need to be in this for it to work?</li>
+        </ol>
+        <p>Ask about the past, not about hypothetical futures. “Would you use this?” produces polite noise; “what did you do last time?” produces data.</p>
+      </section>
+
+      <!-- 13 ────────────────────────────────────────────────────────── -->
+      <section id="metrics">
+        <span class="sec-num">13</span>
+        <h2>Metrics and experiments</h2>
+        <p class="sec-lede">One weekly dashboard, read every Monday, and a written hypothesis before every experiment.</p>
+        <div class="two">
+          <div class="card"><h4>The weekly dashboard</h4><ul>
+            <li>New vaults, by channel</li>
+            <li>Activation: first sourced answer within 24 hours</li>
+            <li>Median time from sign-up to first answer</li>
+            <li>Ready families (the north star), total and new</li>
+            <li>Invites per vault and acceptance rate</li>
+            <li>Unanswered-question rate (<code>source_count = 0</code>)</li>
+            <li>30-day family retention by weekly cohort</li>
+            <li>Cost per Ready family, by channel, once paid starts</li>
+          </ul></div>
+          <div class="card"><h4>The experiment template</h4><ul>
+            <li><strong>Hypothesis:</strong> changing X will move metric Y, because Z</li>
+            <li><strong>Metric:</strong> one primary metric, fixed in advance</li>
+            <li><strong>Size:</strong> the smallest change worth acting on</li>
+            <li><strong>Sample:</strong> per variant, from the formula below</li>
+            <li><strong>Decision rule:</strong> what you will do if it wins, loses or ties</li>
+          </ul></div>
+        </div>
+<pre class="code"><span class="c">-- visitors per variant for 80% power at a 5% false-positive rate</span>
+n ≈ 16 · p · (1 − p) / δ²
+
+<span class="c">-- baseline sign-up rate 10%, detect a 3-point lift</span>
+n ≈ 16 · 0.10 · 0.90 / 0.03² = <span class="k">1,600 per variant</span></pre>
+        <p>Below that traffic, don't A/B test. Talk to users instead: at small scale, five interviews teach more than a statistically meaningless test.</p>
+        <p><strong>Answer quality is a marketing metric.</strong> A first question that comes back empty ends the trial. Review the unanswered rate every week, and fix retrieval before buying traffic.</p>
+      </section>
+
+      <!-- 14 ────────────────────────────────────────────────────────── -->
+      <section id="film-use">
+        <span class="sec-num">14</span>
+        <h2>Using the film</h2>
+        <p class="sec-lede">The film has two cuts and two aspect ratios, all rendered from the same timeline. Edit the copy in <code>marketing/video/src/screens.js</code>, re-render, and every version stays in sync.</p>
+        <div class="tbl tbl-wide">
+          <table>
+            <thead><tr><th>File</th><th>Length</th><th>Use it for</th></tr></thead>
+            <tbody>
+              <tr><td><code>familyvault-intro-16x9.mp4</code></td><td class="num">1:39</td><td>Landing page hero, YouTube, pinned LinkedIn post, pitch meetings</td></tr>
+              <tr><td><code>familyvault-intro-9x16.mp4</code></td><td class="num">1:39</td><td>Instagram and YouTube full-length vertical posts</td></tr>
+              <tr><td><code>familyvault-intro-9x16-short.mp4</code></td><td class="num">0:56</td><td>Reels, Shorts, WhatsApp forwards. The default for feeds.</td></tr>
+              <tr><td><code>familyvault-intro-16x9-short.mp4</code></td><td class="num">0:56</td><td>LinkedIn and X feeds</td></tr>
+              <tr><td><code>…-sfx-only.mp4</code> versions</td><td class="num">same</td><td>Posting with a platform's own licensed music track</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <ul>
+          <li><strong>The first three seconds decide the view.</strong> Facebook and Nielsen found up to 47% of a video campaign's value lands in the first three seconds. Test the 2:14 AM notification opening against the ₹1.84 lakh crore statistic as the first frame.</li>
+          <li><strong>Captions are burned in.</strong> In a 2019 US study, 69% of people watched video with the sound off in public. The Hindi and Hinglish lines carry English subtitles.</li>
+          <li><strong>The 9:16 cut keeps its content inside the platforms' safe zone</strong>, clear of the top 220 px and bottom 350 px where Reels and Shorts draw their own interface.</li>
+          <li><strong>Before it goes public,</strong> set the end-card address in <code>STORY.url</code> and swap the vector mark for the final logo once one exists.</li>
+        </ul>
+      </section>
+
+      <!-- 15 ────────────────────────────────────────────────────────── -->
+      <section id="risks">
+        <span class="sec-num">15</span>
+        <h2>Risks</h2>
+        <div class="tbl tbl-wide">
+          <table>
+            <thead><tr><th>Risk</th><th>Why it matters</th><th>Mitigation</th></tr></thead>
+            <tbody>
+              <tr><td>A security incident</td><td>Existential for a vault. Migrations 019 and 022 show isolation was not guaranteed until recently.</td><td>External review before paid growth, least privilege, a written incident plan with the 72-hour DPDP clock built in</td></tr>
+              <tr><td>“I'll set it up later”</td><td>Inertia is the real competitor, and the benefit is invisible until the emergency</td><td>Trigger-event timing, hand-held onboarding, a 10-minute path to the first answer, the readiness score</td></tr>
+              <tr><td>Fear fatigue</td><td>Scare marketing gets clicks once and then gets tuned out</td><td>Lead with relief (“Tum so jao”); no death imagery; keep the statistic for PR</td></tr>
+              <tr><td>A wrong answer at the worst moment</td><td>One confident wrong policy number destroys trust</td><td>Always show the source; the document one tap away; watch the unanswered and low-confidence rates</td></tr>
+              <tr><td>Google or DigiLocker add family Q&amp;A</td><td>Asking questions of documents is becoming a commodity</td><td>Own the family layer, the Indian-parent experience and readiness, which the platforms are not built around</td></tr>
+              <tr><td>Regulation: DPDP from May 2027, Aadhaar rules</td><td>Penalties are large and the documents are sensitive</td><td>Consent, notice, processor contracts and masked Aadhaar now, while the user base is small</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 16 ────────────────────────────────────────────────────────── -->
+      <section id="sources">
+        <span class="sec-num">16</span>
+        <h2>Sources</h2>
+        <p>Figures carry their as-of dates. Where a number came from a vendor survey or a secondary report, it says so.</p>
+        <ol class="sources">
+          <li>₹1.84 lakh crore unclaimed; campaign launch. <a href="https://www.thehindu.com/business/Economy/financial-assets-worth-184-lakh-crore-lying-unclaimed-with-banks-regulators-nirmala-sitharaman/article70127181.ece" target="_blank" rel="noopener">The Hindu / PTI, 4 Oct 2025</a>; <a href="https://www.pib.gov.in/PressReleseDetailm.aspx?PRID=2174806" target="_blank" rel="noopener">PIB, “Aapki Poonji, Aapka Adhikar”</a>. <span class="conf">The components listed at launch add up to about ₹1.01 lakh crore; the rest was not itemised.</span></li>
+          <li>“Families are simply unaware that such assets exist.” <a href="https://www.pib.gov.in/PressReleasePage.aspx?PRID=2208730" target="_blank" rel="noopener">PIB, 26 Dec 2025</a></li>
+          <li>₹86,917 crore in DEAF as of 30 Jun 2026. <a href="https://www.business-standard.com/finance/news/86-917-cr-in-unclaimed-deposits-with-rbi-fund-finmin-tells-parliament-126081101859_1.html" target="_blank" rel="noopener">Business Standard, 11 Aug 2026</a></li>
+          <li>₹8,973.89 crore unclaimed with insurers as of 28 Feb 2026. <a href="https://sansad.in/getFile/annex/270/AU3588_mEZeFZ.pdf?source=pqars" target="_blank" rel="noopener">Rajya Sabha, unstarred question 3588</a>. <span class="conf">Late-2025 statements used about ₹13,800 crore on a different basis.</span></li>
+          <li>₹3,811 crore unclaimed mutual fund dividends and redemptions as of 31 Mar 2026. <a href="https://m.economictimes.com/mf/mf-news/unclaimed-mutual-fund-dividends-rise-15-7-to-rs-2689-crore-in-fy26-sebi/amp_articleshow/133051542.cms" target="_blank" rel="noopener">Economic Times, citing SEBI's annual report</a></li>
+          <li>60% of dependents unaware of cover. <a href="https://www.business-standard.com/finance/personal-finance/80-of-indians-not-sure-what-their-insurance-policy-covers-survey-125062700708_1.html" target="_blank" rel="noopener">Business Standard on the CoverSure survey, Jun 2025</a>. <span class="conf">Vendor survey.</span></li>
+          <li>TPA intimation within 24 hours of an emergency admission. <a href="https://www.newindia.co.in/assets/docs/surveyor_management_policy/RegisterACliam.pdf" target="_blank" rel="noopener">New India Assurance</a>. Documents at the TPA desk: <a href="https://www.indusindnipponlife.com/documents/34625/224928/Health+Claim+FAQs+-+Process+and+Documentation.pdf" target="_blank" rel="noopener">IndusInd Nippon Life</a>. Cashless decision within one hour: <a href="https://actuariesindia.org/sites/default/files/inline-files/5.%20Master%20Circular%20on%20Health%20Insurance%20Business%202024.pdf" target="_blank" rel="noopener">IRDAI Master Circular on Health Insurance, 29 May 2024</a></li>
+          <li>23.77 crore demat accounts, Aug 2026. <a href="https://www.business-standard.com/markets/ipo/demat-additions-surge-to-3-3-mn-as-ipo-boom-drives-retail-investors-126090801443_1.html" target="_blank" rel="noopener">Business Standard, 8 Sep 2026</a>. 10.02 crore contributing SIP accounts, Aug 2026: <a href="https://www.angelone.in/news/economy/sip-accounts-additions-hit-6-month-high-at-1-3-million-in-august-2026" target="_blank" rel="noopener">Angel One, citing AMFI</a>. 6.19 crore unique MF investors, 30 Jun 2026: <a href="https://mf.nipponindiaim.com/MediaRoom/Pages/Press-Release-Nippon-India-Mutual-Fund-Crosses-4-Crore-Investor-Folios.pdf" target="_blank" rel="noopener">AMFI data via Nippon India MF</a></li>
+          <li>DPDP Rules notified 13 Nov 2025. <a href="https://pib.gov.in/PressReleasePage.aspx?PRID=2190014" target="_blank" rel="noopener">PIB</a>; phase-in and penalties: <a href="https://www.dlapiperdataprotection.com/?t=breach-notification&amp;c=IN" target="_blank" rel="noopener">DLA Piper</a>. Aadhaar masking: <a href="https://uidai.gov.in/images/Dos_and_Donots_for_Requesting_Entities.pdf" target="_blank" rel="noopener">UIDAI</a>. <span class="conf">Whether the Aadhaar rules bind FamilyVault needs legal review; masking is the safe default.</span></li>
+          <li>Bima Sugam marketplace expected by November 2026. <a href="https://www.moneycontrol.com/news/business/insurance/bima-sugam-marketplace-likely-to-launch-by-november-irdai-14039089.html" target="_blank" rel="noopener">Moneycontrol, 27 Sep 2026</a></li>
+          <li>Competitor pricing: <a href="https://www.trustworthy.com/pricing" target="_blank" rel="noopener">Trustworthy</a>; <a href="https://familyfolder.com/blog/everplans-pricing.html" target="_blank" rel="noopener">Everplans (third-party summary)</a>. Indian legacy apps from their public sites: <a href="https://legaci.in" target="_blank" rel="noopener">Legaci</a>, <a href="https://www.assetpass.in" target="_blank" rel="noopener">Asset Pass</a>, <a href="https://www.niviapps.com" target="_blank" rel="noopener">One Inheritance</a>, <a href="https://www.outlookbusiness.com/spotlight/news-wire/unclaimedx-unveils-pass-down-to-tackle-india-s-silent-inheritance-crisis" target="_blank" rel="noopener">UnClaimedX</a>. <span class="conf">DigiLocker's sharing features were not verified.</span></li>
+          <li>Video: 69% watch with sound off in public, <a href="https://www.forbes.com/sites/tjmccue/2019/07/31/verizon-media-says-69-percent-of-consumers-watching-video-with-sound-off/" target="_blank" rel="noopener">Verizon Media / Publicis, 2019 (US)</a>; first three seconds, <a href="https://www.facebook.com/business/news/updated-features-for-video-ads" target="_blank" rel="noopener">Facebook and Nielsen, 2016</a>. <span class="conf">Both are older, non-Indian studies; treat them as direction, not a benchmark.</span></li>
+          <li>Product claims: this repository at commit <code>cfaa1c5</code>, in particular <code>supabase/functions/_shared/ingest.ts</code>, <code>supabase/functions/rag-search</code>, <code>src/lib/ocr.ts</code>, <code>src/lib/speech-recognition.ts</code>, <code>app.json</code>, and migrations 019–022.</li>
+        </ol>
+      </section>
+    </main>
+  </div>
+
+  <footer>FamilyVault go-to-market, draft v1, 27 September 2026. Internal. The film's family, insurer and documents are fictional.</footer>
+</div>
+
+<script>
+(() => {
+  // Film: switch between the two cuts.
+  const video = document.getElementById('film');
+  const stage = document.getElementById('film-stage');
+  const buttons = [...document.querySelectorAll('.seg button')];
+  buttons.forEach((b) => b.addEventListener('click', () => {
+    if (b.getAttribute('aria-pressed') === 'true') return;
+    buttons.forEach((o) => o.setAttribute('aria-pressed', String(o === b)));
+    stage.classList.toggle('wide', b.dataset.shape === 'wide');
+    stage.classList.toggle('tall', b.dataset.shape === 'tall');
+    video.pause();
+    video.poster = b.dataset.poster;
+    video.src = b.dataset.src;
+    video.load();
+  }));
+
+  // Contents: mark the section being read.
+  const links = new Map([...document.querySelectorAll('.toc a')].map((a) => [a.hash.slice(1), a]));
+  if ('IntersectionObserver' in window) {
+    const seen = new Map();
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((e) => seen.set(e.target.id, e.isIntersecting ? e.intersectionRatio : 0));
+      let best = null;
+      for (const [id, r] of seen) if (r > 0 && (!best || r > seen.get(best))) best = id;
+      links.forEach((a, id) => a.classList.toggle('active', id === best));
+    }, { rootMargin: '-20% 0px -55% 0px', threshold: [0, 0.1, 0.3, 0.6, 1] });
+    document.querySelectorAll('main section[id]').forEach((s) => io.observe(s));
+  }
+})();
+</script>
