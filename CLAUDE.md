@@ -11,7 +11,7 @@ Expo / React Native app (SDK 55) with expo-router. Backend is Supabase
 
 ## ⚠️ Read this first
 
-Two things will mislead you if you assume otherwise:
+Three things will mislead you if you assume otherwise:
 
 1. **The schema-taking RPCs are service-role ONLY, and that is load-bearing.**
    Twelve functions (`rag_*`, `get_document_chunks`) take the family's schema
@@ -20,7 +20,18 @@ Two things will mislead you if you assume otherwise:
    it, any signed-in account could read or destroy any family's documents by
    naming their schema. Never grant one of these to a client role, and never
    add a new schema-taking function without the same revoke.
-2. **This app targets both native and web from one codebase.** Day-to-day
+2. **A user id passed as an argument is not an identity.** A `SECURITY DEFINER`
+   function runs with the owner's rights, so RLS never applies inside it. If
+   a client role can execute it, it must take the caller from `auth.uid()` —
+   or open with `perform public.assert_caller_is(p_user_id)` /
+   `assert_caller_in_family(p_family_id)` (migration 023) — never from a
+   parameter. Before 023, thirteen functions broke this rule, and `anon` with
+   no login could rename, delete or add any family's documents and read
+   anyone's notifications. Functions only the server calls get
+   `REVOKE ... FROM PUBLIC, anon, authenticated` and a grant to
+   `service_role`, nothing more. The sweep at the bottom of 023 must return
+   zero rows on both projects; run it after any change to a function.
+3. **This app targets both native and web from one codebase.** Day-to-day
    review happens on the web build (deployed to Vercel), but native
    Android/iOS is a real target with platform-specific code paths. A change
    that works on web can break native. See [Platform splits](#platform-splits).
@@ -400,16 +411,28 @@ File blobs live in a Supabase Storage bucket named `documents`. **The bucket is
 not created by any migration** — it was made by hand in the dashboard and must
 be created manually in any new project.
 
-### The migration gap — closed
+### The migration gap — mostly closed, NOT fully
 
 `.gitignore` previously contained `supabase/migrations/*.sql`, so everything
 authored after that rule landed was silently never committed. Migrations
-`019`–`022` recovered the rest: **the two databases now match, and every
-function the app calls is in a committed migration.**
+`019`–`023` recovered most of it, and every function the **app** calls is now
+in a committed migration.
 
-Verified by diffing DEV against PROD object by object — 35 functions, 8 tables,
-22 `public` policies, 3 storage policies, 11 columns on
-`family_embedding_state`, identical on both.
+An earlier version of this section said the two databases were "identical".
+That was checked by comparing function **names and counts**, not bodies, and
+it was wrong on two counts:
+
+- **Five functions still exist only in the databases**, never in a migration:
+  `complete_document_ingestion`, `create_expiry_alert`,
+  `hybrid_search_documents`, `rls_auto_enable`,
+  `upgrade_family_schema_for_search`. The first two are called by
+  `_shared/ingest.ts`; the fifth by `create_family()`. Their grants are
+  locked down by 023, but their bodies are not in the repo.
+- **Six function bodies differ between DEV and PROD** after normalising
+  whitespace: `complete_document_ingestion`, `get_document_detail`,
+  `get_family_documents`, `get_family_stats`, `search_family_documents`,
+  `handle_new_user`. Which side is right has not been decided; reconcile
+  them in a migration before trusting that DEV behaviour predicts PROD.
 
 What that recovery turned up, all of which had been invisible:
 
@@ -426,10 +449,19 @@ What that recovery turned up, all of which had been invisible:
   four, so the fix would have applied and done nothing. The `DROP` is
   load-bearing.
 - **Twelve schema-taking RPCs were callable by any signed-in user** (022).
-  See the warning at the top — this was the largest of the four.
+  See the warning at the top.
 - **`REVOKE ... FROM PUBLIC` is not enough.** Migrations 013, 016 and 017 all
   did it, and the functions stayed reachable: Supabase grants `anon` and
   `authenticated` **explicitly**, so they must be revoked by name.
+- **Thirteen owner-rights functions trusted a caller-supplied user id, or
+  checked nothing** (023). 022 missed them because it only swept functions
+  whose first argument is `p_schema`. Two of the thirteen had been restated
+  with their holes intact by 020 and 021, which captured bodies without
+  auditing them. **Capturing a function is not reviewing it.**
+- **`get_user_notifications` has never worked** (fixed in 023). The declared
+  result says `title text`, the column is `varchar`, and `RETURN QUERY`
+  demands an exact match, so every call raised a type error and the
+  notifications screen showed nothing — on both projects.
 
 `supabase/migrations/` is now the source of truth. Keep it that way: anything
 applied to a database belongs in a migration file, in the same change.

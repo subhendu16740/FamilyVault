@@ -402,6 +402,11 @@ export type Database = {
         Args: { p_user_id: string }
         Returns: number
       }
+      assert_caller_in_family: {
+        Args: { p_family_id: string }
+        Returns: undefined
+      }
+      assert_caller_is: { Args: { p_user_id: string }; Returns: undefined }
       check_expiry_notifications: {
         Args: { p_family_id: string }
         Returns: number
