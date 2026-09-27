@@ -89,7 +89,7 @@ async function main() {
       const vaultA = await ensureVault(a, VAULT_A);
       const vaultB = await ensureVault(b, VAULT_B);
       for (const v of [vaultA, vaultB]) if (v.created) results.note('setup', `created ${v.name} (${v.namespace})`);
-      const docsA = await syncFixtures(cfg, a, vaultA, results);
+      const { docs: docsA, notIndexed } = await syncFixtures(cfg, a, vaultA, results);
 
       if (want('access')) {
         section('Access');
@@ -100,11 +100,11 @@ async function main() {
         await runUploadChecks(cfg, { a, vaultA }, results, today);
       }
       section('Index');
-      await checkIndex(cfg, a, vaultA, results);
+      await checkIndex(cfg, a, vaultA, results, notIndexed);
 
       if (selected.length) {
         section(`Questions (${selected.length})`);
-        ({ budget, transcript } = await runQuestions(cfg, { a, vaultA }, results, selected));
+        ({ budget, transcript } = await runQuestions(cfg, { a, vaultA, notIndexed }, results, selected));
       }
     }
   } catch (err) {

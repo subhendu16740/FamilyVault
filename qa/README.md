@@ -75,3 +75,13 @@ node run.mjs --suite smoke
 - `extractMetadata()` in `_shared/ingest.ts` stores a second, truncated
   expiry for every DD/MM/YYYY date ("17/10/2026" and "17/10/20"); the document
   viewer shows both.
+- Ingesting that Hindi PDF fails outright (500, `unsupported Unicode escape
+  sequence`): PDF.js emits U+0000 for the unmapped glyphs and Postgres refuses
+  a NUL, so the document never becomes searchable.
+- For images, an OCR.space outage is reported as "Nothing readable could be
+  extracted" — `extractTextFromImage()` drops the OCR error — so it looks like
+  a bad file and is not retried.
+
+OCR.space itself answering 5xx is treated as **inconclusive** (an outage
+outside the app), and a question whose document is not indexed is
+**skipped** rather than asked, so one failure is reported once.

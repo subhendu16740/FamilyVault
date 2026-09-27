@@ -48,7 +48,7 @@ export function judgeAnswer(q, d) {
   return reasons;
 }
 
-export async function runQuestions(cfg, { a, vaultA }, results, questions) {
+export async function runQuestions(cfg, { a, vaultA, notIndexed = new Map() }, results, questions) {
   const budget = new Budget(cfg.spacingSeconds);
   const answered = new Map();
   const transcript = [];
@@ -57,6 +57,13 @@ export async function runQuestions(cfg, { a, vaultA }, results, questions) {
     const title = `${q.id}: ${q.ask}`;
     if (budget.open) {
       results.add('questions', q.id, title, 'deferred', { why: budget.reason, ask: q.ask });
+      continue;
+    }
+    // A question about a document that is not indexed cannot pass; asking it
+    // would only spend budget to repeat what setup already reported.
+    const missing = q.expect?.source && notIndexed.get(q.expect.source);
+    if (missing) {
+      results.add('questions', q.id, title, 'skipped', { why: `${q.expect.source} is not indexed this run (${missing.status}) — see setup`, ask: q.ask });
       continue;
     }
     const parent = q.after ? answered.get(q.after) : null;

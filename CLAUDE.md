@@ -92,7 +92,7 @@ full upload → ingest → expiry-notification pipeline. See `qa/README.md`.
   the app's `npm ci` and the Vercel build never install it.
 - **Known issues** (🐞) are real defects the suite already understands: listed
   in every run's summary without turning it red, and they pass by themselves
-  once fixed. Currently two — see [Known issues found by QA](#known-issues-found-by-qa).
+  once fixed. Currently four — see [Known issues found by QA](#known-issues-found-by-qa).
 
 ---
 
@@ -607,6 +607,16 @@ check passes by itself once the defect is gone.
   YYYY-first dates but also matches "17/10/2026" and keeps "17/10/20". The
   expiry alert uses the first, correct value, but the document viewer lists
   every metadata row, so people see a bogus expiry beside the real one.
+- **That Hindi PDF does not ingest at all.** The glyphs PDF.js cannot map come
+  out as U+0000, Postgres refuses a NUL in `text`/`jsonb`, and
+  `complete_document_ingestion` fails with `unsupported Unicode escape
+  sequence` (HTTP 500). The document stays `pending`, never searchable.
+  Stripping `\u0000` from extracted text in `_shared/ingest.ts` fixes the
+  failure; the letters above are still lost until the reader changes.
+- **For images, an OCR outage looks like a bad file.** `extractTextFromImage()`
+  keeps only the text from `ocrWithOcrSpace()` and drops its error, so a 503
+  from OCR.space is reported as "Nothing readable could be extracted" and is
+  not `retryable` — the opposite of what PDFs already do.
 
 ### Chunking — sized to the model's window, not to taste
 

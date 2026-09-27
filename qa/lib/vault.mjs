@@ -134,6 +134,11 @@ export async function syncFixtures(cfg, actor, vault, results) {
 
   const present = await listDocuments(actor, vault);
   let uploaded = 0;
+  let ocrOutage = false;
+  // Fixtures that are not indexed, with why: the index check and the
+  // questions use this so one failure is reported once, not three times.
+  const notIndexed = new Map();
+
   for (const fixture of permanentDocuments) {
     const existing = present.find((d) => d.file_name === fixture.file);
     if (existing?.ingestion_status === 'completed') continue;
@@ -142,20 +147,54 @@ export async function syncFixtures(cfg, actor, vault, results) {
     const bytes = readFileSync(new URL(fixture.file, FIXTURES));
     const up = await uploadDocument(cfg, actor, vault, { fileName: fixture.file, bytes, categoryId: categories.get(fixture.category) });
     uploaded++;
-    const ok = up.stage === 'ingest' && up.ingest.status === 200 && up.ingest.data?.success === true;
-    const why = ok
-      ? `${up.ingest.data.chunks} chunk(s)${up.ingest.data.embed_error ? `, NO VECTORS: ${up.ingest.data.embed_error}` : ''}`
-      : up.stage === 'ingest'
-        ? `ingest-document answered ${up.ingest.status}: ${up.ingest.data?.error ?? JSON.stringify(up.ingest.data).slice(0, 200)}`
-        : `${up.stage} failed: ${up.error}`;
-    results.add('setup', `fixture:${fixture.file}`, `Upload ${fixture.file}`, ok && !up.ingest.data.embed_error ? 'pass' : 'fail', { why });
+    const body = up.ingest?.data ?? {};
+    const ok = up.stage === 'ingest' && up.ingest.status === 200 && body.success === true;
+    const error = String(body.error ?? up.error ?? '');
+    let [status, why] = ok
+      ? [body.embed_error ? 'fail' : 'pass', `${body.chunks} chunk(s)${body.embed_error ? `, NO VECTORS: ${body.embed_error}` : ''}`]
+      : ['fail', up.stage === 'ingest' ? `ingest-document answered ${up.ingest.status}: ${error || JSON.stringify(body).slice(0, 200)}` : `${up.stage} failed: ${error}`];
+
+    if (!ok) {
+      const known = KNOWN_INGEST_FAILURES.find((k) => k.match.test(error));
+      if (OCR_OUTAGE.test(error)) {
+        // OCR.space's free tier is down or refusing — outside the app.
+        ocrOutage = true;
+        [status, why] = ['inconclusive', `OCR.space unavailable (${error}) — an outage outside the app; retried on the next run`];
+      } else if (fixture.kind === 'photo' && ocrOutage && /nothing readable/i.test(error)) {
+        [status, why] = ['inconclusive', 'OCR.space was down this run, so this photo could not be read; retried on the next run'];
+        results.add('setup', 'known:image-ocr-reason', 'An OCR outage is reported as an OCR outage for images too', 'known', {
+          why: 'for images, ingest says "Nothing readable could be extracted" and drops the OCR error (PDFs keep it), so an outage looks like a bad file and is not marked retryable — extractTextFromImage() in _shared/ingest.ts discards ocrWithOcrSpace().error',
+        });
+      } else if (known) {
+        [status, why] = ['known', known.why];
+      }
+    }
+    results.add('setup', `fixture:${fixture.file}`, `Upload ${fixture.file}`, status, { why });
+    if (!ok) notIndexed.set(fixture.file, { status, why });
   }
 
   const final = await listDocuments(actor, vault);
-  const indexed = permanentDocuments.filter((f) => final.some((d) => d.file_name === f.file && d.ingestion_status === 'completed'));
-  const status = indexed.length === permanentDocuments.length ? 'pass' : 'fail';
+  for (const f of permanentDocuments) {
+    const row = final.find((d) => d.file_name === f.file);
+    if (row?.ingestion_status !== 'completed' && !notIndexed.has(f.file)) notIndexed.set(f.file, { status: 'fail', why: `status ${row?.ingestion_status ?? 'missing'}` });
+  }
+  const indexed = permanentDocuments.length - notIndexed.size;
+  const statuses = [...notIndexed.values()].map((v) => v.status);
+  const status = statuses.length === 0 ? 'pass' : statuses.includes('fail') ? 'fail' : statuses.includes('inconclusive') ? 'inconclusive' : 'known';
   results.add('setup', 'vault-ready', `${vault.name} holds all ${permanentDocuments.length} SPECIMEN documents, indexed`, status, {
-    why: `${indexed.length}/${permanentDocuments.length} indexed${uploaded ? `, ${uploaded} uploaded this run` : ''}`,
+    why: `${indexed}/${permanentDocuments.length} indexed${uploaded ? `, ${uploaded} uploaded this run` : ''}${notIndexed.size ? `; not indexed: ${[...notIndexed.keys()].join(', ')}` : ''}`,
   });
-  return final;
+  return { docs: final, notIndexed };
 }
+
+// OCR.space's free tier answering 5xx, or not answering at all.
+const OCR_OUTAGE = /OCR service (returned HTTP 5\d\d|unreachable)/i;
+
+// Failures already diagnosed, matched by their exact signature so any OTHER
+// failure of the same document still fails the run.
+const KNOWN_INGEST_FAILURES = [
+  {
+    match: /unsupported Unicode escape sequence/i,
+    why: 'the whole ingestion fails (500): PDF.js emits U+0000 for Devanagari glyphs it cannot map, and Postgres refuses a NUL in text/jsonb, so complete_document_ingestion rejects the chunks and the document never becomes searchable — strip \\u0000 from extracted text in _shared/ingest.ts',
+  },
+];

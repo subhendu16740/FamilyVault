@@ -117,15 +117,24 @@ export async function runUploadChecks(cfg, { a, vaultA }, results, today) {
   }
 }
 
-/** Nothing stuck, nothing unindexed, vectors from the current model. */
-export async function checkIndex(cfg, a, vaultA, results) {
+/**
+ * Nothing stuck, nothing unindexed, vectors from the current model.
+ * Documents setup already reported are excluded — one failure, one report.
+ */
+export async function checkIndex(cfg, a, vaultA, results, notIndexed = new Map()) {
   const r = await invokeFunction(cfg, a, 'reembed-index', { family_id: vaultA.id, status_only: true });
   const d = r.data ?? {};
   const unindexed = Array.isArray(d.unindexed) ? d.unindexed : [];
-  const ok = r.status === 200 && d.up_to_date === true && unindexed.length === 0;
-  results.add('index', 'healthy', 'QA Vault A has no unindexed documents and an up-to-date search index', ok ? 'pass' : 'fail', {
+  const unexplained = unindexed.filter((f) => !notIndexed.has(f));
+  const explained = unindexed.filter((f) => notIndexed.has(f));
+  const ok = r.status === 200 && d.up_to_date === true && unexplained.length === 0;
+  results.add('index', 'healthy', 'QA Vault A has no unexplained unindexed documents and an up-to-date search index', ok ? 'pass' : 'fail', {
     why: r.status !== 200
       ? `reembed-index answered ${r.status}: ${d.error ?? JSON.stringify(d).slice(0, 160)}`
-      : `${d.up_to_date ? 'up to date' : `REBUILDING ${d.done_count}/${d.total_count}`} on ${d.model}${unindexed.length ? `; unindexed: ${unindexed.join(', ')}` : ''}`,
+      : [
+          `${d.up_to_date ? 'up to date' : `REBUILDING ${d.done_count}/${d.total_count}`} on ${d.model}`,
+          unexplained.length && `UNINDEXED: ${unexplained.join(', ')}`,
+          explained.length && `already reported in setup: ${explained.join(', ')}`,
+        ].filter(Boolean).join('; '),
   });
 }

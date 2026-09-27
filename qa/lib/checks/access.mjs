@@ -23,8 +23,11 @@ import { randomUUID } from 'node:crypto';
 import { invokeFunction } from '../supabase.mjs';
 import { permanentDocuments } from '../../fixtures/documents.mjs';
 
+// The phrasings this app's refusals actually use: 42501 from the 023
+// asserts, "Access denied" (P0001) from the read RPCs in 024, the RLS and
+// storage messages, and the Edge Functions' own 401/403 bodies.
 const AUTH_REFUSAL =
-  /permission denied|not allowed|not a member|row-level security|jwt|sign in required|not authori[sz]ed|unauthori[sz]ed|forbidden|upload permission|object not found/i;
+  /permission denied|access denied|not allowed|not a member|row-level security|jwt|sign in required|not authori[sz]ed|unauthori[sz]ed|forbidden|upload permission|object not found/i;
 const AUTH_CODES = new Set(['42501', '401', '403', 'PGRST301', 'PGRST302']);
 
 function refusedByAuth(error) {
@@ -74,6 +77,15 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     results.add('access', 'setup', 'Access checks', 'skipped', { why: 'the passport fixture is not in QA Vault A, so there is nothing to aim at' });
     return;
   }
+
+  // ── B must start as a stranger. A membership left by an earlier run that
+  // died mid-probe would make every refusal below meaningless.
+  await b.client.from('family_members').delete().eq('family_id', vaultA.id).eq('user_id', b.user.id);
+  const { data: roster } = await a.client.from('family_members').select('user_id').eq('family_id', vaultA.id);
+  const strangerOk = (roster ?? []).every((m) => m.user_id !== b.user.id);
+  results.add('access', 'control:b-is-stranger', 'Control — account B is not a member of QA Vault A', strangerOk ? 'pass' : 'fail',
+    strangerOk ? {} : { why: 'B is still a member and could not be removed — the refusals below would prove nothing' });
+  if (!strangerOk) return;
 
   // ── Positive controls: A can do all of this to its own vault.
   const controls = [
@@ -125,7 +137,7 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
   }
 
   const A = { family: vaultA.id, user: a.user.id, ns: vaultA.namespace };
-  const intrusionPath = `${A.ns}/qa_probe_${cfg.runId}.txt`;
+  const intrusionPath = `${A.ns}/qa_probe_${cfg.runId}.pdf`;
   const rpc = (actor, name, args) => () => actor.client.rpc(name, args);
   const fn = (actor, name, body) => async () => {
     const r = await invokeFunction(cfg, actor, name, body, { timeoutMs: 30_000 });
@@ -162,13 +174,19 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     ['B', "read QA Vault A's index status", 'http-401-403', fn(b, 'reembed-index', { family_id: A.family, status_only: true })],
     ['B', "list QA Vault A's files", 'refused-or-empty', () => b.client.storage.from('documents').list(A.ns)],
     ['B', "download A's passport file", 'refused', () => b.client.storage.from('documents').download(passport.storage_path)],
-    ['B', "write a file into QA Vault A's folder", 'refused', () => b.client.storage.from('documents').upload(intrusionPath, Buffer.from('qa'), { contentType: 'text/plain' })],
+    // A PDF, because the bucket only accepts document types: a text file is
+    // stopped by the MIME whitelist before the folder policy is ever tested.
+    ['B', "write a file into QA Vault A's folder", 'refused', () => b.client.storage.from('documents').upload(intrusionPath, Buffer.from('%PDF-1.4\n% FamilyVault QA probe\n'), { contentType: 'application/pdf' })],
     ['B', "read QA Vault A's family row", 'refused-or-empty', () => b.client.from('families').select('id').eq('id', A.family)],
     ['B', "read QA Vault A's member list", 'refused-or-empty', () => b.client.from('family_members').select('id').eq('family_id', A.family)],
     ['B', "read A's rows in the notifications table", 'refused-or-empty', () => b.client.from('notifications').select('id').eq('user_id', A.user)],
     ['B', "read A's user profile", 'refused-or-empty', () => b.client.from('users').select('id').eq('id', A.user)],
-    ['B', 'add itself to QA Vault A as admin', 'refused', () => b.client.from('family_members').insert({ family_id: A.family, user_id: b.user.id, role: 'admin' })],
     ['B', 'invite itself into QA Vault A as admin', 'refused', () => b.client.from('invitations').insert({ family_id: A.family, invited_by: b.user.id, invitee_email: cfg.b.email, role: 'admin', token: `qa-${cfg.runId}`, expires_at: new Date(Date.now() + 86_400_000).toISOString() })],
+    // LAST, deliberately: if this succeeds B becomes an admin of QA Vault A,
+    // and every probe after it would be testing an insider, not a stranger.
+    // (Run 1 learned this the hard way: the invitation probe above "passed"
+    // for B only because B had just made itself admin here.)
+    ['B', 'add itself to QA Vault A as admin', 'refused', () => b.client.from('family_members').insert({ family_id: A.family, user_id: b.user.id, role: 'admin' })],
   ];
 
   let n = 0;
