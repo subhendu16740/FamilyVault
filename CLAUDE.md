@@ -411,28 +411,56 @@ File blobs live in a Supabase Storage bucket named `documents`. **The bucket is
 not created by any migration** — it was made by hand in the dashboard and must
 be created manually in any new project.
 
-### The migration gap — mostly closed, NOT fully
+### The migration gap — closed, and checked properly this time
 
 `.gitignore` previously contained `supabase/migrations/*.sql`, so everything
 authored after that rule landed was silently never committed. Migrations
-`019`–`023` recovered most of it, and every function the **app** calls is now
-in a committed migration.
+`019`–`024` recovered it: **every function in `public` is now in a committed
+migration, and DEV and PROD match.**
 
-An earlier version of this section said the two databases were "identical".
-That was checked by comparing function **names and counts**, not bodies, and
-it was wrong on two counts:
+An earlier version of this section also said the two databases were
+"identical". That was checked by comparing function **names and counts** —
+not bodies, not columns — and it was wrong. Migration 024 records what the
+proper comparison found; the three that mattered:
 
-- **Five functions still exist only in the databases**, never in a migration:
-  `complete_document_ingestion`, `create_expiry_alert`,
-  `hybrid_search_documents`, `rls_auto_enable`,
-  `upgrade_family_schema_for_search`. The first two are called by
-  `_shared/ingest.ts`; the fifth by `create_family()`. Their grants are
-  locked down by 023, but their bodies are not in the repo.
-- **Six function bodies differ between DEV and PROD** after normalising
-  whitespace: `complete_document_ingestion`, `get_document_detail`,
-  `get_family_documents`, `get_family_stats`, `search_family_documents`,
-  `handle_new_user`. Which side is right has not been decided; reconcile
-  them in a migration before trusting that DEV behaviour predicts PROD.
+- **PROD could not create a vault.** `families.is_personal` (and
+  `users.emergency_info`) had been added to DEV by hand. `create_family()`
+  writes `is_personal`, so on PROD it failed and the first real user would
+  have been stuck at setup.
+- **PROD's document list and viewer failed** with `column reference "id" is
+  ambiguous` — a bare `WHERE id = …` inside a function whose output also has
+  an `id`. DEV had been fixed by hand, PROD never was.
+- **Five functions existed only in the databases**, including the two ingest
+  writes through (`complete_document_ingestion`, `create_expiry_alert`).
+
+**How "the same" is checked now** — this fingerprint, run on both projects,
+must return identical rows. After 024 it did, for all ten object types:
+
+```sql
+with objs as (
+  select 'function' k, p.oid::regprocedure::text||' '||md5(regexp_replace(pg_get_functiondef(p.oid), '\s+', ' ', 'g'))||' '||coalesce(array_to_string(p.proacl,' '),'NULL') v
+    from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+    where n.nspname='public' and not exists (select 1 from pg_depend d join pg_extension e on e.oid=d.refobjid where d.objid=p.oid and d.deptype='e')
+  union all select 'column', table_name||'.'||column_name||' '||data_type||' null='||is_nullable||' def='||coalesce(column_default,'') from information_schema.columns where table_schema='public'
+  union all select 'policy', schemaname||'.'||tablename||'.'||policyname||' '||cmd||' '||array_to_string(roles,',')||' USING '||coalesce(qual,'')||' CHECK '||coalesce(with_check,'') from pg_policies where schemaname in ('public','storage')
+  union all select 'rls', c.relname||' '||c.relrowsecurity from pg_class c where c.relnamespace='public'::regnamespace and c.relkind='r'
+  union all select 'trigger(app)', event_object_schema||'.'||event_object_table||'.'||trigger_name||' '||action_timing||' '||event_manipulation||' '||action_statement from information_schema.triggers where event_object_schema in ('public','auth')
+  union all select 'index', indexname||' '||indexdef from pg_indexes where schemaname='public'
+  union all select 'constraint', conrelid::regclass::text||'.'||conname||' '||pg_get_constraintdef(oid) from pg_constraint where connamespace='public'::regnamespace
+  union all select 'tablegrant', table_name||' '||grantee||' '||privilege_type from information_schema.role_table_grants where table_schema='public' and grantee in ('anon','authenticated','service_role')
+  union all select 'bucket', id||' public='||public from storage.buckets
+  union all select 'category', name from public.document_categories
+)
+select k, count(*) n, md5(string_agg(v, E'\n' order by v)) h from objs group by k order by k;
+```
+
+Run it after applying any migration to both projects. **Changing a database
+by hand without a migration is what caused every item above** — if something
+is applied in the SQL editor, it goes in a migration file in the same change.
+
+Deliberately outside the check: `pg_graphql` (enabled on PROD only), its
+event triggers, and a few `storage.buckets` triggers. Those come with the
+Supabase platform version, not from this app.
 
 What that recovery turned up, all of which had been invisible:
 
