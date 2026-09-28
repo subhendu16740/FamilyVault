@@ -135,6 +135,12 @@ export default function GmailImportScreen() {
       const s = await gmailStatus();
       if (!mounted.current) return;
       setStatus(s);
+      // Each project needs its own Google client and key (PROD before its own
+      // setup, say): say so up front, not after a press of "Connect".
+      if (!s.configured) {
+        setUnavailable(`Gmail import is not set up on this server yet${s.missing?.length ? ` (missing ${s.missing.join(', ')})` : ''}.`);
+        return;
+      }
       setUnavailable(null);
       if (s.connected) await loadItems();
     } catch (err) {
