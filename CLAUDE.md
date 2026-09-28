@@ -86,8 +86,9 @@ errors**) and `npm run build` are the local gates.
 at 03:10 IST, and on pushes that change `qa/`. It uploads synthetic SPECIMEN
 documents to its own vault (QA Vault A, account A), asks questions about
 them, and checks the answers on facts and sources, never wording. It also
-runs the 023 sweep and the 024 DEV/PROD fingerprint, 39 access probes (a
-logged-out visitor and a second account must be refused everywhere), the
+runs the 023 sweep and the 024 DEV/PROD fingerprint, 45 access probes (a
+logged-out visitor and a second account must be refused everywhere, Gmail
+import's endpoints included), the
 membership model (the second account, added as a viewer, must not be able to
 escalate, and must be able to leave), and the full upload → ingest →
 expiry-notification pipeline. By hand only, suite `languages` asks 12
@@ -209,11 +210,14 @@ npx supabase@latest functions deploy rag-search       --project-ref <ref>
 npx supabase@latest functions deploy ingest-document  --project-ref <ref>
 npx supabase@latest functions deploy add-member       --project-ref <ref>
 npx supabase@latest functions deploy reembed-index    --project-ref <ref>
+npx supabase@latest functions deploy gmail-connect    --project-ref <ref>   # also gmail-scan, gmail-import
+npx supabase@latest functions deploy gmail-callback   --project-ref <ref> --no-verify-jwt   # Google's redirect target
 
 # Set or rotate a secret (server-side only; never in this repo)
 npx supabase@latest secrets set GROQ_API_KEY=...      --project-ref <ref>
 npx supabase@latest secrets set HF_API_TOKEN=...      --project-ref <ref>
 npx supabase@latest secrets set OCR_SPACE_API_KEY=... --project-ref <ref>
+npx supabase@latest secrets set GMAIL_CLIENT_ID=... GMAIL_CLIENT_SECRET=... GMAIL_TOKEN_KEY=... GMAIL_RETURN_ORIGINS=... --project-ref <ref>
 
 # Capture the live schema (see Database — the migration gap)
 npx supabase@latest db dump --db-url "postgresql://..." -f 010_live_schema.sql
@@ -266,7 +270,12 @@ changing one requires a rebuild — there is no runtime config.
 
 **Edge Function secrets** — server-side only, set per Supabase project with
 `supabase secrets set NAME=value`, never in this repo:
-`GROQ_API_KEY`, `HF_API_TOKEN`, `OCR_SPACE_API_KEY`
+`GROQ_API_KEY`, `HF_API_TOKEN`, `OCR_SPACE_API_KEY`, and for Gmail import
+`GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET` (the OAuth client of the separate
+Google Cloud project made for Gmail), `GMAIL_TOKEN_KEY` (32 random bytes,
+base64 — `openssl rand -base64 32`; it seals refresh tokens, so changing it
+disconnects everyone) and `GMAIL_RETURN_ORIGINS` (the web origins Google may
+return to, comma-separated; localhost is always allowed)
 (`SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are injected automatically).
 
 **Local dev only:** `WEB_HOST` (Firebase Studio; see [App config](#app-config)).
@@ -356,6 +365,7 @@ src/
     family.tsx               # family tree + members    (NOT a tab)
     settings.tsx             # profile + sign out       (NOT a tab)
     document/[id].tsx        # document viewer
+    gmail-import.tsx         # connect Gmail, review what it found, import (web only)
     +html.tsx                # custom HTML shell, web only
     (tabs)/
       _layout.tsx            # custom tab bar (CustomTabBar)
@@ -391,7 +401,7 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `auth.tsx` | `AuthProvider`: session, signIn, signUp, signInWithGoogle, signOut |
 | `family-context.tsx` | `FamilyProvider`: currentFamily, members, membership, needsFamily |
 | `drawer-context.tsx` | Profile drawer open/close state |
-| `api.ts` | **All** Supabase queries — documents, search, upload, RAG, notifications, adding and leaving families |
+| `api.ts` | **All** Supabase queries — documents, search, upload, RAG, notifications, adding and leaving families, Gmail import |
 | `ocr.ts` | Platform-split OCR with progress callback; reads the person's chosen languages |
 | `ocr-languages.ts` | The document-language picker list, and `resolveOcrLanguages()` which always appends English |
 | `preferences.tsx` | `PreferencesProvider`: voice toggle + language, document languages. Cached locally, stored on `public.users`; reads and writes fall back to the older column set so an unapplied migration degrades one setting rather than all of them |
@@ -614,8 +624,60 @@ so storage policies live only in `019`.
   It replaced `invite-member`, which the deploy workflow deletes from each
   project it deploys to — a function removed from the repo otherwise stays
   live, running its old code.
+- **`gmail-connect`**, **`gmail-callback`**, **`gmail-scan`**,
+  **`gmail-import`** — Gmail import; see [below](#gmail-import--your-own-mailbox-your-tick-026).
 
 All of them handle CORS preflight explicitly.
+
+### Gmail import — your own mailbox, your tick (026)
+
+A person connects their OWN Gmail; FamilyVault lists the attachments that
+look like documents; they tick what to keep; each ticked file goes through
+the normal ingestion. Nothing is imported without a tick, and no model reads
+anyone's email: Gmail's own search makes the first cut (`SCAN_QUERY`) and
+rules sort the rest (`_shared/gmail-rules.ts`).
+
+- **Four functions.** `gmail-connect` (status / start / finish /
+  disconnect), `gmail-callback` (Google's redirect target), `gmail-scan`
+  (25 emails per call, resumable: Gmail's page token and a lease in
+  `gmail_connections`), `gmail-import` (ONE attachment per call — the CPU
+  budget is seconds). Shared code: `_shared/gmail.ts` (Google),
+  `_shared/gmail-rules.ts` and `_shared/gmail-crypto.ts` (pure; the QA
+  self-test runs them in Node).
+- **`gmail-callback` is the only function deployed without JWT
+  verification** (`--no-verify-jwt`, in the deploy workflow): Google's
+  redirect carries no Supabase session. So it does nothing that needs one —
+  it relays the browser to the page that started the flow. Never give it
+  another job. QA fails if it is deployed with the check.
+- **A token lands only with the account that asked.** The risk is consent
+  phishing: a link started by one account, approved by someone else, would
+  hand their mailbox to the first account. `finish` claims the state row
+  only for the account that created it, once, within ten minutes; Google's
+  code only ever returns to an origin in `GMAIL_RETURN_ORIGINS`; and PKCE's
+  verifier never leaves the database. Loosen none of the three.
+- **Refresh tokens are sealed** (AES-256-GCM, key in `GMAIL_TOKEN_KEY`, never
+  in the database) and access tokens are never stored. Rotating the key
+  disconnects everyone.
+- **Service role only.** `gmail_oauth_states`, `gmail_connections` and
+  `gmail_import_items` have RLS on, no policies, and every client grant
+  revoked. What a scan finds is visible to the person whose mailbox it is,
+  through the functions, and to nobody else — not their family.
+- **Metadata until import.** Sender, subject, file name, size. No email body
+  is ever stored, and Gmail's attachment ids are not kept (they change on
+  every fetch); the import looks the part up again, checks the bytes are a
+  PDF/JPEG/PNG (`sniffType`), and skips a file whose SHA-256 was already
+  imported into that family.
+- **Web only, and "Testing" on Google's side.** The phone app would need an
+  auth session and a `familyvault://` redirect, unverifiable without a
+  native build. While the Google Cloud project is in Testing, only its listed
+  test users (at most 100, ever) can connect, and Google expires their
+  refresh tokens after 7 days — `expired` in the app, "Reconnect" resumes
+  the scan where it stopped. A public launch needs Google's verification of
+  the restricted `gmail.readonly` scope, including a paid security
+  assessment. Use a Google Cloud project separate from the sign-in one, so
+  sign-in never inherits the unverified status or the cap.
+- **Imported photos are OCR'd on the server** (OCR.space, English only),
+  not in the browser in the family's languages as an upload is.
 
 ### PDF text — read by position, not by content-stream order
 

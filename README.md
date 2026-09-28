@@ -20,6 +20,7 @@ FamilyVault brings all your family's important documents into one secure, shared
 - **Document Viewer** — View document details with metadata, category, and owner info
 - **Search Interface** — Category-based browsing and keyword search across documents
 - **Upload Flow** — Multi-step upload with source selection, metadata tagging, and owner assignment
+- **Import from Gmail** (web) — Connect your own Gmail; FamilyVault lists the attachments that look like documents, and imports the ones you tick. Only you see what it finds; disconnecting makes it forget
 - **Profile Drawer** — Slide-out navigation for family management, settings, and sign out
 - **23 Document Categories** — Pre-configured categories including Passport, Driving License, Health Insurance, Property Deed, Tax Return, Birth Certificate, and more
 - **In-App Confirmation Dialogs** — Custom modal dialogs for destructive actions
