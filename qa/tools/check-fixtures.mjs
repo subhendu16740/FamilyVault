@@ -16,7 +16,9 @@
 //   scan-pdf    every page is BELOW the threshold (so the server sends it to
 //               OCR) and the only text is the stamp; ≤ 1 MB and ≤ 3 pages,
 //               or OCR.space's free tier refuses it
-//   photo       a JPEG ≤ 1 MB
+//   photo       a JPEG ≤ 1 MB; with `clientOcr`, read here the way the web
+//               app reads it (lib/client-ocr.mjs), and every `ocrFacts` entry
+//               must come out
 //   locked-pdf  refuses to open without the password, and opens with it
 
 import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
@@ -24,6 +26,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getDocument } from 'pdfjs-serverless';
 import { documents } from '../fixtures/documents.mjs';
+import { readLikeTheWebApp } from '../lib/client-ocr.mjs';
 import { reconstructLayout } from '../../supabase/functions/_shared/pdf-text.ts';
 import { chunkText } from '../../supabase/functions/_shared/chunking.ts';
 
@@ -45,6 +48,9 @@ const OCR_SPACE_MAX_BYTES = 1024 * 1024;
 const OCR_SPACE_MAX_PAGES = 3;
 
 const squash = (s) => s.replace(/\s+/g, ' ').trim();
+// For words in an Indian script: one Unicode form, and zero-width (non-)
+// joiners dropped — a reader that omits a ZWNJ has lost no letter.
+const loose = (s) => squash(s.normalize('NFC').replace(/[\u200B-\u200D\uFEFF]/g, ''));
 
 /** Per-page text exactly as extractPdfLayoutText() builds it. */
 async function readPdf(bytes, password) {
@@ -78,6 +84,17 @@ async function check(doc) {
 
   if (doc.kind === 'photo') {
     if (!(bytes[0] === 0xff && bytes[1] === 0xd8)) problems.push('not a JPEG');
+    if (doc.clientOcr) {
+      // The text the web app would send with the upload; the server never
+      // OCRs it, so this IS what gets indexed.
+      const text = await readLikeTheWebApp(bytes, doc.clientOcr);
+      const reader = `browser OCR (${doc.clientOcr.join('+')})`;
+      for (const fact of doc.ocrFacts ?? []) {
+        if (!loose(text).includes(loose(fact))) problems.push(`${reader} does not read: ${fact}`);
+      }
+      notes.push(`${Math.round(size / 1024)} KB, read in the browser at upload (Tesseract ${doc.clientOcr.join('+')}), ${text.length} chars`);
+      return { problems, notes, pages: [text], canary: canaries(doc, text, reader) };
+    }
     if (size > OCR_SPACE_MAX_BYTES) problems.push(`${size} bytes is over OCR.space's free 1 MB limit`);
     notes.push(`${Math.round(size / 1024)} KB, read by server OCR`);
     return { problems, notes };
@@ -125,19 +142,22 @@ async function check(doc) {
   }
   const chunks = chunkText(pages.join('\n\n'));
   notes.push(`${pages.length} page(s), ${Math.min(...perPage)}+ chars/page, ${chunks.length} chunk(s)`);
-  // Soft: a known limitation of the reader, reported rather than failed, so
-  // it stays visible without blocking every run until someone fixes it.
-  const canaries = doc.canaryWords ?? [];
-  const lost = canaries.filter((w) => !text.includes(squash(w)));
-  const warnings = lost.length
-    ? [`known issue: ${lost.length} of ${canaries.length} Hindi words lost in the server's text layer (${lost.join(', ')})`]
-    : canaries.length ? ['Hindi words now survive the text layer — the known issue looks fixed; promote canaryWords to facts'] : [];
-  return { problems, notes, pages, warnings };
+  return { problems, notes, pages, canary: canaries(doc, text, "the server's PDF reader") };
+}
+
+// Soft: a known limitation of a reader, reported rather than failed, so it
+// stays visible without blocking every run until someone fixes it.
+function canaries(doc, text, reader) {
+  const words = doc.canaryWords ?? [];
+  if (!words.length) return null;
+  const lost = words.filter((w) => !loose(text).includes(loose(w)));
+  return { reader, language: doc.language ?? 'Indian-script', lost, total: words.length };
 }
 
 async function main() {
   let failures = 0;
   const allWarnings = [];
+  const byReader = new Map();
   const verbose = process.argv.includes('--verbose');
   for (const doc of documents) {
     let result;
@@ -150,13 +170,25 @@ async function main() {
     if (!ok) failures++;
     console.log(`${ok ? 'ok  ' : 'FAIL'}  ${doc.file}  — ${result.notes.join('; ')}`);
     for (const p of result.problems) console.log(`        ✗ ${p}`);
-    for (const w of result.warnings ?? []) {
-      console.log(`        ⚠ ${w}`);
-      allWarnings.push(`${doc.file}: ${w}`);
-      if (process.env.GITHUB_ACTIONS) console.log(`::warning title=Fixture ${doc.file}::${w}`);
+    const c = result.canary;
+    if (c) {
+      console.log(c.lost.length
+        ? `        ⚠ known issue: ${c.reader} loses ${c.lost.length} of ${c.total} ${c.language} canaries (${c.lost.join(', ')})`
+        : `        ⚠ ${c.reader} now reads every ${c.language} canary — promote canaryWords to facts`);
+      byReader.set(c.reader, [...(byReader.get(c.reader) ?? []), { file: doc.file, ...c }]);
     }
     if (verbose && result.pages) console.log(result.pages.map((p, i) => `  ── page ${i + 1}\n${p}`).join('\n'));
   }
+  // One line per reader for the run's summary; the lines above have the detail.
+  for (const [reader, list] of byReader) {
+    const broken = list.filter((c) => c.lost.length);
+    const fixed = list.filter((c) => !c.lost.length);
+    if (broken.length) {
+      allWarnings.push(`known issue: ${reader} loses words — ${broken.map((c) => `${c.language} ${c.lost.length}/${c.total}`).join(', ')} canaries lost (check-fixtures lists them)`);
+    }
+    if (fixed.length) allWarnings.push(`${reader} now reads every canary in ${fixed.map((c) => c.file).join(', ')} — looks fixed there; promote canaryWords to facts`);
+  }
+  if (process.env.GITHUB_ACTIONS) for (const w of allWarnings) console.log(`::warning title=Fixture reading::${w}`);
   // Handed to run.mjs, so the known issues appear in the run's summary too.
   mkdirSync(OUT, { recursive: true });
   writeFileSync(join(OUT, 'fixture-warnings.json'), JSON.stringify(allWarnings, null, 2));
