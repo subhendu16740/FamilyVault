@@ -6,6 +6,7 @@ import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../lib/auth';
+import { useFamily } from '../lib/family-context';
 import { fetchNotifications, markNotificationRead, type NotificationRow } from '../lib/api';
 
 const typeConfig: Record<string, { icon: string; bg: string; color: string }> = {
@@ -31,6 +32,7 @@ function getRelativeTime(dateStr: string): string {
 
 export default function NotificationsScreen() {
   const { user } = useAuth();
+  const { currentFamily, switchFamily } = useFamily();
   const [notifications, setNotifications] = useState<NotificationRow[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -53,6 +55,15 @@ export default function NotificationsScreen() {
         );
       } catch { /* ignore */ }
     }
+    // Each notification belongs to one family, and it may not be the one on
+    // screen: the document viewer looks documents up in the current family,
+    // so a tap that opens something opens it in the notification's own. (A
+    // family the person has since left falls back to their default, as any
+    // stale choice does.)
+    const opens = !!notif.document_ref || notif.type === 'member';
+    if (opens && notif.family_id && notif.family_id !== currentFamily?.id) {
+      switchFamily(notif.family_id);
+    }
     // Navigate to document if linked
     if (notif.document_ref) {
       router.push(`/document/${notif.document_ref}` as any);
@@ -60,7 +71,7 @@ export default function NotificationsScreen() {
       // Where the new family can be switched to, or left.
       router.push('/family' as any);
     }
-  }, [user]);
+  }, [user, currentFamily?.id, switchFamily]);
 
   const renderItem = ({ item }: { item: NotificationRow }) => {
     const cfg = typeConfig[item.type] || typeConfig.system;
