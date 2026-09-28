@@ -29,6 +29,7 @@ const settingsGroups = [
     title: 'Vault',
     items: [
       { icon: 'users', label: 'Manage Families', sub: 'View and switch families', route: '/family' },
+      { icon: 'mail', label: 'Import from Gmail', sub: 'Find documents in your email', route: '/gmail-import' },
       { icon: 'lock', label: 'Privacy', sub: 'Data isolation settings' },
       { icon: 'cloud', label: 'Storage', sub: 'Manage cloud backup' },
     ],

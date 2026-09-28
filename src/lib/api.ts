@@ -401,6 +401,141 @@ export async function addFamilyMember(
   throw new Error(body?.error ?? error.message);
 }
 
+// ─── Gmail import ────────────────────────────────────────────────
+//
+// A person connects their OWN Gmail account; the server lists attachments
+// that look like documents and imports the ones they tick, through the
+// normal ingestion. Everything goes through Edge Functions — gmail-connect,
+// gmail-scan, gmail-import — because the tables behind it are service-role
+// only (migration 026): nobody's mailbox findings are reachable from a
+// client, not even their own, except through a function that checks.
+
+export interface GmailStatus {
+  /** False until the server has its Google client and key secrets. */
+  configured: boolean;
+  missing?: string[];
+  connected: boolean;
+  email: string | null;
+  /** Google stopped honouring the token (revoked, or 7 days in testing). */
+  expired: boolean;
+  scan: { started_at: string | null; finished_at: string | null; messages_scanned: number } | null;
+  found: number;
+  imported: number;
+}
+
+export interface GmailItem {
+  id: string;
+  file_name: string;
+  mime_type: string;
+  size_bytes: number;
+  sender: string | null;
+  subject: string | null;
+  sent_at: string | null;
+  suggestion: 'suggested' | 'maybe' | 'unlikely';
+  reason: string | null;
+  category_guess: string | null;
+  status: 'found' | 'importing' | 'imported' | 'duplicate' | 'failed';
+  error: string | null;
+  document_id: string | null;
+  family_id: string | null;
+}
+
+export interface GmailScanProgress {
+  done: boolean;
+  messages_scanned: number;
+  found: number;
+  added: number;
+}
+
+export type GmailImportResult =
+  | { status: 'imported'; documentId: string; unreadable?: string }
+  | { status: 'duplicate'; documentId: string }
+  | { status: 'failed'; error: string };
+
+/**
+ * A Gmail function said no, with a reason the screen can act on:
+ * `unavailable` / `needs_migration` / `not_configured` (the server is not
+ * set up), `origin_not_allowed` (this web address is not on the allowlist),
+ * `expired` (connect again), `rate_limited` (wait `retryAfter` seconds),
+ * `busy` (another tab is scanning).
+ */
+export class GmailApiError extends Error {
+  status: string;
+  retryAfter?: number;
+  origin?: string | null;
+  constructor(status: string, message: string, extra: { retryAfter?: number; origin?: string | null } = {}) {
+    super(message);
+    this.status = status;
+    this.retryAfter = extra.retryAfter;
+    this.origin = extra.origin;
+  }
+}
+
+async function gmailInvoke<T>(fn: string, body: Record<string, unknown>): Promise<T> {
+  const { data, error } = await supabase.functions.invoke(fn, { body });
+  if (!error) return data as T;
+  const httpStatus = (error as { context?: Response })?.context?.status;
+  const payload = (await readFunctionError(error)) as
+    | { status?: string; error?: string; retry_after?: number; origin?: string | null }
+    | null;
+  // The gateway's own 404: the function is not deployed to this project.
+  if (httpStatus === 404 && !payload?.status) {
+    throw new GmailApiError('unavailable', 'Gmail import is not available on this server yet.');
+  }
+  throw new GmailApiError(payload?.status ?? 'error', payload?.error ?? error.message, {
+    retryAfter: payload?.retry_after,
+    origin: payload?.origin,
+  });
+}
+
+export const gmailStatus = () => gmailInvoke<GmailStatus>('gmail-connect', { action: 'status' });
+
+/** Google's consent page, for this browser to open. `returnOrigin` is where it comes back. */
+export async function gmailStartConnect(returnOrigin: string): Promise<string> {
+  const { url } = await gmailInvoke<{ url: string }>('gmail-connect', { action: 'start', return_origin: returnOrigin });
+  return url;
+}
+
+/** Back from Google: trade the code for a lasting (encrypted) permission. */
+export const gmailFinishConnect = (state: string, code: string) =>
+  gmailInvoke<{ connected: boolean; email: string }>('gmail-connect', { action: 'finish', state, code });
+
+export const gmailDisconnect = () => gmailInvoke<{ connected: boolean }>('gmail-connect', { action: 'disconnect' });
+
+/** One batch of the mailbox scan; call again until `done`. */
+export const gmailScanBatch = (restart = false) =>
+  gmailInvoke<GmailScanProgress>('gmail-scan', { action: 'scan', restart });
+
+export async function gmailListItems(): Promise<GmailItem[]> {
+  const { items } = await gmailInvoke<{ items: GmailItem[] }>('gmail-scan', { action: 'list' });
+  return items ?? [];
+}
+
+/** Import one found attachment into the family's vault. */
+export async function gmailImportItem(
+  itemId: string,
+  familyId: string,
+  options: { categoryId?: string; memberId?: string } = {},
+): Promise<GmailImportResult> {
+  try {
+    const result = await gmailInvoke<{ status: string; document_id: string; unreadable?: string }>('gmail-import', {
+      item_id: itemId,
+      family_id: familyId,
+      ...(options.categoryId ? { category_id: options.categoryId } : {}),
+      ...(options.memberId ? { belongs_to_member: options.memberId } : {}),
+    });
+    return result.status === 'duplicate'
+      ? { status: 'duplicate', documentId: result.document_id }
+      : { status: 'imported', documentId: result.document_id, unreadable: result.unreadable };
+  } catch (err) {
+    // This file could not be imported; the next one still can.
+    if (err instanceof GmailApiError && (err.status === 'failed' || err.status === 'not_available')) {
+      return { status: 'failed', error: err.message };
+    }
+    throw err;
+  }
+}
+
 // ─── Member Management (admin only) ─────────────────────────────
 
 export async function removeFamilyMember(memberId: string): Promise<void> {

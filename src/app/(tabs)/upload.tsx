@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, StyleSheet,
-  Alert, ActivityIndicator, Image, Modal, Pressable,
+  Alert, ActivityIndicator, Image, Modal, Pressable, Platform,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -257,6 +257,14 @@ export default function UploadScreen() {
                 <Feather name="image" size={28} color="#4B5563" />
                 <Text style={styles.secondaryBtnText}>Gallery</Text>
               </TouchableOpacity>
+              {/* Web only: connecting Gmail from the phone app needs a native
+                  auth session, not built yet (see gmail-import.tsx). */}
+              {Platform.OS === 'web' && (
+                <TouchableOpacity style={styles.secondaryBtn} onPress={() => router.push('/gmail-import' as any)}>
+                  <Feather name="mail" size={28} color="#4B5563" />
+                  <Text style={styles.secondaryBtnText}>From Gmail</Text>
+                </TouchableOpacity>
+              )}
             </View>
 
             {/* Supported formats hint */}
