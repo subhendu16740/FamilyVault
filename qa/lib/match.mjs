@@ -7,12 +7,14 @@
 // that would cost Groq budget and add a second thing that can be wrong.
 // ────────────────────────────────────────────────────────────────
 
-const DEVANAGARI_DIGITS = '०१२३४५६७८९';
+// The digits of every Indian script: each block puts 0–9 at offset 0x66, so
+// ২,৮৪৫ (Bengali), ૧,૧૦૩ (Gujarati) and ௫,௧௨௦ (Tamil) read as ASCII amounts.
+const INDIC_DIGIT = /[\u0966-\u096F\u09E6-\u09EF\u0A66-\u0A6F\u0AE6-\u0AEF\u0B66-\u0B6F\u0BE6-\u0BEF\u0C66-\u0C6F\u0CE6-\u0CEF\u0D66-\u0D6F]/g;
 
-/** Devanagari digits → ASCII, curly apostrophes → straight. */
+/** Indian-script digits → ASCII, curly apostrophes → straight. */
 export function normalise(text) {
   return String(text ?? '')
-    .replace(/[०-९]/g, (d) => String(DEVANAGARI_DIGITS.indexOf(d)))
+    .replace(INDIC_DIGIT, (d) => String((d.codePointAt(0) & 0x7f) - 0x66))
     .replace(/[‘’ʼ]/g, "'");
 }
 
@@ -84,10 +86,27 @@ const REFUSAL =
 
 export const refuses = (answer) => REFUSAL.test(normalise(answer));
 
-export function devanagariShare(answer) {
-  const letters = String(answer ?? '').match(/\p{L}/gu) ?? [];
+// The Unicode block of each script the app offers (voice-languages.ts).
+// Marathi is written in Devanagari, like Hindi.
+export const SCRIPTS = {
+  devanagari: [0x0900, 0x097f],
+  bengali: [0x0980, 0x09ff],
+  gurmukhi: [0x0a00, 0x0a7f],
+  gujarati: [0x0a80, 0x0aff],
+  tamil: [0x0b80, 0x0bff],
+  telugu: [0x0c00, 0x0c7f],
+  kannada: [0x0c80, 0x0cff],
+  malayalam: [0x0d00, 0x0d7f],
+};
+
+/** How much of an answer's writing is in `script` — letters and vowel signs both count. */
+export function scriptShare(answer, script) {
+  const [from, to] = SCRIPTS[script];
+  const letters = String(answer ?? '').match(/[\p{L}\p{M}]/gu) ?? [];
   if (!letters.length) return 0;
-  return letters.filter((c) => /[ऀ-ॿ]/.test(c)).length / letters.length;
+  return letters.filter((c) => c.codePointAt(0) >= from && c.codePointAt(0) <= to).length / letters.length;
 }
+
+export const devanagariShare = (answer) => scriptShare(answer, 'devanagari');
 
 export const hasMarkdown = (answer) => /(\*\*|__|`|^#{1,6}\s|^\s*[-*]\s)/m.test(String(answer ?? ''));

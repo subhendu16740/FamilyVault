@@ -17,7 +17,7 @@ import { getDocument } from 'pdfjs-serverless';
 import { reconstructLayout } from '../../supabase/functions/_shared/pdf-text.ts';
 import { extractMetadata, parseFlexibleDate } from '../../supabase/functions/_shared/metadata.ts';
 import { cleanText } from '../../supabase/functions/_shared/text.ts';
-import { mentionsDate, mentionsAmount, mentionsPhone, mentionsText, refuses, devanagariShare, hasMarkdown } from '../lib/match.mjs';
+import { mentionsDate, mentionsAmount, mentionsPhone, mentionsText, refuses, devanagariShare, scriptShare, hasMarkdown } from '../lib/match.mjs';
 import { judgeAnswer } from '../lib/checks/ask.mjs';
 import { vehicleInsurance } from '../lib/tiny-pdf.mjs';
 import { loadQuestions, selectQuestions, groupCount, rotationGroup, estimateFor } from '../lib/questions.mjs';
@@ -48,6 +48,11 @@ await test('amounts with Indian grouping and lakh', () => {
   assert.ok(!mentionsAmount('₹10,00,000', 300000));
   assert.ok(mentionsAmount('₹10,00,000', 1000000));
   assert.ok(mentionsAmount('the rent is Rs. 32,000 a month', 32000));
+  // Answers in other Indian languages may write their own digits.
+  for (const [s, v] of [['মোট ২,৮৪৫ টাকা', 2845], ['₹ ૧,૧૦૩ ચૂકવ્યા', 1103], ['௫,௧௨௦ ரூபாய்', 5120], ['₹೭೫,೦೦೦', 75000], ['൧൨,൬൦൦ രൂപ', 12600], ['₹ ੪,੩੭੫', 4375], ['₹౧౮,౫౦౦', 18500]]) {
+    assert.ok(mentionsAmount(s, v), s);
+  }
+  assert.ok(!mentionsAmount('₹ ૧,૧૪૫', 1103), 'another receipt\'s amount');
 });
 
 await test('phones, identifiers, refusals, script, markdown', () => {
@@ -61,6 +66,10 @@ await test('phones, identifiers, refusals, script, markdown', () => {
   assert.ok(!refuses("Asha Verma's passport expires on 19 July 2033."));
   assert.ok(devanagariShare('आशा वर्मा का पासपोर्ट 19 जुलाई 2033 को समाप्त होगा।') > 0.9);
   assert.ok(devanagariShare('The passport expires in 2033.') === 0);
+  assert.ok(scriptShare('সুমিতা ঘোষের বিদ্যুৎ বিলে মোট ২,৮৪৫ টাকা দিতে হবে।', 'bengali') > 0.9);
+  assert.ok(scriptShare('மீனா சுப்பிரமணியம் ₹5,120 செலுத்த வேண்டும்.', 'tamil') > 0.9);
+  assert.ok(scriptShare('மீனா சுப்பிரமணியம் ₹5,120 செலுத்த வேண்டும்.', 'malayalam') === 0, 'Tamil is not Malayalam');
+  assert.ok(scriptShare('Meena Subramaniam has to pay ₹5,120.', 'tamil') === 0);
   assert.ok(hasMarkdown('**19 July 2033**') && hasMarkdown('- item') && !hasMarkdown('It expires on 19 July 2033.'));
 });
 
@@ -89,6 +98,21 @@ await test('judgeAnswer catches wrong answers', () => {
   assert.ok(noVectors.some((r) => r.includes('NOT embedded')));
   const markdown = judgeAnswer(byId.get('voice-mode'), { answer: 'It expires on **19 July 2033**.', sources: passport, debug: healthy });
   assert.ok(markdown.some((r) => r.includes('markdown')));
+});
+
+await test('judgeAnswer in other Indian languages', () => {
+  const bengali = [{ file_name: 'electricity_bill_bengali_specimen_v1.pdf' }];
+  const tamilPhoto = [{ file_name: 'water_tax_receipt_tamil_photo_specimen_v1.jpg' }];
+  assert.deepEqual(judgeAnswer(byId.get('lang-bengali-voice'), { answer: 'সুমিতা ঘোষের বিদ্যুৎ বিলে মোট ২,৮৪৫ টাকা দিতে হবে।', sources: bengali, answer_language: 'bn-IN', debug: healthy }), []);
+  assert.deepEqual(judgeAnswer(byId.get('lang-tamil-photo-voice'), { answer: 'மீனா சுப்பிரமணியம் ₹5,120 குடிநீர் வரி செலுத்த வேண்டும்.', sources: tamilPhoto, answer_language: 'ta-IN', debug: healthy }), []);
+  // The other Tamil bill's amount, for the wrong person.
+  const other = judgeAnswer(byId.get('lang-tamil-photo-voice'), { answer: 'அவர் ₹6,480 செலுத்த வேண்டும்.', sources: [{ file_name: 'water_tax_receipt_tamil_specimen_v1.pdf' }], answer_language: 'ta-IN', debug: healthy });
+  assert.equal(other.length, 3, other.join('; '));
+  // Right amount, but in English: a Bengali speaker asked aloud.
+  const english = judgeAnswer(byId.get('lang-bengali-voice'), { answer: 'Sumita Ghosh has to pay ₹2,845.', sources: bengali, answer_language: 'bn-IN', debug: healthy });
+  assert.ok(english.some((r) => r.includes('Bengali script')), english.join('; '));
+  // A typed question sends no language, so its answer's language is not judged.
+  assert.deepEqual(judgeAnswer(byId.get('lang-tamil-typed'), { answer: 'Karthik Rajan has to pay ₹6,480.', sources: [{ file_name: 'water_tax_receipt_tamil_specimen_v1.pdf' }], debug: healthy }), []);
 });
 
 await test('the run-time vehicle PDF reads as a text layer with its facts', async () => {
@@ -172,6 +196,30 @@ await test('every suite stays inside its Groq budget', () => {
   assert.ok(worst <= 0.6, `worst day would spend ${Math.round(worst * 100)}% of the helper model's free allowance`);
   const seen = new Set(Array.from({ length: groups }, (_, i) => rotationGroup(new Date(Date.UTC(2026, 8, 27 + i)), groups)));
   assert.equal(seen.size, groups, 'consecutive days cover every rotation group');
+});
+
+await test('the languages suite: by hand only, every language, half a day at most', () => {
+  const languages = selectQuestions(questions, 'languages', 1);
+  assert.equal(languages.length, 12);
+  assert.ok(estimateFor(languages).helperShare <= 0.45, `the languages suite would spend ${Math.round(estimateFor(languages).helperShare * 100)}% of the helper model's day`);
+  for (let g = 1; g <= groupCount(questions); g++) {
+    assert.ok(!selectQuestions(questions, 'nightly', g).some((q) => q.tier === 'languages'), `nightly group ${g} asks a languages question`);
+  }
+  assert.ok(!selectQuestions(questions, 'full', 1).some((q) => q.tier === 'languages'), 'full asks a languages question');
+  assert.ok(!selectQuestions(questions, 'smoke', 1).some((q) => q.tier === 'languages'));
+  // Every language the app offers beyond English and Hindi has a question.
+  const fixtureLanguage = new Map(permanentDocuments.map((d) => [d.file, d.language]));
+  const covered = new Set(languages.map((q) => fixtureLanguage.get(q.expect.source)));
+  for (const lang of ['Bengali', 'Tamil', 'Telugu', 'Marathi', 'Gujarati', 'Kannada', 'Malayalam', 'Punjabi']) assert.ok(covered.has(lang), `no question about the ${lang} document`);
+  // A voice-mode question says what it expects back, in which script.
+  const script = { bn: 'bengali', ta: 'tamil', te: 'telugu', mr: 'devanagari', hi: 'devanagari', gu: 'gujarati', kn: 'kannada', ml: 'malayalam', pa: 'gurmukhi' };
+  for (const q of languages.filter((x) => x.language)) {
+    const base = q.language.split('-')[0];
+    assert.ok(q.voice, `${q.id}: the app sends a language only in voice mode`);
+    assert.equal(q.expect.answer_language, base, `${q.id}: answer_language`);
+    assert.equal(q.expect.script, script[base], `${q.id}: script`);
+    assert.ok(q.expect.no_markdown, `${q.id}: a voice answer must be speakable`);
+  }
 });
 
 if (failures.length) {

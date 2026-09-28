@@ -10,7 +10,9 @@
 #   refuses: true        says the documents do not answer it
 #   not_*                must NOT appear (someone else's value, an invented one)
 #   source: <file>       that document must be among the answer's sources
-#   answer_language, script, no_markdown   for Hindi and voice mode
+#   answer_language, script, no_markdown   for other languages and voice mode
+#                        (script: devanagari, bengali, gurmukhi, gujarati,
+#                        tamil, telugu, kannada or malayalam)
 #
 # Every question also checks the pipeline itself: the query must have been
 # embedded and the index must not be mid-rebuild.
@@ -23,6 +25,9 @@
 #   rotate   one group per night, chosen by the date; all of them every
 #            3 nights. A nightly run is 8–9 questions, about a third of one
 #            model's free daily allowance.
+#   languages  by hand only (suite `languages`): 12 questions about the
+#            documents in eight more Indian languages, about 43% of the
+#            helper model's free day on their own. Never scheduled.
 #
 # `after: <id>` asks the question as a follow-up in the same conversation.
 # `guards:` names the past failure the question exists to catch.
@@ -175,3 +180,146 @@ questions:
       date: 2033-07-19
       no_markdown: true
     guards: voice answers are plain speakable sentences
+
+  # ── languages: by hand only (suite `languages`) ────────────────
+  # One household document per Indian language the app offers, beyond
+  # Hindi. Their PDFs lose letters in the server's reader — names most of
+  # all, see tools/check-fixtures.mjs — while amounts, dates and account
+  # numbers survive. Each question asks by NAME, as a family would, to find
+  # out what that loss costs at answer time.
+  #
+  # Two ways a question reaches the server, as in search.tsx:
+  #   voice mode   `language` + `voice`: translated to English before
+  #                retrieval, answered aloud in the language
+  #   typed        no language at all — the search screen only sends one in
+  #                voice mode — so the question is searched as written and
+  #                the answer's language is not checked
+  #
+  # The Tamil and Gujarati photos are read in the browser before upload
+  # (lib/client-ocr.mjs), and pair with a PDF of the same kind of bill for
+  # someone else: naming one person must never return the other's amount.
+
+  - id: lang-bengali-voice
+    tier: languages
+    ask: সুমিতা ঘোষের বিদ্যুৎ বিলে মোট কত টাকা দিতে হবে?
+    language: bn-IN
+    voice: true
+    expect:
+      amount: 2845
+      answer_language: bn
+      script: bengali
+      no_markdown: true
+      source: electricity_bill_bengali_specimen_v1.pdf
+    guards: a Bengali voice question finds a Bengali PDF whose name and labels the reader broke, and is answered in Bengali
+
+  - id: lang-telugu-voice
+    tier: languages
+    ask: శ్రీనివాస్ రెడ్డి ఎంత ఫీజు చెల్లించారు?
+    language: te-IN
+    voice: true
+    expect:
+      amount: 18500
+      answer_language: te
+      script: telugu
+      no_markdown: true
+      source: school_fee_receipt_telugu_specimen_v1.pdf
+    guards: Telugu, where the reader loses the most (conjuncts dropped from the name itself)
+
+  - id: lang-gujarati-voice
+    tier: languages
+    ask: નીતા પટેલે ગેસ બુકિંગ માટે કેટલી રકમ ચૂકવી?
+    language: gu-IN
+    voice: true
+    expect:
+      amount: 1103
+      not_amount: 1145
+      answer_language: gu
+      script: gujarati
+      no_markdown: true
+      source: gas_booking_receipt_gujarati_specimen_v1.pdf
+    guards: the PDF's name survives the reader; the photo of another gas receipt must not answer for her
+
+  - id: lang-malayalam-voice
+    tier: languages
+    ask: ലക്ഷ്മി നായരുടെ ഇൻഷുറൻസ് പ്രീമിയം എത്രയാണ്?
+    language: ml-IN
+    voice: true
+    expect:
+      amount: 12600
+      answer_language: ml
+      script: malayalam
+      no_markdown: true
+      source: insurance_premium_notice_malayalam_specimen_v1.pdf
+    guards: Malayalam, whose vowel signs the reader stores out of order
+
+  - id: lang-tamil-photo-voice
+    tier: languages
+    ask: மீனா சுப்பிரமணியம் எவ்வளவு குடிநீர் வரி செலுத்த வேண்டும்?
+    language: ta-IN
+    voice: true
+    expect:
+      amount: 5120
+      not_amount: 6480
+      answer_language: ta
+      script: tamil
+      no_markdown: true
+      source: water_tax_receipt_tamil_photo_specimen_v1.jpg
+    guards: a Tamil photo read in the browser (tam+eng) answers for its own person, not for the Tamil PDF's
+
+  - id: lang-tamil-typed
+    tier: languages
+    ask: கார்த்திக் ராஜன் செலுத்த வேண்டிய குடிநீர் வரி எவ்வளவு?
+    expect:
+      amount: 6480
+      not_amount: 5120
+      source: water_tax_receipt_tamil_specimen_v1.pdf
+    guards: typed Tamil, no language sent; his name is broken in the PDF and intact on the other person's photo
+
+  - id: lang-marathi-typed
+    tier: languages
+    ask: सुनील पाटील यांची थकबाकी रक्कम किती आहे?
+    expect:
+      amount: 2750
+      source: society_maintenance_bill_marathi_specimen_v1.pdf
+    guards: typed Marathi finds a Marathi bill, not the Hindi notice beside it in the same script
+
+  - id: lang-kannada-typed
+    tier: languages
+    ask: ಅನಿಲ್ ಕುಮಾರ್ ಅವರ ಸ್ಥಿರ ಠೇವಣಿ ಮೊತ್ತ ಎಷ್ಟು?
+    expect:
+      amount: 75000
+      source: fixed_deposit_receipt_kannada_specimen_v1.pdf
+    guards: typed Kannada, where the reader drops whole letters ("ಠೇವಣಿ" is stored as "ೕವಣಿ")
+
+  - id: lang-punjabi-typed
+    tier: languages
+    ask: ਗੁਰਪ੍ਰੀਤ ਸਿੰਘ ਦੇ ਪਾਣੀ ਦੇ ਬਿੱਲ ਦੀ ਕੁੱਲ ਰਕਮ ਕਿੰਨੀ ਹੈ?
+    expect:
+      amount: 4375
+      source: water_bill_punjabi_specimen_v1.pdf
+    guards: typed Punjabi finds its bill among three water bills
+
+  - id: lang-gujarati-photo-typed
+    tier: languages
+    ask: રમેશ શાહે ગેસ બુકિંગ માટે કેટલી રકમ ચૂકવી?
+    expect:
+      amount: 1145
+      not_amount: 1103
+      source: gas_booking_receipt_gujarati_photo_specimen_v1.jpg
+    guards: typed Gujarati answered from the browser-read photo, not the Gujarati PDF
+
+  - id: lang-bengali-in-english
+    tier: languages
+    ask: What is the customer number on Sumita Ghosh's electricity bill?
+    expect:
+      text: WB-CN-5521-0937
+      source: electricity_bill_bengali_specimen_v1.pdf
+    guards: an English question finds a Bengali bill whose every word the reader broke
+
+  - id: lang-kannada-in-english
+    tier: languages
+    ask: When does Anil Kumar's fixed deposit mature?
+    expect:
+      date: 2027-02-28
+      source: fixed_deposit_receipt_kannada_specimen_v1.pdf
+    guards: an English question about a Kannada document gets its date

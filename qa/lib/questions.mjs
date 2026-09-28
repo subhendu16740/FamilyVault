@@ -4,7 +4,10 @@
 //   nightly       smoke + core + ONE rotating group, chosen by the date, so
 //                 the whole set is covered every few nights while no single
 //                 night spends more than about a third of the free budget
-//   full          everything, for a deliberate manual run
+//   full          every question above, for a deliberate manual run
+//   languages     the `languages` tier only: documents and questions in the
+//                 Indian languages the app offers, by hand, never on a
+//                 schedule — it alone is close to half the free day
 //   no-questions  none — database, access and upload checks only, which
 //                 spend no Groq budget at all
 // ────────────────────────────────────────────────────────────────
@@ -12,8 +15,9 @@
 import { readFileSync } from 'node:fs';
 import { parse } from 'yaml';
 import { TOKENS, FREE_DAILY_TOKENS } from './budget.mjs';
+import { SCRIPTS } from './match.mjs';
 
-const TIERS = ['smoke', 'core', 'rotate'];
+const TIERS = ['smoke', 'core', 'rotate', 'languages'];
 const ASSERTIONS = ['date', 'amount', 'not_amount', 'text', 'phone', 'not_phone', 'refuses', 'not_regex', 'source', 'answer_language', 'script', 'no_markdown'];
 
 export function loadQuestions(path) {
@@ -31,6 +35,7 @@ export function loadQuestions(path) {
     const keys = Object.keys(q.expect ?? {});
     if (!keys.length) throw new Error(`${where}: has no expectations`);
     for (const key of keys) if (!ASSERTIONS.includes(key)) throw new Error(`${where}: unknown expectation '${key}'`);
+    if (q.expect.script && !SCRIPTS[q.expect.script]) throw new Error(`${where}: script must be one of ${Object.keys(SCRIPTS).join(', ')}`);
     seen.add(q.id);
   }
   return questions;
@@ -50,9 +55,11 @@ export function selectQuestions(questions, suite, group) {
     case 'smoke':
       return questions.filter((q) => q.tier === 'smoke');
     case 'nightly':
-      return questions.filter((q) => q.tier !== 'rotate' || q.group === group);
+      return questions.filter((q) => q.tier === 'smoke' || q.tier === 'core' || (q.tier === 'rotate' && q.group === group));
     case 'full':
-      return questions;
+      return questions.filter((q) => q.tier !== 'languages');
+    case 'languages':
+      return questions.filter((q) => q.tier === 'languages');
     default:
       throw new Error(`Unknown suite ${suite}`);
   }

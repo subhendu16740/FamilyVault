@@ -13,7 +13,7 @@
 export const DEV_REF = 'tkqsfoppwlyupentuixy';
 export const PROD_REF = 'yrcmdixqgvmhqxejvlor';
 
-export const SUITES = ['smoke', 'nightly', 'full', 'no-questions'];
+export const SUITES = ['smoke', 'nightly', 'full', 'languages', 'no-questions'];
 export const AREAS = ['db', 'access', 'upload', 'ask'];
 
 export function parseArgs(argv) {

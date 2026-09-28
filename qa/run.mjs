@@ -8,7 +8,8 @@
 //   node run.mjs --plan                 what a run would do; no network
 //   node run.mjs --suite smoke          after a deploy (3 questions)
 //   node run.mjs --suite nightly        the nightly run (8–9 questions)
-//   node run.mjs --suite full           everything (15 questions)
+//   node run.mjs --suite full           everything but languages (15 questions)
+//   node run.mjs --suite languages      eight more Indian languages (12 questions)
 //   node run.mjs --suite no-questions   spends no Groq budget at all
 //   node run.mjs --only db,access       just those areas
 //
@@ -41,7 +42,9 @@ const OUT = fileURLToPath(new URL('./out/', import.meta.url));
 const section = (name) => console.log(`\n── ${name} ${'─'.repeat(Math.max(0, 60 - name.length))}`);
 
 function describePlan(args, selected, group, groups, today) {
-  const rotation = args.suite === 'nightly' ? `rotation group ${group} of ${groups} (${today.toISOString().slice(0, 10)})` : args.suite === 'full' ? 'all rotation groups' : 'no rotation';
+  const rotation = args.suite === 'nightly' ? `rotation group ${group} of ${groups} (${today.toISOString().slice(0, 10)})`
+    : args.suite === 'full' ? 'all rotation groups'
+    : args.suite === 'languages' ? 'the languages tier only' : 'no rotation';
   const est = estimateFor(selected);
   console.log(`FamilyVault QA — suite "${args.suite}", ${rotation}`);
   console.log(`Areas: ${args.only ? args.only.join(', ') : 'db, access, upload, ask'}`);
