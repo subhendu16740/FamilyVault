@@ -14,10 +14,14 @@ type DocumentCategory = Database['public']['Tables']['document_categories']['Row
 
 export async function fetchUserFamilies(userId: string): Promise<FamilyWithMembership[]> {
   // Step 1: get memberships
+  // Oldest membership first, so the default family never changes by itself:
+  // being added to another family must not swap the vault someone sees (and
+  // uploads into) for one chosen by whoever added them.
   const { data: memberships, error: memErr } = await supabase
     .from('family_members')
-    .select('id, family_id, user_id, role')
-    .eq('user_id', userId);
+    .select('id, family_id, user_id, role, joined_at')
+    .eq('user_id', userId)
+    .order('joined_at', { ascending: true });
 
   if (memErr) throw memErr;
   if (!memberships || memberships.length === 0) return [];
@@ -347,61 +351,54 @@ export async function fetchCategories(): Promise<DocumentCategory[]> {
   return data ?? [];
 }
 
-// ─── Invitations ─────────────────────────────────────────────────
+// ─── Adding members (admin only) ─────────────────────────────────
+//
+// There are no invitations and no requests to join (migration 025): a family
+// admin adds a person who already has an account, by the email they sign in
+// with, and they are a member at once — and are told so by a notification.
+// It goes through the add-member Edge Function because only the server may
+// look an account up by email.
 
-export interface InvitationRow {
-  id: string;
-  family_id: string;
-  invited_by: string;
-  invitee_email: string;
-  role: string;
-  status: string;
-  token: string;
-  expires_at: string;
-  created_at: string;
-}
+export type AddMemberOutcome =
+  | { status: 'added'; displayName: string }
+  | { status: 'already_member'; displayName: string }
+  | { status: 'no_account' }
+  | { status: 'invalid_email' }
+  /** The server is not ready for this yet (function or migration missing). */
+  | { status: 'unavailable'; message: string };
 
-export async function fetchFamilyInvitations(familyId: string): Promise<InvitationRow[]> {
-  const { data, error } = await supabase
-    .from('invitations')
-    .select('*')
-    .eq('family_id', familyId)
-    .order('created_at', { ascending: false });
-
-  if (error) throw error;
-  return (data ?? []) as InvitationRow[];
-}
-
-export async function inviteMember(
+export async function addFamilyMember(
   familyId: string,
-  invitedBy: string,
   email: string,
-  role: string = 'viewer',
-): Promise<void> {
-  // Try Edge Function first (sends email)
-  try {
-    const { data, error: fnErr } = await supabase.functions.invoke('invite-member', {
-      body: { family_id: familyId, invited_by: invitedBy, invitee_email: email, role },
-    });
-    if (!fnErr && data?.success) return;
-  } catch {
-    // Edge Function not available — fall through to direct insert
-  }
-
-  // Fallback: direct DB insert (no email sent)
-  const token = Math.random().toString(36).substring(2) + Date.now().toString(36);
-  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-
-  const { error } = await supabase.from('invitations').insert({
-    family_id: familyId,
-    invited_by: invitedBy,
-    invitee_email: email,
-    role,
-    token,
-    expires_at: expiresAt,
+  details: { alias?: string; relationship?: string } = {},
+): Promise<AddMemberOutcome> {
+  const { data, error } = await supabase.functions.invoke('add-member', {
+    body: {
+      family_id: familyId,
+      email: email.trim(),
+      ...(details.alias?.trim() ? { alias: details.alias.trim() } : {}),
+      ...(details.relationship ? { relationship: details.relationship } : {}),
+    },
   });
+  if (!error) return { status: 'added', displayName: data?.display_name || email };
 
-  if (error) throw error;
+  const httpStatus = (error as { context?: Response })?.context?.status;
+  const body = (await readFunctionError(error)) as { status?: string; error?: string; display_name?: string } | null;
+  switch (body?.status) {
+    case 'already_member':
+      return { status: 'already_member', displayName: body.display_name || email };
+    case 'no_account':
+      return { status: 'no_account' };
+    case 'invalid_email':
+      return { status: 'invalid_email' };
+    case 'needs_migration':
+      return { status: 'unavailable', message: body.error ?? 'Adding members is not available yet.' };
+  }
+  // The gateway's own 404: this project does not have the function yet.
+  if (httpStatus === 404) {
+    return { status: 'unavailable', message: 'Adding members is not available on this server yet.' };
+  }
+  throw new Error(body?.error ?? error.message);
 }
 
 // ─── Member Management (admin only) ─────────────────────────────
@@ -424,13 +421,20 @@ export async function updateMemberRole(memberId: string, role: string): Promise<
   if (error) throw error;
 }
 
-export async function revokeInvitation(invitationId: string): Promise<void> {
-  const { error } = await supabase
-    .from('invitations')
+/**
+ * Leave a family. Anyone may leave any family they are in — being added needs
+ * no consent, so leaving must need no permission (family_members_delete_self).
+ */
+export async function leaveFamily(familyId: string, userId: string): Promise<void> {
+  const { data, error } = await supabase
+    .from('family_members')
     .delete()
-    .eq('id', invitationId);
+    .eq('family_id', familyId)
+    .eq('user_id', userId)
+    .select('id');
 
   if (error) throw error;
+  if (!data?.length) throw new Error('You are not a member of this family.');
 }
 
 // ─── Document Upload ────────────────────────────────────────────

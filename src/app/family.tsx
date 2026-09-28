@@ -1,46 +1,50 @@
-import { useState, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView,
-  StyleSheet, Modal, TextInput, Pressable, Alert, ActivityIndicator,
+  StyleSheet, Modal, TextInput, Pressable, ActivityIndicator,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../lib/auth';
 import { useFamily } from '../lib/family-context';
-import { inviteMember, fetchFamilyInvitations, removeFamilyMember, updateMemberRole, revokeInvitation, type InvitationRow } from '../lib/api';
+import { addFamilyMember, leaveFamily, removeFamilyMember, updateMemberRole } from '../lib/api';
 
 const relations = ['Father', 'Mother', 'Spouse', 'Son', 'Daughter', 'Brother', 'Sister', 'Other'];
 
+// Membership has no invitations and no requests (migration 025): an admin
+// adds a person who already has an account, and they are in straight away —
+// and notified. Anyone can leave any family they are in.
+//
+// Results are shown on the screen, never with Alert.alert: react-native-web's
+// Alert is an empty function, so on the web build it would show nothing.
+
 export default function FamilyScreen() {
   const { user } = useAuth();
-  const { currentFamily, members, membership, refreshMembers } = useFamily();
+  const { currentFamily, families, members, membership, refreshMembers, refreshFamilies, switchFamily } = useFamily();
   const [showAddMember, setShowAddMember] = useState(false);
+  const [email, setEmail] = useState('');
   const [selectedRelation, setSelectedRelation] = useState('');
-  const [inviteEmail, setInviteEmail] = useState('');
-  const [memberName, setMemberName] = useState('');
-  const [aliases, setAliases] = useState('');
-  const [inviting, setInviting] = useState(false);
-  const [invitations, setInvitations] = useState<InvitationRow[]>([]);
+  const [alias, setAlias] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{
     title: string; message: string; confirmLabel: string; destructive?: boolean; onConfirm: () => void;
   } | null>(null);
 
   const isAdmin = membership?.role === 'admin';
+  const adminCount = members.filter((m) => m.role === 'admin').length;
+  // The last admin cannot leave: nobody would be left to manage the family.
+  const canLeave = !!currentFamily && !(isAdmin && adminCount <= 1);
 
-  // Fetch invitations when family is available
-  useEffect(() => {
-    if (!currentFamily) return;
-    fetchFamilyInvitations(currentFamily.id)
-      .then(setInvitations)
-      .catch(() => {});
-  }, [currentFamily?.id]);
-
-  // Filter: only show pending invitations for emails not already in members
-  const memberEmails = new Set(members.map((m) => m.users?.email).filter(Boolean));
-  const pendingInvites = invitations.filter(
-    (inv) => inv.status === 'pending' && !memberEmails.has(inv.invitee_email)
+  // Someone may have added this person to a family since the app opened.
+  useFocusEffect(
+    useCallback(() => {
+      refreshFamilies().catch(() => {});
+      refreshMembers().catch(() => {});
+    }, [refreshFamilies, refreshMembers])
   );
 
   const showConfirm = (title: string, message: string, onConfirm: () => void, destructive = true, confirmLabel = destructive ? 'Remove' : 'Confirm') => {
@@ -54,8 +58,8 @@ export default function FamilyScreen() {
       try {
         await removeFamilyMember(memberId);
         refreshMembers().catch(() => {});
-      } catch {
-        // silently handle
+      } catch (err: any) {
+        setNotice(err.message || `Could not remove ${name}.`);
       }
     });
   };
@@ -65,57 +69,70 @@ export default function FamilyScreen() {
       try {
         await updateMemberRole(memberId, 'admin');
         refreshMembers().catch(() => {});
-      } catch {
-        // silently handle
+      } catch (err: any) {
+        setNotice(err.message || `Could not make ${name} an admin.`);
       }
     }, false);
   };
 
-  const handleRevokeInvite = (invitationId: string, email: string) => {
-    showConfirm('Delete Invitation', `Delete pending invitation to ${email}?`, async () => {
+  const handleLeave = () => {
+    if (!currentFamily || !user) return;
+    showConfirm('Leave Family', `Leave ${familyName} Vault? You will no longer see its documents. An admin can add you again.`, async () => {
       try {
-        await revokeInvitation(invitationId);
-        setInvitations((prev) => prev.filter((inv) => inv.id !== invitationId));
-      } catch {
-        // silently handle
+        await leaveFamily(currentFamily.id, user.id);
+        await refreshFamilies();
+        router.replace('/home' as any);
+      } catch (err: any) {
+        setNotice(err.message || 'Could not leave this family.');
       }
-    }, true, 'Delete');
+    }, true, 'Leave');
   };
 
-  const handleInvite = async () => {
-    if (!inviteEmail.trim() || !currentFamily || !user) {
-      Alert.alert('Required', 'Please enter an email address.');
+  const closeAddMember = () => {
+    setShowAddMember(false);
+    setAddError(null);
+  };
+
+  const handleAdd = async () => {
+    if (!currentFamily) return;
+    const address = email.trim().toLowerCase();
+    if (!address) {
+      setAddError('Enter the email address they sign in with.');
       return;
     }
-    const emailToInvite = inviteEmail.trim().toLowerCase();
-    setInviting(true);
+    setAdding(true);
+    setAddError(null);
     try {
-      await inviteMember(currentFamily.id, user.id, emailToInvite, 'viewer');
-
-      // Optimistically add to local state so the UI updates immediately
-      const optimistic: InvitationRow = {
-        id: `temp-${Date.now()}`,
-        family_id: currentFamily.id,
-        invited_by: user.id,
-        invitee_email: emailToInvite,
-        role: 'viewer',
-        status: 'pending',
-        token: '',
-        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-        created_at: new Date().toISOString(),
-      };
-      setInvitations((prev) => [optimistic, ...prev]);
-
-      Alert.alert('Invited', `Invitation sent to ${emailToInvite}`);
-      setShowAddMember(false);
-      setInviteEmail('');
-      setMemberName('');
-      setSelectedRelation('');
-      setAliases('');
+      const outcome = await addFamilyMember(currentFamily.id, address, {
+        alias,
+        relationship: selectedRelation || undefined,
+      });
+      switch (outcome.status) {
+        case 'added':
+          setNotice(`${outcome.displayName} was added to ${familyName} and can now see its documents.`);
+          setShowAddMember(false);
+          setEmail('');
+          setSelectedRelation('');
+          setAlias('');
+          refreshMembers().catch(() => {});
+          break;
+        case 'already_member':
+          setAddError(`${outcome.displayName} is already in this family.`);
+          break;
+        case 'no_account':
+          setAddError(`No FamilyVault account uses ${address} yet. Ask them to sign up with this email, then add them again.`);
+          break;
+        case 'invalid_email':
+          setAddError("That doesn't look like an email address.");
+          break;
+        case 'unavailable':
+          setAddError(outcome.message);
+          break;
+      }
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to send invitation.');
+      setAddError(err.message || 'Could not add this member. Please try again.');
     } finally {
-      setInviting(false);
+      setAdding(false);
     }
   };
 
@@ -133,7 +150,9 @@ export default function FamilyScreen() {
         <View style={styles.noFamilyWrap}>
           <Feather name="users" size={48} color="#D1D5DB" />
           <Text style={styles.noFamilyTitle}>No Family Yet</Text>
-          <Text style={styles.noFamilySub}>Create a family to share and manage documents together.</Text>
+          <Text style={styles.noFamilySub}>
+            Create a family to share and manage documents together — or ask your family's admin to add you, using the email you sign in with.
+          </Text>
           <TouchableOpacity
             onPress={() => router.push('/setup-family' as any)}
             activeOpacity={0.85}
@@ -183,7 +202,42 @@ export default function FamilyScreen() {
       </View>
 
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
-        {/* Active Members */}
+        {notice && (
+          <TouchableOpacity style={styles.notice} onPress={() => setNotice(null)} activeOpacity={0.8}>
+            <Feather name="info" size={16} color="#2A3D66" />
+            <Text style={styles.noticeText}>{notice}</Text>
+            <Feather name="x" size={16} color="#6B7280" />
+          </TouchableOpacity>
+        )}
+
+        {/* Every family this person is in — more than one once an admin adds them elsewhere */}
+        {families.length > 1 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>Your Families</Text>
+            <View style={styles.memberList}>
+              {families.map((f) => {
+                const isCurrent = f.family_id === currentFamily.id;
+                return (
+                  <TouchableOpacity
+                    key={f.family_id}
+                    onPress={() => switchFamily(f.family_id)}
+                    style={[styles.familyRow, isCurrent && styles.familyRowCurrent]}
+                    activeOpacity={0.8}
+                  >
+                    <Feather name="home" size={18} color={isCurrent ? '#FFFFFF' : '#2A3D66'} />
+                    <View style={styles.memberInfo}>
+                      <Text style={[styles.familyRowName, isCurrent && styles.familyRowNameCurrent]}>{f.families.name}</Text>
+                      <Text style={[styles.familyRowRole, isCurrent && styles.familyRowRoleCurrent]}>{f.role}</Text>
+                    </View>
+                    {isCurrent && <Feather name="check" size={18} color="#FFFFFF" />}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        )}
+
+        {/* Members */}
         {members.length > 0 && (
           <View style={styles.section}>
             <Text style={styles.sectionLabel}>Members</Text>
@@ -221,76 +275,24 @@ export default function FamilyScreen() {
                         {m.relationship || m.role}
                       </Text>
                     </View>
-                    <View style={styles.cardActions}>
-                      <View style={styles.acceptedBadge}>
-                        <Feather name="check-circle" size={14} color="#22C55E" />
-                        <Text style={styles.acceptedText}>Joined</Text>
-                      </View>
-                      {isAdmin && !isCurrentUser && (
-                        <View style={styles.actionRow}>
-                          {!isMemberAdmin && (
-                            <TouchableOpacity
-                              onPress={() => handleMakeAdmin(m.id, name)}
-                              style={styles.actionBtn}
-                            >
-                              <Feather name="shield" size={14} color="#2A3D66" />
-                            </TouchableOpacity>
-                          )}
+                    {isAdmin && !isCurrentUser && (
+                      <View style={styles.actionRow}>
+                        {!isMemberAdmin && (
                           <TouchableOpacity
-                            onPress={() => handleRemoveMember(m.id, name)}
-                            style={styles.actionBtnDanger}
+                            onPress={() => handleMakeAdmin(m.id, name)}
+                            style={styles.actionBtn}
                           >
-                            <Feather name="user-minus" size={14} color="#EF4444" />
+                            <Feather name="shield" size={14} color="#2A3D66" />
                           </TouchableOpacity>
-                        </View>
-                      )}
-                    </View>
-                  </View>
-                );
-              })}
-            </View>
-          </View>
-        )}
-
-        {/* Pending Invitations */}
-        {pendingInvites.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionLabel}>Pending Invitations</Text>
-            <View style={styles.memberList}>
-              {pendingInvites.map((inv) => {
-                const initial = inv.invitee_email.charAt(0).toUpperCase();
-                const isExpired = new Date(inv.expires_at) < new Date();
-                return (
-                  <View key={inv.id} style={[styles.memberCard, styles.pendingCard]}>
-                    <View style={styles.pendingAvatar}>
-                      <Text style={styles.pendingInitial}>{initial}</Text>
-                    </View>
-                    <View style={styles.memberInfo}>
-                      <Text style={styles.memberName}>{inv.invitee_email}</Text>
-                      <Text style={styles.memberRelation}>
-                        Invited as {inv.role}
-                      </Text>
-                    </View>
-                    <View style={styles.cardActions}>
-                      <View style={isExpired ? styles.expiredBadge : styles.pendingBadge}>
-                        <Feather
-                          name={isExpired ? 'alert-circle' : 'clock'}
-                          size={14}
-                          color={isExpired ? '#EF4444' : '#F59E0B'}
-                        />
-                        <Text style={isExpired ? styles.expiredText : styles.pendingText}>
-                          {isExpired ? 'Expired' : 'Invited'}
-                        </Text>
-                      </View>
-                      {isAdmin && (
+                        )}
                         <TouchableOpacity
-                          onPress={() => handleRevokeInvite(inv.id, inv.invitee_email)}
+                          onPress={() => handleRemoveMember(m.id, name)}
                           style={styles.actionBtnDanger}
                         >
-                          <Feather name="trash-2" size={14} color="#EF4444" />
+                          <Feather name="user-minus" size={14} color="#EF4444" />
                         </TouchableOpacity>
-                      )}
-                    </View>
+                      </View>
+                    )}
                   </View>
                 );
               })}
@@ -299,12 +301,19 @@ export default function FamilyScreen() {
         )}
 
         {/* Empty state */}
-        {members.length === 0 && pendingInvites.length === 0 && (
+        {members.length === 0 && (
           <View style={styles.emptyState}>
             <Feather name="users" size={40} color="#D1D5DB" />
             <Text style={styles.emptyTitle}>No members yet</Text>
-            <Text style={styles.emptySubtitle}>Invite your family members to get started</Text>
+            <Text style={styles.emptySubtitle}>Add your family members to get started</Text>
           </View>
+        )}
+
+        {canLeave && (
+          <TouchableOpacity onPress={handleLeave} style={styles.leaveBtn} activeOpacity={0.8}>
+            <Feather name="log-out" size={16} color="#EF4444" />
+            <Text style={styles.leaveBtnText}>Leave {familyName}</Text>
+          </TouchableOpacity>
         )}
 
         <View style={{ height: 24 }} />
@@ -312,57 +321,50 @@ export default function FamilyScreen() {
 
       {/* Add Member Modal */}
       <Modal visible={showAddMember} transparent animationType="slide">
-        <Pressable style={styles.modalOverlay} onPress={() => setShowAddMember(false)} />
+        <Pressable style={styles.modalOverlay} onPress={closeAddMember} />
         <View style={styles.modalSheet}>
           <View style={styles.sheetHandle} />
 
           <ScrollView showsVerticalScrollIndicator={false}>
             <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>Invite Family Member</Text>
+              <Text style={styles.sheetTitle}>Add Family Member</Text>
               <TouchableOpacity
-                onPress={() => setShowAddMember(false)}
+                onPress={closeAddMember}
                 style={styles.closeBtn}
               >
                 <Feather name="x" size={20} color="#4B5563" />
               </TouchableOpacity>
             </View>
 
+            <Text style={styles.sheetIntro}>
+              They need a FamilyVault account. Enter the email they sign in with: they're added straight away as a viewer, and get a notification.
+            </Text>
+
             {/* Email */}
             <View style={styles.field}>
               <Text style={styles.fieldLabel}>Email Address</Text>
               <TextInput
-                placeholder="Enter email address"
+                placeholder="The email they sign in with"
                 placeholderTextColor="#9CA3AF"
                 keyboardType="email-address"
                 autoCapitalize="none"
-                value={inviteEmail}
-                onChangeText={setInviteEmail}
-                style={styles.fieldInput}
-              />
-            </View>
-
-            {/* Name */}
-            <View style={styles.field}>
-              <Text style={styles.fieldLabel}>
-                Display Name <Text style={styles.fieldLabelOptional}>(optional)</Text>
-              </Text>
-              <TextInput
-                placeholder="Enter full name"
-                placeholderTextColor="#9CA3AF"
-                value={memberName}
-                onChangeText={setMemberName}
+                autoCorrect={false}
+                value={email}
+                onChangeText={(v) => { setEmail(v); setAddError(null); }}
                 style={styles.fieldInput}
               />
             </View>
 
             {/* Relationship */}
             <View style={styles.field}>
-              <Text style={styles.fieldLabel}>Relationship</Text>
+              <Text style={styles.fieldLabel}>
+                Relationship <Text style={styles.fieldLabelOptional}>(optional)</Text>
+              </Text>
               <View style={styles.relationGrid}>
                 {relations.map((r) => (
                   <TouchableOpacity
                     key={r}
-                    onPress={() => setSelectedRelation(r)}
+                    onPress={() => setSelectedRelation(selectedRelation === r ? '' : r)}
                     style={[
                       styles.relationChip,
                       selectedRelation === r && styles.relationChipSelected,
@@ -379,38 +381,40 @@ export default function FamilyScreen() {
               </View>
             </View>
 
-            {/* Aliases */}
+            {/* What the family calls them */}
             <View style={styles.field}>
               <Text style={styles.fieldLabel}>
-                Also called <Text style={styles.fieldLabelOptional}>(optional)</Text>
+                Called at home <Text style={styles.fieldLabelOptional}>(optional)</Text>
               </Text>
               <TextInput
-                placeholder="e.g. Papa, Daddy, Baba"
+                placeholder="e.g. Papa"
                 placeholderTextColor="#9CA3AF"
-                value={aliases}
-                onChangeText={setAliases}
+                value={alias}
+                onChangeText={setAlias}
                 style={styles.fieldInput}
               />
               <Text style={styles.fieldHint}>
-                Powers the smart search — "Papa's passport"
+                Shown in this family instead of their account name
               </Text>
             </View>
 
+            {addError && <Text style={styles.addError}>{addError}</Text>}
+
             <TouchableOpacity
-              onPress={handleInvite}
+              onPress={handleAdd}
               activeOpacity={0.85}
-              disabled={inviting}
+              disabled={adding}
             >
               <LinearGradient
                 colors={['#2A3D66', '#4A6491']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
-                style={[styles.addMemberBtn, inviting && { opacity: 0.7 }]}
+                style={[styles.addMemberBtn, adding && { opacity: 0.7 }]}
               >
-                {inviting ? (
+                {adding ? (
                   <ActivityIndicator color="#FFFFFF" />
                 ) : (
-                  <Text style={styles.addMemberBtnText}>Send Invitation</Text>
+                  <Text style={styles.addMemberBtnText}>Add Member</Text>
                 )}
               </LinearGradient>
             </TouchableOpacity>
@@ -529,7 +533,6 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   adminBadgeText: { fontSize: 10, fontWeight: '600', color: '#7C3AED' },
-  cardActions: { alignItems: 'flex-end', gap: 8 },
   actionRow: { flexDirection: 'row', gap: 6 },
   actionBtn: {
     width: 32,
@@ -547,49 +550,50 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  acceptedBadge: {
+  // Notice banner: the result of an add, remove or leave
+  notice: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#F0FDF4',
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    gap: 10,
+    marginHorizontal: 24,
+    marginTop: 16,
+    padding: 14,
+    borderRadius: 14,
+    backgroundColor: '#EFF6FF',
   },
-  acceptedText: { fontSize: 11, fontWeight: '600', color: '#22C55E' },
-  pendingCard: { opacity: 0.85 },
-  pendingAvatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#E5E7EB',
+  noticeText: { flex: 1, fontSize: 13, color: '#2A3D66', lineHeight: 18 },
+  // Family switcher
+  familyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    minHeight: 56,
+    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.06)',
+    elevation: 2,
+  },
+  familyRowCurrent: { backgroundColor: '#2A3D66' },
+  familyRowName: { fontSize: 15, fontWeight: '600', color: '#1F2937' },
+  familyRowNameCurrent: { color: '#FFFFFF' },
+  familyRowRole: { fontSize: 12, color: '#9CA3AF', marginTop: 2, textTransform: 'capitalize' },
+  familyRowRoleCurrent: { color: 'rgba(255,255,255,0.75)' },
+  leaveBtn: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#D1D5DB',
-    borderStyle: 'dashed',
+    gap: 8,
+    marginHorizontal: 24,
+    marginTop: 32,
+    paddingVertical: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    minHeight: 48,
   },
-  pendingInitial: { fontSize: 22, fontWeight: '700', color: '#9CA3AF' },
-  pendingBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#FFFBEB',
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  pendingText: { fontSize: 11, fontWeight: '600', color: '#F59E0B' },
-  expiredBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#FEF2F2',
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  expiredText: { fontSize: 11, fontWeight: '600', color: '#EF4444' },
+  leaveBtnText: { fontSize: 14, fontWeight: '600', color: '#EF4444' },
   // Modal
   modalOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -623,6 +627,7 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   sheetTitle: { fontSize: 19, fontWeight: '700', color: '#2A3D66' },
+  sheetIntro: { fontSize: 13, color: '#6B7280', lineHeight: 19, marginTop: -12, marginBottom: 20 },
   closeBtn: {
     width: 40,
     height: 40,
@@ -647,6 +652,7 @@ const styles = StyleSheet.create({
     outlineStyle: 'none',
   } as any,
   fieldHint: { fontSize: 11, color: '#9CA3AF', marginTop: 6 },
+  addError: { fontSize: 13, color: '#DC2626', lineHeight: 18, marginBottom: 8 },
   relationGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',

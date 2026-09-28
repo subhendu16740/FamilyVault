@@ -28,7 +28,7 @@ const settingsGroups = [
   {
     title: 'Vault',
     items: [
-      { icon: 'users', label: 'Manage Families', sub: 'View and switch families' },
+      { icon: 'users', label: 'Manage Families', sub: 'View and switch families', route: '/family' },
       { icon: 'lock', label: 'Privacy', sub: 'Data isolation settings' },
       { icon: 'cloud', label: 'Storage', sub: 'Manage cloud backup' },
     ],
@@ -184,6 +184,7 @@ export default function SettingsScreen() {
                   key={iIdx}
                   style={[styles.settingRow, iIdx > 0 && styles.settingRowBorder]}
                   activeOpacity={0.7}
+                  onPress={item.route ? () => router.push(item.route as any) : undefined}
                 >
                   <View style={styles.settingIconWrap}>
                     <Feather name={item.icon as any} size={18} color="#2A3D66" />

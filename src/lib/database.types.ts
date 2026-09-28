@@ -398,9 +398,16 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      accept_pending_invitations: {
-        Args: { p_user_id: string }
-        Returns: number
+      add_family_member: {
+        Args: {
+          p_added_by: string
+          p_alias?: string
+          p_email: string
+          p_family_id: string
+          p_relationship?: string
+          p_role?: string
+        }
+        Returns: Json
       }
       assert_caller_in_family: {
         Args: { p_family_id: string }

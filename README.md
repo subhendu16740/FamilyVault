@@ -12,9 +12,9 @@ FamilyVault brings all your family's important documents into one secure, shared
 
 ### Implemented
 
-- **Family Vault Creation** — Create a private family vault and invite members by email
-- **Role-Based Access** — Admins manage members, invitations, and roles; viewers have read access
-- **Member Management** — Invite members, promote to admin, remove members, revoke pending invitations
+- **Family Vault Creation** — Create a private family vault and add family members to it
+- **Role-Based Access** — Only admins add and remove members and change roles; viewers have read access
+- **Member Management** — Add a member by the email they sign in with (no invitations or requests to join), promote to admin, remove members; anyone can switch between their families or leave one
 - **Secure Authentication** — Email/password sign-up, Google OAuth, biometric login UI
 - **Home Dashboard** — At-a-glance stats (documents, members, categories), recent documents, quick actions
 - **Document Viewer** — View document details with metadata, category, and owner info

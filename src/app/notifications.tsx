@@ -12,6 +12,8 @@ const typeConfig: Record<string, { icon: string; bg: string; color: string }> = 
   expiry: { icon: 'clock', bg: '#FEF2F2', color: '#DC2626' },
   upload: { icon: 'upload', bg: '#EFF6FF', color: '#2563EB' },
   invite: { icon: 'user-plus', bg: '#F0FDF4', color: '#16A34A' },
+  // "You were added to <family>" — migration 025's add_family_member().
+  member: { icon: 'user-plus', bg: '#F0FDF4', color: '#16A34A' },
   system: { icon: 'info', bg: '#F3F4F6', color: '#6B7280' },
 };
 
@@ -54,6 +56,9 @@ export default function NotificationsScreen() {
     // Navigate to document if linked
     if (notif.document_ref) {
       router.push(`/document/${notif.document_ref}` as any);
+    } else if (notif.type === 'member') {
+      // Where the new family can be switched to, or left.
+      router.push('/family' as any);
     }
   }, [user]);
 
