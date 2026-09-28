@@ -15,6 +15,7 @@ import {
 } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
 import type { FamilyDocumentDetailRow } from '../../lib/database.types';
+import { BackButton } from '../../components/back-button';
 
 const actions = [
   { icon: 'share-2', label: 'Share', bg: '#EFF6FF', color: '#2563EB' },
@@ -129,7 +130,10 @@ export default function DocumentViewerScreen() {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) throw new Error('Not authenticated');
         await deleteDocument(currentFamily.id, doc.id, user.id, doc.storage_path);
-        router.back();
+        // Opened from a link there is no history, and staying on a document
+        // that no longer exists is the worst place to be left.
+        if (router.canGoBack()) router.back();
+        else router.replace('/home' as any);
       } catch (err: any) {
         Alert.alert('Delete failed', err.message || 'Could not delete document.');
       } finally {
@@ -203,8 +207,13 @@ export default function DocumentViewerScreen() {
   };
 
   if (loading) {
+    // Back even while loading: without a current family this never finishes,
+    // and a spinner with no way out is a dead end.
     return (
       <SafeAreaView style={styles.safe} edges={['top']}>
+        <View style={styles.topBar}>
+          <BackButton />
+        </View>
         <View style={styles.loaderWrap}>
           <ActivityIndicator size="large" color="#2A3D66" />
         </View>
@@ -216,11 +225,8 @@ export default function DocumentViewerScreen() {
     return (
       <SafeAreaView style={styles.safe} edges={['top']}>
         <View style={styles.topBar}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
-            <Feather name="arrow-left" size={24} color="#4B5563" />
-          </TouchableOpacity>
+          <BackButton />
           <Text style={styles.topBarTitle}>Document</Text>
-          <View style={styles.iconBtn} />
         </View>
         <View style={styles.loaderWrap}>
           <Feather name="file-minus" size={48} color="#D1D5DB" />
@@ -242,13 +248,8 @@ export default function DocumentViewerScreen() {
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       {/* Top Bar */}
       <View style={styles.topBar}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
-          <Feather name="arrow-left" size={24} color="#4B5563" />
-        </TouchableOpacity>
-        <Text style={styles.topBarTitle} numberOfLines={1}>{doc.file_name}</Text>
-        <TouchableOpacity style={styles.iconBtn}>
-          <Feather name="more-vertical" size={24} color="#4B5563" />
-        </TouchableOpacity>
+        <BackButton />
+        <Text style={styles.topBarTitle} numberOfLines={2}>{doc.file_name}</Text>
       </View>
 
       {/* Tags */}
@@ -487,16 +488,15 @@ const styles = StyleSheet.create({
   },
   notFoundText: { fontSize: 16, fontWeight: '600', color: '#6B7280' },
   topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 24,
+    paddingTop: 8,
+    paddingBottom: 16,
+    gap: 8,
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
   },
-  iconBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  topBarTitle: { flex: 1, fontSize: 18, fontWeight: '700', color: '#2A3D66' },
+  topBarTitle: { fontSize: 20, fontWeight: '700', color: '#2A3D66' },
   tagsRow: {
     flexDirection: 'row',
     gap: 8,

@@ -904,6 +904,16 @@ rule again once pinned chunks are mixed in.
 - **Icons:** `@expo/vector-icons`, Feather set. Feather has no fingerprint
   glyph — biometric UI uses `"aperture"`.
 - Screens use `SafeAreaView` with `edges={['top']}`.
+- **Every screen that is not a tab opens with `<BackButton />`**
+  (`src/components/back-button.tsx`): the word "Back", not a bare arrow, on
+  its own row above the title, and shown while the screen loads too. It goes
+  Home (or the screen's `fallback`) when there is no history — `router.back()`
+  alone does nothing after a web refresh or on a screen opened from a link,
+  which is how Settings came to have no way back at all and Notifications
+  and the document viewer a button that did nothing.
+- **A row or button that opens nothing is not shown.** Settings listed six
+  rows with an arrow that went nowhere, and the document viewer had a menu
+  button with no menu. Add the control when its screen exists.
 - Use `as any` on `router.push`/`replace` for routes typed routes don't cover
   (e.g. `router.replace('/home' as any)`).
 - Re-fetch on focus with `useFocusEffect`, not `useEffect` — plain `useEffect`

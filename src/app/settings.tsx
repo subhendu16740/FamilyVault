@@ -15,34 +15,15 @@ import { indexStatus, type IndexStatus } from '../lib/api';
 import { VOICE_LANGUAGES, voiceLanguage } from '../lib/voice-languages';
 import { OCR_LANGUAGES, describeOcrLanguages } from '../lib/ocr-languages';
 import { hasVoiceFor } from '../lib/speech';
+import { BackButton } from '../components/back-button';
 
-const settingsGroups = [
-  {
-    title: 'Account',
-    items: [
-      { icon: 'user', label: 'Profile', sub: 'Edit your name and photo' },
-      { icon: 'shield', label: 'Security', sub: 'Password & biometrics' },
-      { icon: 'bell', label: 'Notifications', sub: 'Expiry alerts and reminders' },
-    ],
-  },
-  {
-    title: 'Vault',
-    items: [
-      { icon: 'users', label: 'Manage Families', sub: 'View and switch families', route: '/family' },
-      { icon: 'mail', label: 'Import from Gmail', sub: 'Find documents in your email', route: '/gmail-import' },
-      { icon: 'lock', label: 'Privacy', sub: 'Data isolation settings' },
-      { icon: 'cloud', label: 'Storage', sub: 'Manage cloud backup' },
-    ],
-  },
-  {
-    title: 'Support',
-    items: [
-      { icon: 'help-circle', label: 'Help & FAQ', sub: 'How FamilyVault works' },
-      // The badge says WHICH build this is at a glance; this says what that
-      // means, in the one place someone goes to check.
-      { icon: 'info', label: 'About', sub: isProduction ? 'Version 1.0.0' : `Version 1.0.0 · ${environmentDescription}` },
-    ],
-  },
+// Only rows that open something. Profile, Security, Notifications, Privacy,
+// Storage and Help were listed here with an arrow and opened nothing, which
+// tells the person using it that the app is broken — or that they did
+// something wrong. Add a row back when its screen exists.
+const vaultItems = [
+  { icon: 'users', label: 'Manage Families', sub: 'View and switch families', route: '/family' },
+  { icon: 'mail', label: 'Import from Gmail', sub: 'Find documents in your email', route: '/gmail-import' },
 ];
 
 /** Supabase function errors arrive in several shapes; show something a person can read. */
@@ -155,6 +136,11 @@ export default function SettingsScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
+      <View style={styles.header}>
+        <BackButton />
+        <Text style={styles.title}>Settings</Text>
+      </View>
+
       <ScrollView showsVerticalScrollIndicator={false}>
         {/* Profile Card */}
         <LinearGradient
@@ -175,31 +161,29 @@ export default function SettingsScreen() {
           </View>
         </LinearGradient>
 
-        {/* Settings Groups */}
-        {settingsGroups.map((group, gIdx) => (
-          <View key={gIdx} style={styles.group}>
-            <Text style={styles.groupTitle}>{group.title}</Text>
-            <View style={styles.groupCard}>
-              {group.items.map((item, iIdx) => (
-                <TouchableOpacity
-                  key={iIdx}
-                  style={[styles.settingRow, iIdx > 0 && styles.settingRowBorder]}
-                  activeOpacity={0.7}
-                  onPress={item.route ? () => router.push(item.route as any) : undefined}
-                >
-                  <View style={styles.settingIconWrap}>
-                    <Feather name={item.icon as any} size={18} color="#2A3D66" />
-                  </View>
-                  <View style={styles.settingText}>
-                    <Text style={styles.settingLabel}>{item.label}</Text>
-                    <Text style={styles.settingSub}>{item.sub}</Text>
-                  </View>
-                  <Feather name="chevron-right" size={18} color="#9CA3AF" />
-                </TouchableOpacity>
-              ))}
-            </View>
+        {/* Vault */}
+        <View style={styles.group}>
+          <Text style={styles.groupTitle}>Vault</Text>
+          <View style={styles.groupCard}>
+            {vaultItems.map((item, iIdx) => (
+              <TouchableOpacity
+                key={item.route}
+                style={[styles.settingRow, iIdx > 0 && styles.settingRowBorder]}
+                activeOpacity={0.7}
+                onPress={() => router.push(item.route as any)}
+              >
+                <View style={styles.settingIconWrap}>
+                  <Feather name={item.icon as any} size={18} color="#2A3D66" />
+                </View>
+                <View style={styles.settingText}>
+                  <Text style={styles.settingLabel}>{item.label}</Text>
+                  <Text style={styles.settingSub}>{item.sub}</Text>
+                </View>
+                <Feather name="chevron-right" size={18} color="#9CA3AF" />
+              </TouchableOpacity>
+            ))}
           </View>
-        ))}
+        </View>
 
         {/* Accessibility — the one group with live controls */}
         <View style={styles.group}>
@@ -286,6 +270,26 @@ export default function SettingsScreen() {
                   ? <Text style={styles.settingAction}>Update</Text>
                   : null}
             </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* About — information only, so no arrow. The badge says WHICH build
+            this is at a glance; this says what that means, in the one place
+            someone goes to check. */}
+        <View style={styles.group}>
+          <Text style={styles.groupTitle}>About</Text>
+          <View style={styles.groupCard}>
+            <View style={styles.settingRow}>
+              <View style={styles.settingIconWrap}>
+                <Feather name="info" size={18} color="#2A3D66" />
+              </View>
+              <View style={styles.settingText}>
+                <Text style={styles.settingLabel}>FamilyVault</Text>
+                <Text style={styles.settingSub}>
+                  {isProduction ? 'Version 1.0.0' : `Version 1.0.0 · ${environmentDescription}`}
+                </Text>
+              </View>
+            </View>
           </View>
         </View>
 
@@ -385,6 +389,16 @@ export default function SettingsScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#F8F9FC' },
+  header: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 24,
+    paddingTop: 8,
+    paddingBottom: 16,
+    gap: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  title: { fontSize: 22, fontWeight: '700', color: '#2A3D66' },
   profileCard: {
     flexDirection: 'row',
     alignItems: 'center',

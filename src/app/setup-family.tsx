@@ -10,10 +10,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../lib/auth';
 import { useFamily } from '../lib/family-context';
 import { createNewFamily } from '../lib/api';
+import { BackButton } from '../components/back-button';
 
 export default function SetupFamilyScreen() {
   const { user } = useAuth();
-  const { refreshFamilies } = useFamily();
+  // First sign-in has nowhere to go back to — the app sends people here
+  // until they have a vault. Someone who already has one came from Manage
+  // Family to make another, and needs a way out.
+  const { families, refreshFamilies } = useFamily();
   const [familyName, setFamilyName] = useState('');
   const [description, setDescription] = useState('');
   const [loading, setLoading] = useState(false);
@@ -40,6 +44,12 @@ export default function SetupFamilyScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.container}>
+        {families.length > 0 && (
+          <View style={styles.backRow}>
+            <BackButton fallback="/family" />
+          </View>
+        )}
+
         {/* Header */}
         <View style={styles.header}>
           <LinearGradient
@@ -52,7 +62,7 @@ export default function SetupFamilyScreen() {
           </LinearGradient>
           <Text style={styles.title}>Create Your Family Vault</Text>
           <Text style={styles.subtitle}>
-            Set up a secure space for your family's documents. You can invite members after creation.
+            Set up a secure space for your family's documents. You can add members after creation.
           </Text>
         </View>
 
@@ -135,6 +145,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     width: '100%',
   },
+  backRow: { marginTop: -32, marginBottom: 16 },
   header: {
     alignItems: 'center',
     marginBottom: 40,
