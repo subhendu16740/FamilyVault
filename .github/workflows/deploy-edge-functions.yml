@@ -91,12 +91,30 @@ jobs:
           echo "Deploying to ${{ steps.target.outputs.name }} (${{ steps.target.outputs.ref }})"
 
           # --use-api bundles server-side, so the runner needs no Docker.
-          for fn in ingest-document rag-search invite-member reembed-index; do
+          for fn in ingest-document rag-search add-member reembed-index; do
             echo "::group::$fn"
             supabase functions deploy "$fn" \
               --project-ref "${{ steps.target.outputs.ref }}" \
               --use-api
             echo "::endgroup::"
+          done
+
+      - name: Retire removed functions
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          # Deleting a function from this repo does not delete it from the
+          # project: it stays deployed, and callable, running its old code.
+          # invite-member created invitations and sent sign-up emails; since
+          # migration 025 members are added by add-member instead, and the old
+          # endpoint must not outlive it. Deleting one already gone fails,
+          # which is the normal case after the first deploy.
+          for fn in invite-member; do
+            if supabase functions delete "$fn" --project-ref "${{ steps.target.outputs.ref }}" --yes; then
+              echo "Retired $fn"
+            else
+              echo "$fn is not deployed here (already retired)"
+            fi
           done
 
       - name: Summary
@@ -106,7 +124,7 @@ jobs:
             echo ""
             echo "- \`ingest-document\`"
             echo "- \`rag-search\`"
-            echo "- \`invite-member\`"
+            echo "- \`add-member\`"
             echo "- \`reembed-index\`"
             echo ""
             echo "Migrations are not run by this workflow — apply SQL in the dashboard."

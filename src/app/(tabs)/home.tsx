@@ -53,7 +53,7 @@ export default function HomeScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const { user } = useAuth();
-  const { currentFamily } = useFamily();
+  const { currentFamily, refreshFamilies } = useFamily();
   const { openDrawer } = useDrawer();
 
   const [recentDocs, setRecentDocs] = useState<FamilyDocumentRow[]>([]);
@@ -69,6 +69,8 @@ export default function HomeScreen() {
 
   const loadData = useCallback(() => {
     if (!currentFamily || !user) {
+      // No family yet: an admin may have added this person since sign-in.
+      if (user) refreshFamilies().catch(() => {});
       setLoading(false);
       return;
     }
@@ -86,7 +88,7 @@ export default function HomeScreen() {
       })
       .catch((err) => console.error('[Home] fetch error:', err))
       .finally(() => setLoading(false));
-  }, [currentFamily?.id, user?.id]);
+  }, [currentFamily?.id, user?.id, refreshFamilies]);
 
   // Re-fetch when screen gains focus (e.g. after deleting a document)
   useFocusEffect(

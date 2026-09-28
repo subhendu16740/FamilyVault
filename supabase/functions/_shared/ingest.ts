@@ -18,6 +18,8 @@ import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { embedPassages } from './embeddings.ts';
 import { chunkText } from './chunking.ts';
 import { extractPdfLayoutText } from './pdf-text.ts';
+import { extractMetadata, parseFlexibleDate, type ExtractedMeta } from './metadata.ts';
+import { cleanText } from './text.ts';
 
 /** Bumped when extraction changes enough that stored text should be redone. */
 export const EXTRACTOR_VERSION = 'pdfjs-layout-2';
@@ -75,9 +77,10 @@ export interface IngestResult {
   /** Why the file could not be read, in words a person can act on. */
   reason?: string;
   /**
-   * True when the failure is configuration, not the document: OCR was needed
-   * and no key is set. Such a file must NOT be marked permanently failed —
-   * setting the secret fixes it, and marking it would bury it for good.
+   * True when the failure is not the document's: OCR was needed and could not
+   * run — no key is set, or the OCR service is down or rate-limiting. Such a
+   * file must NOT be marked permanently failed: setting the secret, or simply
+   * trying again later, fixes it, and marking it would bury it for good.
    */
   retryable?: boolean;
 }
@@ -123,15 +126,33 @@ export async function ingestDocument(
         return {
           chunks: 0, metadata: 0, extractedChars: pdf.text.length, empty: true,
           reason: pdf.ocrError,
-          retryable: !OCR_SPACE_API_KEY,
+          ...(pdf.ocrRetryable ? { retryable: true } : {}),
         };
       }
     } else if (['jpg', 'jpeg', 'png'].includes(fileType)) {
-      extractedText = await extractTextFromImage(fileData);
+      const ocr = await extractTextFromImage(fileData);
+      extractedText = ocr.text;
+      // OCR failing is not the photo being unreadable. This used to drop the
+      // error, so an OCR.space outage came back as "Nothing readable could be
+      // extracted" — a bad file, never retried — where a PDF in the same
+      // outage was reported, correctly, as an outage.
+      if (!cleanText(ocr.text).trim() && ocr.error) {
+        console.warn(`[ingest] OCR could not read ${storagePath}: ${ocr.error}`);
+        return {
+          chunks: 0, metadata: 0, extractedChars: 0, empty: true,
+          reason: ocr.error,
+          ...(ocr.retryable ? { retryable: true } : {}),
+        };
+      }
     } else {
       extractedText = await fileData.text();
     }
   }
+
+  // Postgres refuses a NUL in text or jsonb, and one unmappable glyph was
+  // enough to fail the whole ingestion. Cleaned once, here, so the stored
+  // text, every chunk and every metadata value are safe.
+  extractedText = cleanText(extractedText);
 
   // Nothing readable. Say so rather than storing "[Document: name]" as a
   // chunk: a placeholder is indistinguishable from a real passage at search
@@ -216,7 +237,8 @@ export async function reextractDocument(
   const pdf: PdfText = storagePath.toLowerCase().endsWith('.pdf')
     ? await extractTextFromPdf(fileData)
     : { text: await fileData.text(), extractor: 'layout' };
-  const { text, extractor, layoutError } = pdf;
+  const { extractor, layoutError } = pdf;
+  const text = cleanText(pdf.text);
 
   // A scan OCR could not read. Leave the document exactly as it was: its
   // existing text and chunks are no worse than what this pass produced, and
@@ -293,6 +315,8 @@ export interface PdfText {
   layoutError?: string;
   /** Why server-side OCR could not run, or ran and found nothing. */
   ocrError?: string;
+  /** OCR failed for a reason that is not the file's; see IngestResult.retryable. */
+  ocrRetryable?: boolean;
   /** Pages PDF.js reported, when it could open the file. */
   pages?: number;
   /** True when this is a scan and OCR did not rescue it. */
@@ -379,6 +403,7 @@ async function extractTextFromPdf(blob: Blob): Promise<PdfText> {
       pages,
       thin: true,
       ocrError: ocr.error ?? 'OCR found no text in this scan',
+      ocrRetryable: ocr.retryable,
     };
   } catch (err) {
     console.warn('[ingest] PDF extraction error:', err);
@@ -455,28 +480,38 @@ function extractReadableText(bytes: Uint8Array): string {
   return words.join(' ');
 }
 
-async function extractTextFromImage(blob: Blob): Promise<string> {
+async function extractTextFromImage(blob: Blob): Promise<OcrResult> {
   // Use OCR.space as server-side fallback (client-side OCR is preferred)
   console.log('[ingest] Running server-side OCR for image...');
-  const { text } = await ocrWithOcrSpace(blob, 'image');
-  return text;
+  return await ocrWithOcrSpace(blob, 'image');
 }
 
 // ─── OCR.space API (free tier: 25K requests/month) ─────────────
 
+interface OcrResult {
+  text: string;
+  error?: string;
+  /** The failure is configuration or the service, not the file: try again later. */
+  retryable?: boolean;
+}
+
 /**
  * Reads the reason back to the caller as well as the text. A scan that could
- * not be OCR'd because no key is configured is an operator problem, not a
- * bad document, and the two must not look the same: one is fixed by setting
- * a secret, the other by replacing the file.
+ * not be OCR'd because no key is configured, or because OCR.space is down or
+ * rate-limiting, is not a bad document, and the two must not look the same:
+ * one is fixed by setting a secret or waiting, the other by replacing the file.
  */
 async function ocrWithOcrSpace(
   blob: Blob,
   type: 'pdf' | 'image',
-): Promise<{ text: string; error?: string }> {
+): Promise<OcrResult> {
   if (!OCR_SPACE_API_KEY) {
     console.warn('[ingest] OCR_SPACE_API_KEY is not set — skipping server-side OCR fallback');
-    return { text: '', error: 'This file is a scan and needs OCR, but OCR_SPACE_API_KEY is not set on this project' };
+    return {
+      text: '',
+      error: 'This file is a scan and needs OCR, but OCR_SPACE_API_KEY is not set on this project',
+      retryable: true,
+    };
   }
 
   try {
@@ -506,14 +541,25 @@ async function ocrWithOcrSpace(
 
     if (!response.ok) {
       console.warn(`[ingest] OCR.space HTTP error: ${response.status}`);
-      return { text: '', error: `OCR service returned HTTP ${response.status}` };
+      return {
+        text: '',
+        error: `OCR service returned HTTP ${response.status}`,
+        // Down, overloaded or rate-limiting: the file is not the problem.
+        retryable: response.status >= 500 || response.status === 429,
+      };
     }
 
     const result = await response.json();
 
     if (result.IsErroredOnProcessing) {
       console.warn('[ingest] OCR.space processing error:', result.ErrorMessage);
-      return { text: '', error: `OCR service: ${String(result.ErrorMessage).slice(0, 120)}` };
+      const message = String(result.ErrorMessage);
+      return {
+        text: '',
+        error: `OCR service: ${message.slice(0, 120)}`,
+        // Its timeouts and capacity errors pass; a file it cannot parse won't.
+        retryable: /timed?\s*out|exhaust|overload|busy|try again/i.test(message),
+      };
     }
 
     // Concatenate text from all pages
@@ -523,155 +569,6 @@ async function ocrWithOcrSpace(
     return { text };
   } catch (err) {
     console.warn('[ingest] OCR.space failed:', err);
-    return { text: '', error: `OCR service unreachable: ${String(err).slice(0, 120)}` };
+    return { text: '', error: `OCR service unreachable: ${String(err).slice(0, 120)}`, retryable: true };
   }
-}
-
-// ─── Metadata Extraction ───────────────────────────────────────
-
-interface ExtractedMeta {
-  key: string;
-  value: string;
-  confidence: number;
-}
-
-function extractMetadata(text: string): ExtractedMeta[] {
-  const meta: ExtractedMeta[] = [];
-  const seen = new Set<string>();
-
-  const addMeta = (key: string, value: string, confidence: number) => {
-    const dedupeKey = `${key}:${value}`;
-    if (!seen.has(dedupeKey) && value.trim().length > 0) {
-      seen.add(dedupeKey);
-      meta.push({ key, value: value.trim(), confidence });
-    }
-  };
-
-  // ─── Date patterns ─────────────────────────────────────────
-  // Expiry / validity dates
-  const expiryPatterns = [
-    /(?:expir(?:y|ation|es)|valid\s*(?:until|thru|through|till|upto)|exp\.?\s*date|date\s*of\s*expir)[:\s]*(\d{1,2}[\s/\-\.]\d{1,2}[\s/\-\.]\d{2,4})/gi,
-    /(?:expir(?:y|ation|es)|valid\s*(?:until|thru))[:\s]*(\d{2,4}[\s/\-\.]\d{1,2}[\s/\-\.]\d{1,2})/gi,
-    /(?:expir(?:y|ation)|valid\s*(?:until|thru))[:\s]*(\d{1,2}\s+\w+\s+\d{4})/gi,
-  ];
-  for (const re of expiryPatterns) {
-    const m = text.match(re);
-    if (m) {
-      // Extract just the date part
-      const dateMatch = m[0].match(/(\d{1,2}[\s/\-\.]\d{1,2}[\s/\-\.]\d{2,4}|\d{2,4}[\s/\-\.]\d{1,2}[\s/\-\.]\d{1,2}|\d{1,2}\s+\w+\s+\d{4})/);
-      if (dateMatch) addMeta('expiry_date', dateMatch[1], 0.85);
-    }
-  }
-
-  // Date of birth
-  const dobPatterns = [
-    /(?:date\s*of\s*birth|d\.?o\.?b\.?|born\s*on|birth\s*date)[:\s]*(\d{1,2}[\s/\-\.]\d{1,2}[\s/\-\.]\d{2,4})/gi,
-    /(?:date\s*of\s*birth|d\.?o\.?b\.?)[:\s]*(\d{1,2}\s+\w+\s+\d{4})/gi,
-  ];
-  for (const re of dobPatterns) {
-    const m = text.match(re);
-    if (m) {
-      const dateMatch = m[0].match(/(\d{1,2}[\s/\-\.]\d{1,2}[\s/\-\.]\d{2,4}|\d{1,2}\s+\w+\s+\d{4})/);
-      if (dateMatch) addMeta('date_of_birth', dateMatch[1], 0.85);
-    }
-  }
-
-  // Date of issue
-  const issuePatterns = [
-    /(?:date\s*of\s*issue|issued?\s*(?:on|date))[:\s]*(\d{1,2}[\s/\-\.]\d{1,2}[\s/\-\.]\d{2,4})/gi,
-    /(?:date\s*of\s*issue|issued?\s*(?:on|date))[:\s]*(\d{1,2}\s+\w+\s+\d{4})/gi,
-  ];
-  for (const re of issuePatterns) {
-    const m = text.match(re);
-    if (m) {
-      const dateMatch = m[0].match(/(\d{1,2}[\s/\-\.]\d{1,2}[\s/\-\.]\d{2,4}|\d{1,2}\s+\w+\s+\d{4})/);
-      if (dateMatch) addMeta('issue_date', dateMatch[1], 0.8);
-    }
-  }
-
-  // ─── ID numbers ────────────────────────────────────────────
-
-  // Passport number (letter followed by 7 digits — Indian format, or generic alphanumeric)
-  const passportMatch = text.match(/(?:passport\s*(?:no|number|#)?)[:\s]*([A-Z]\d{7})/i);
-  if (passportMatch) addMeta('passport_number', passportMatch[1].toUpperCase(), 0.9);
-
-  // PAN number (Indian: 5 letters, 4 digits, 1 letter)
-  const panMatch = text.match(/(?:pan|permanent\s*account)[:\s]*([A-Z]{5}\d{4}[A-Z])/i)
-    || text.match(/\b([A-Z]{5}\d{4}[A-Z])\b/);
-  if (panMatch) addMeta('pan_number', panMatch[1].toUpperCase(), 0.85);
-
-  // Aadhaar number (Indian: 12 digits, may have spaces)
-  const aadhaarMatch = text.match(/(?:aadhaar|aadhar|uid)[:\s]*(\d{4}\s?\d{4}\s?\d{4})/i)
-    || text.match(/\b(\d{4}\s\d{4}\s\d{4})\b/);
-  if (aadhaarMatch) addMeta('aadhaar_number', aadhaarMatch[1].replace(/\s/g, ' '), 0.85);
-
-  // Driving license number
-  const dlMatch = text.match(/(?:(?:driving|driver'?s?)\s*licen[cs]e|d\.?l\.?)\s*(?:no|number|#)?[:\s]*([A-Z]{2}\d{2}\s?\d{4,11})/i);
-  if (dlMatch) addMeta('driving_license_number', dlMatch[1].toUpperCase(), 0.8);
-
-  // Policy / account number (generic)
-  const policyMatch = text.match(/(?:policy|account|member(?:ship)?|certificate)\s*(?:no|number|#|id)?[:\s]*([A-Z0-9]{6,20})/i);
-  if (policyMatch) addMeta('policy_number', policyMatch[1], 0.7);
-
-  // ─── Names ─────────────────────────────────────────────────
-
-  const nameMatch = text.match(/(?:name|holder|insured|patient)[:\s]*([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})/);
-  if (nameMatch) addMeta('holder_name', nameMatch[1], 0.7);
-
-  // ─── Amounts ───────────────────────────────────────────────
-
-  const amountMatch = text.match(/(?:(?:sum\s*(?:insured|assured))|(?:total|amount|premium|coverage))[:\s]*(?:(?:Rs\.?|INR|₹|\$|USD)\s*)?([\d,]+(?:\.\d{2})?)/i);
-  if (amountMatch) addMeta('amount', amountMatch[1], 0.7);
-
-  // ─── Phone numbers ────────────────────────────────────────
-
-  const phoneMatch = text.match(/(?:phone|mobile|contact|tel)[:\s]*(\+?\d[\d\s\-]{8,14}\d)/i);
-  if (phoneMatch) addMeta('phone_number', phoneMatch[1].replace(/\s/g, ''), 0.75);
-
-  return meta;
-}
-
-// ─── Date Parsing ──────────────────────────────────────────────
-
-function parseFlexibleDate(dateStr: string): string | null {
-  // Try common date formats and return YYYY-MM-DD or null
-  const cleaned = dateStr.trim().replace(/\s+/g, ' ');
-
-  // DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
-  let m = cleaned.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
-  if (m) {
-    const [, d, mo, y] = m;
-    return `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`;
-  }
-
-  // YYYY/MM/DD or YYYY-MM-DD
-  m = cleaned.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})$/);
-  if (m) {
-    const [, y, mo, d] = m;
-    return `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`;
-  }
-
-  // DD Mon YYYY (e.g., "15 Jul 2033")
-  const months: Record<string, string> = {
-    jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
-    jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12',
-    january: '01', february: '02', march: '03', april: '04',
-    june: '06', july: '07', august: '08', september: '09',
-    october: '10', november: '11', december: '12',
-  };
-  m = cleaned.match(/^(\d{1,2})\s+(\w+)\s+(\d{4})$/);
-  if (m) {
-    const mo = months[m[2].toLowerCase()];
-    if (mo) return `${m[3]}-${mo}-${m[1].padStart(2, '0')}`;
-  }
-
-  // DD/MM/YY (2-digit year)
-  m = cleaned.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2})$/);
-  if (m) {
-    const [, d, mo, y] = m;
-    const fullYear = parseInt(y) > 50 ? `19${y}` : `20${y}`;
-    return `${fullYear}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`;
-  }
-
-  return null;
 }

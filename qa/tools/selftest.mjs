@@ -4,14 +4,19 @@
 //
 // Proves the answer matchers accept the forms real answers take (and reject
 // near misses), that judgeAnswer() flags what it should, that the run-time
-// vehicle PDF is read by the server's own layout code, and that
-// questions.yaml is valid and each suite stays inside its Groq budget.
+// vehicle PDF is read by the server's own layout code, that the server's
+// metadata extraction and text cleaning behave (imported from
+// supabase/functions/_shared/, not copied), and that questions.yaml is valid
+// and each suite stays inside its Groq budget.
 // CI runs it before any live check, so a broken matcher can never show up
 // as a "failing app".
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { getDocument } from 'pdfjs-serverless';
 import { reconstructLayout } from '../../supabase/functions/_shared/pdf-text.ts';
+import { extractMetadata, parseFlexibleDate } from '../../supabase/functions/_shared/metadata.ts';
+import { cleanText } from '../../supabase/functions/_shared/text.ts';
 import { mentionsDate, mentionsAmount, mentionsPhone, mentionsText, refuses, devanagariShare, hasMarkdown } from '../lib/match.mjs';
 import { judgeAnswer } from '../lib/checks/ask.mjs';
 import { vehicleInsurance } from '../lib/tiny-pdf.mjs';
@@ -93,6 +98,52 @@ await test('the run-time vehicle PDF reads as a text layer with its facts', asyn
   assert.ok(text.length >= 200, `only ${text.length} characters — the server would treat it as a scan`);
   assert.ok(text.includes('Policy No: SMV2026990177'), 'policy number line');
   assert.ok(text.includes('Valid until: 17/10/2026'), 'expiry line');
+  // What the live upload check then expects ingest to store.
+  const meta = extractMetadata(text);
+  assert.deepEqual(meta.filter((m) => m.key === 'expiry_date').map((m) => m.value), ['17/10/2026']);
+  assert.ok(meta.some((m) => m.key === 'policy_number' && m.value === 'SMV2026990177'), 'policy number extracted');
+});
+
+await test('metadata: one expiry per date, never a truncated twin', () => {
+  const expiries = (t) => extractMetadata(t).filter((m) => m.key === 'expiry_date').map((m) => m.value);
+  // The YYYY-first pattern used to match these too, as "17/10/20".
+  assert.deepEqual(expiries('Valid until: 17/10/2026'), ['17/10/2026']);
+  assert.deepEqual(expiries('Date of Expiry: 19/07/2033'), ['19/07/2033']);
+  assert.deepEqual(expiries('Expiry: 2033-07-19'), ['2033-07-19']);
+  assert.deepEqual(expiries('valid thru 17.10.26'), ['17.10.26']);
+  assert.deepEqual(expiries('Expiration: 2026-10-171'), [], 'a run of digits is not a date');
+  assert.equal(parseFlexibleDate('17/10/2026'), '2026-10-17');
+  assert.equal(parseFlexibleDate('2033-07-19'), '2033-07-19');
+  assert.equal(parseFlexibleDate('19 July 2033'), '2033-07-19');
+  assert.equal(parseFlexibleDate('17.10.26'), '2026-10-17');
+});
+
+await test('cleanText makes extracted text storable', () => {
+  assert.equal(cleanText('आशा व\u0000मा'), 'आशा वमा', 'NUL removed, word kept whole');
+  assert.equal(cleanText('a\uD800b\uDC00c'), 'abc', 'lone surrogates removed');
+  assert.equal(cleanText('😀 ok'), '😀 ok', 'a real surrogate pair survives');
+  assert.equal(cleanText('page 1\fpage 2'), 'page 1\npage 2');
+  assert.equal(cleanText('tab\tnew\nline\r\n'), 'tab\tnew\nline\r\n');
+  assert.equal(cleanText('bell\u0007!'), 'bell !');
+});
+
+await test('the Hindi PDF: the server reads NULs, and cleanText makes it storable', async () => {
+  // PDF.js gives U+0000 for Devanagari glyphs it cannot map; Postgres refuses
+  // a NUL in text/jsonb, and that failed the whole ingestion (HTTP 500).
+  const hindi = documents.find((d) => d.file.startsWith('property_tax_notice_hindi'));
+  const bytes = readFileSync(new URL(`../fixtures/files/${hindi.file}`, import.meta.url));
+  const doc = await getDocument({ data: new Uint8Array(bytes), useSystemFonts: true, disableFontFace: true, isEvalSupported: false }).promise;
+  let text = '';
+  for (let n = 1; n <= doc.numPages; n++) {
+    const content = await (await doc.getPage(n)).getTextContent();
+    text += reconstructLayout(content.items.filter((i) => typeof i.str === 'string').map((i) => ({
+      str: i.str, x: i.transform[4], y: i.transform[5], width: i.width ?? 0, height: Math.abs(i.transform[3]) || 10,
+    })));
+  }
+  assert.ok(text.includes('\u0000'), 'no NUL in the raw text — the fixture no longer exercises the fix');
+  const clean = cleanText(text);
+  assert.ok(!JSON.stringify(clean).includes('\\u0000'), 'a NUL survived cleaning');
+  for (const fact of hindi.facts) assert.ok(clean.replace(/\s+/g, ' ').includes(fact), `lost "${fact}"`);
 });
 
 await test('questions.yaml is consistent with the fixtures', () => {
@@ -124,4 +175,4 @@ if (failures.length) {
   console.error(`\n${failures.length} self-test(s) failed, ${passed} passed.`);
   process.exit(1);
 }
-console.log(`✓ ${passed} self-tests passed — matchers, judge, run-time PDF, questions and budget.`);
+console.log(`✓ ${passed} self-tests passed — matchers, judge, run-time PDF, metadata, text cleaning, questions and budget.`);
