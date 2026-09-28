@@ -481,10 +481,12 @@ proper comparison found; the three that mattered:
 **How "the same" is checked now** — a fingerprint, run on both projects,
 must return identical rows: one per object type (functions with their bodies
 and grants, columns, policies, RLS flags, app triggers, indexes, constraints,
-table grants, buckets, categories), each with a count and a hash. After 024 it
-did, for all ten types. The query lives in **`qa/sql/fingerprint.sql`** —
-paste it into the SQL editor of each project, or let the QA workflow compare
-the two for you on every run.
+table grants, the columns clients may write, buckets, categories), each with a
+count and a hash. After 024 it did, for all ten types. Migration 025's
+protection lives in column grants, which table grants cannot see, so they are
+an eleventh type; after 025 both projects match on all eleven. The query lives
+in **`qa/sql/fingerprint.sql`** — paste it into the SQL editor of each
+project, or let the QA workflow compare the two for you on every run.
 
 Run it after applying any migration to both projects. **Changing a database
 by hand without a migration is what caused every item above** — if something
