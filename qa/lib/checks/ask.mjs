@@ -13,7 +13,7 @@ import { invokeFunction } from '../supabase.mjs';
 import { Budget } from '../budget.mjs';
 import { condenses } from '../questions.mjs';
 import {
-  mentionsDate, mentionsAmount, mentionsPhone, mentionsText, refuses, devanagariShare, hasMarkdown,
+  mentionsDate, mentionsAmount, mentionsPhone, mentionsText, refuses, scriptShare, hasMarkdown,
 } from '../match.mjs';
 
 const isRateLimited = (r) => r.status === 429 || (r.data?.degraded === true && r.data?.retry_after_seconds != null);
@@ -36,7 +36,7 @@ export function judgeAnswer(q, d) {
   if (e.answer_language && !String(d.answer_language ?? '').startsWith(e.answer_language)) {
     reasons.push(`expected an answer in ${e.answer_language} (answer_language: ${d.answer_language ?? 'missing'})`);
   }
-  if (e.script === 'devanagari' && devanagariShare(answer) < 0.3) reasons.push('expected the answer in Devanagari script');
+  if (e.script && scriptShare(answer, e.script) < 0.3) reasons.push(`expected the answer in ${e.script[0].toUpperCase()}${e.script.slice(1)} script`);
   if (e.no_markdown && hasMarkdown(answer)) reasons.push('voice answers must not contain markdown');
 
   // The pipeline's own health, on every question. embedded:false is the

@@ -2,9 +2,9 @@
 //
 // Two strangers: a logged-out visitor with only the public anon key, and QA
 // account B, signed in and a member of a DIFFERENT family. Every function
-// the app calls, the four Edge Functions and storage are tried against
-// account A's vault. Migrations 019, 022 and 023 each closed a hole of
-// exactly this shape; these probes keep them closed.
+// the app calls, the Edge Functions (Gmail import's included) and storage
+// are tried against account A's vault. Migrations 019, 022 and 023 each
+// closed a hole of exactly this shape; these probes keep them closed.
 //
 // Two rules keep a probe honest:
 //   - A refusal only counts if it is an AUTHORIZATION refusal. "Could not
@@ -82,6 +82,28 @@ function judgeWrite(open) {
     if (allowed) return ['fail', `ALLOWED: ${open} (${reverted === false ? 'COULD NOT UNDO IT' : 'undone'})`];
     return ['pass', 'no row changed'];
   };
+}
+
+// The Gmail functions ship with migration 026: until they are deployed to
+// DEV the gateway answers 404, and until 026 is applied they answer
+// needs_migration. Both are skips — a refusal from a function that is not
+// there proves nothing.
+const gmailJudge = (check) => ({ status, data }) => {
+  if (status === 404 && !data?.status) return ['skipped', 'not deployed to DEV yet'];
+  if (status === 503 && data?.status === 'needs_migration') return ['skipped', 'migration 026 is not applied to DEV yet'];
+  return check(status, data);
+};
+const http401 = (status, data) => (status === 401 || status === 403
+  ? ['pass', `HTTP ${status}`]
+  : ['fail', `HTTP ${status}${status >= 200 && status < 300 ? ' — the function served a stranger' : ''}: ${JSON.stringify(data).slice(0, 160)}`]);
+
+function gmailCallbackJudge({ status, data }) {
+  if (status === 404) return ['skipped', 'not deployed to DEV yet'];
+  if (data?.location) return ['fail', `REDIRECTED to ${data.location} for a state it never issued`];
+  if (status === 401) return ['fail', "deployed WITH JWT verification, so Google's redirect back is refused — deploy gmail-callback with --no-verify-jwt"];
+  if (status === 503) return ['skipped', 'migration 026 is not applied to DEV yet'];
+  if (status === 400) return ['pass', 'no such attempt: nowhere to go'];
+  return ['fail', `HTTP ${status}: the state lookup failed`];
 }
 
 async function attempt(fn) {
@@ -229,6 +251,26 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
       const { error: undo } = await b.client.from('families').update({ storage_namespace: vaultB.namespace }).eq('id', vaultB.id);
       return { allowed: true, reverted: !undo };
     }],
+    // Gmail import (026). A person's mailbox findings belong to them alone,
+    // and a Gmail token must only ever land with the account that asked.
+    ['anon', 'read anyone\'s Gmail connection', gmailJudge(http401), fn(anon, 'gmail-connect', { action: 'status' })],
+    ['anon', 'list what a Gmail scan found', gmailJudge(http401), fn(anon, 'gmail-scan', { action: 'list' })],
+    ['anon', 'import a Gmail attachment into QA Vault A', gmailJudge(http401), fn(anon, 'gmail-import', { item_id: randomUUID(), family_id: A.family })],
+    ['anon', 'be sent anywhere by gmail-callback with a state it never issued', gmailCallbackJudge, async () => {
+      // As Google's redirect arrives: a plain GET, no session, no apikey.
+      const res = await fetch(`${cfg.url}/functions/v1/gmail-callback?state=qa-${cfg.runId}&code=qa`, { redirect: 'manual' });
+      return { status: res.status, data: { location: res.headers.get('location') } };
+    }],
+    ['B', 'import a Gmail attachment into QA Vault A', gmailJudge(http401), fn(b, 'gmail-import', { item_id: randomUUID(), family_id: A.family })],
+    ['B', 'finish a Gmail connection it did not start', gmailJudge((s, d) =>
+      (s === 400 && d?.status === 'expired' ? ['pass', 'no such attempt for this account'] : ['fail', `HTTP ${s}: ${JSON.stringify(d).slice(0, 160)}`])),
+    fn(b, 'gmail-connect', { action: 'finish', state: `qa-${cfg.runId}`, code: 'qa' })],
+    ['B', 'get a Gmail consent link that returns to another website', gmailJudge((s, d) => {
+      if (d?.url) return ['fail', 'GOT A CONSENT LINK returning to https://evil.example: GMAIL_RETURN_ORIGINS is not being enforced'];
+      if ((s === 400 && d?.status === 'origin_not_allowed') || (s === 503 && d?.status === 'not_configured')) return ['pass', d.status];
+      return ['fail', `HTTP ${s}: ${JSON.stringify(d).slice(0, 160)}`];
+    }), fn(b, 'gmail-connect', { action: 'start', return_origin: 'https://evil.example' })],
+
     // Undone the moment it is seen: a superuser B would make every read
     // probe above meaningless, so this runs after them.
     ['B', 'make itself superuser', judgeWrite("is_superuser() then opens every family's members, invitations, notifications and profiles"), async () => {

@@ -10,12 +10,12 @@ GitHub Actions (`.github/workflows/qa.yml`); nothing here ships with the app.
 | Area | Checks | Spends |
 |---|---|---|
 | Database | 023 sweep is zero rows on DEV and PROD; the 024 fingerprint matches between them | nothing (read-only catalog queries) |
-| Setup | QA Vault A holds all 7 SPECIMEN documents, indexed (uploaded once, on the first run) | first run only |
-| Access | 39 probes: a logged-out visitor and account B (another family) are refused by every app RPC, the server-only RPCs, all Edge Functions and storage, and B cannot rewrite the columns 025 locked (its own `is_superuser` and email, a family's storage namespace) or create user, family or membership rows — each with a positive control | nothing |
+| Setup | QA Vault A holds all 17 SPECIMEN documents, indexed (uploaded once, on the first run) — English, Hindi, and one or two in each of eight more Indian languages, whose two photos are OCR'd the way the web app does it before upload (see [Indian languages](#indian-languages)) | first run only |
+| Access | 45 probes: a logged-out visitor and account B (another family) are refused by every app RPC, the server-only RPCs, all Edge Functions (Gmail import's too: no one reads another's connection or findings, gmail-callback redirects nowhere for a state it never issued, and a consent link never returns to a site off the allowlist) and storage, and B cannot rewrite the columns 025 locked (its own `is_superuser` and email, a family's storage namespace) or create user, family or membership rows — each with a positive control | nothing |
 | Members | only an admin adds (`add-member`): A adds B as a viewer, B is notified and sees the vault; "already a member" and "no account" are reported; B, now an insider, cannot make itself admin, give itself delete rights, delete A's document, add members, remove A or rename the vault; B can leave | nothing |
 | Upload | a fresh PDF goes through storage → insert → ingest-document; chunks, vectors, metadata, expiry alert → notification; a password-protected PDF fails visibly | 1 small embedding call, 1 OCR request |
 | Index | no unindexed documents; index up to date | nothing |
-| Questions | answers carry the right facts from the right document; refusals; Hindi; follow-ups; voice | Groq — see below |
+| Questions | answers carry the right facts from the right document; refusals; Hindi; follow-ups; voice; with suite `languages`, eight more Indian languages | Groq — see below |
 
 ## Groq budget
 
@@ -24,7 +24,9 @@ Each question costs about 9K tokens, ~6.5K of them on the relevance judge
 
 - **smoke** (3 questions) after each deploy to DEV and on pushes to `qa/`;
   **nightly** (8–9 questions: smoke + core + one rotating group) at 03:10 IST;
-  **full** (15) and **no-questions** (0) by hand.
+  **full** (15), **languages** (12, about 43% of the free day on its own)
+  and **no-questions** (0) by hand. `languages` is never scheduled and
+  `full` does not include it; don't run both on one day.
 - At most two question-asking runs a day outside the nightly one; later runs
   that day do only the free checks. One run at a time.
 - Questions go one at a time, 90s apart (`QA_SPACING_SECONDS`), back off on a
@@ -33,6 +35,39 @@ Each question costs about 9K tokens, ~6.5K of them on the relevance judge
 
 Worst day: ~100K tokens on gpt-oss-20b (half its free day) and ~40K on
 gpt-oss-120b, the model people's answers come from.
+
+## Indian languages
+
+The app offers nine Indian languages besides English, for voice (Settings ›
+Accessibility) and for reading documents (Settings › Documents). QA Vault A
+holds a Hindi notice and, per suite `languages`, one household document in
+each of the other eight — Bengali, Tamil, Telugu, Marathi, Gujarati,
+Kannada, Malayalam, Punjabi — plus a Tamil and a Gujarati **photo** of the
+same kind of bill for someone else, so that naming one person must never
+return the other's amount.
+
+What each path reads, measured by `tools/check-fixtures.mjs` on every run:
+
+| Path | Indian-script text | Notes |
+|---|---|---|
+| PDF, read on the server (pdfjs-serverless) | **damaged in every script** — names and labels lose letters (Hindi, Bengali, Telugu, Kannada 4 of 4 canary words; Tamil, Malayalam 3; Marathi, Gujarati, Punjabi 2) | amounts, dates and account numbers in ASCII survive |
+| Photo, web app (Tesseract in the browser, chosen languages + English) | read well — names intact | inside a Tamil read, ₹ → `*` and `TN-WT-61407` → `1110/1-61407`; digits survive |
+| Photo, phone app (ML Kit) | Latin only | not tested here |
+| Scanned PDF (server OCR.space) | English only | not tested here |
+
+`lib/client-ocr.mjs` reads a `clientOcr` photo exactly as the web app does —
+the tesseract.js version it pins, LSTM mode, and the models it would fetch
+from jsDelivr (`@tesseract.js-data/<lang>/4.0.0_best_int`), installed from
+npm so a run never depends on the CDN — and the text goes up with the file,
+as `ocr_text`, as the app sends it.
+
+The 12 questions ask by name, as a family would, in the two ways the search
+screen sends them: **voice mode** carries `language` and `voice`, so the
+question is translated to English for retrieval and answered aloud in the
+language (checked: `answer_language`, the script, no markdown); **typed**
+questions carry no language at all — the app sends one only in voice mode —
+so they are searched as written and the answer's language is not judged.
+Two more ask in English about a Bengali and a Kannada document.
 
 ## Results
 
@@ -65,14 +100,24 @@ node run.mjs --suite smoke
   `FIXTURE_VERSION` and the `_vN` in its file name, then `npm run fixtures`
   (needs `npm install` and, for the locked PDF, `pip install pypdf`) and
   `npm run check:fixtures`. The runner replaces the old copy in QA Vault A.
+  `npm run fixtures` draws only files that do not exist yet (`-- --force`
+  redraws them all), so adding one never changes the bytes of the others.
+  A photo with `clientOcr` needs each language's `@tesseract.js-data/<code>`
+  package in `package.json` (a dependency, not a devDependency: CI installs
+  with `--omit=dev`).
 - **Every document is fictional and says so.** This repository is public:
   never add a real document, not even an old one.
 
 ## Known issues it reports
 
-- The server's PDF reader (pdfjs-serverless) drops Devanagari conjuncts, reph
-  and the pre-base vowel sign from browser-made Hindi PDFs — "आशा वर्मा" reads
-  as "आशा वमा". Reported by `check-fixtures` on every run.
+- The server's PDF reader (pdfjs-serverless) damages every Indian script in
+  browser-made PDFs: glyphs with no ToUnicode entry come out as U+0000 and
+  are stripped (conjuncts, reph, the pre-base vowel sign — "आशा वर्मा" reads
+  as "आशा वमा", "ಠೇವಣಿ" as "ೕವಣಿ"), and vowel signs drawn before their
+  consonant are stored in drawing order ("தென்னகர்" as "ெதன்னகர்").
+  Reported by `check-fixtures` on every run, one line per reader.
+- Browser OCR of a Tamil photo misreads the ₹ and an account number's Latin
+  letters; the digits survive.
 
 Three more are fixed in the ingest code and read 🐞 only while DEV still runs
 the old function; they turn ✅ by themselves once it is deployed:

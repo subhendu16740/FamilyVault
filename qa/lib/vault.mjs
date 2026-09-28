@@ -8,6 +8,7 @@
 
 import { readFileSync } from 'node:fs';
 import { invokeFunction } from './supabase.mjs';
+import { readLikeTheWebApp } from './client-ocr.mjs';
 import { permanentDocuments } from '../fixtures/documents.mjs';
 
 export const VAULT_A = 'QA Vault A';
@@ -69,10 +70,11 @@ export async function fetchCategories(actor) {
 /**
  * Mirrors uploadDocument() in src/lib/api.ts step for step — storage path,
  * content type, the insert RPC, then ingest-document — so a change that
- * breaks uploading in the app breaks it here too. The one difference: no
- * client OCR text is sent, so images and scans take the server's OCR path.
+ * breaks uploading in the app breaks it here too. `ocrText` is the text the
+ * web app reads from a photo before uploading it (lib/client-ocr.mjs), sent
+ * as the app sends it; without it, images and scans take the server's OCR.
  */
-export async function uploadDocument(cfg, actor, vault, { fileName, bytes, categoryId }) {
+export async function uploadDocument(cfg, actor, vault, { fileName, bytes, categoryId, ocrText }) {
   const fileType = fileName.split('.').pop().toLowerCase();
   const storagePath = `${vault.namespace}/${Date.now()}_${fileName}`;
   const mimeType = fileType === 'pdf' ? 'application/pdf' : `image/${fileType}`;
@@ -100,6 +102,7 @@ export async function uploadDocument(cfg, actor, vault, { fileName, bytes, categ
     family_id: vault.id,
     document_id: docId,
     storage_path: storagePath,
+    ...(ocrText ? { ocr_text: ocrText } : {}),
   });
   return { stage: 'ingest', docId, storagePath, ingest };
 }
@@ -145,13 +148,27 @@ export async function syncFixtures(cfg, actor, vault, results) {
     if (existing) await deleteDocument(actor, vault, existing); // failed or stuck: start again
 
     const bytes = readFileSync(new URL(fixture.file, FIXTURES));
-    const up = await uploadDocument(cfg, actor, vault, { fileName: fixture.file, bytes, categoryId: categories.get(fixture.category) });
+    // A photo the web app reads in the browser, in the languages the family
+    // chose, before it is uploaded. That text is what gets indexed.
+    let ocrText;
+    if (fixture.clientOcr) {
+      try {
+        ocrText = await readLikeTheWebApp(bytes, fixture.clientOcr);
+      } catch (err) {
+        const why = `browser OCR (${fixture.clientOcr.join('+')}) could not run here, so it was not uploaded: ${err?.message ?? err}`;
+        results.add('setup', `fixture:${fixture.file}`, `Upload ${fixture.file}`, 'fail', { why });
+        notIndexed.set(fixture.file, { status: 'fail', why });
+        continue;
+      }
+    }
+    const up = await uploadDocument(cfg, actor, vault, { fileName: fixture.file, bytes, categoryId: categories.get(fixture.category), ocrText });
     uploaded++;
     const body = up.ingest?.data ?? {};
     const ok = up.stage === 'ingest' && up.ingest.status === 200 && body.success === true;
     const error = String(body.error ?? up.error ?? '');
+    const readBy = fixture.clientOcr ? `, read in the browser (${fixture.clientOcr.join('+')}, ${ocrText.length} chars)` : '';
     let [status, why] = ok
-      ? [body.embed_error ? 'fail' : 'pass', `${body.chunks} chunk(s)${body.embed_error ? `, NO VECTORS: ${body.embed_error}` : ''}`]
+      ? [body.embed_error ? 'fail' : 'pass', `${body.chunks} chunk(s)${readBy}${body.embed_error ? `, NO VECTORS: ${body.embed_error}` : ''}`]
       : ['fail', up.stage === 'ingest' ? `ingest-document answered ${up.ingest.status}: ${error || JSON.stringify(body).slice(0, 200)}` : `${up.stage} failed: ${error}`];
 
     if (!ok) {

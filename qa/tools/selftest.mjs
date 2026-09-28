@@ -17,7 +17,13 @@ import { getDocument } from 'pdfjs-serverless';
 import { reconstructLayout } from '../../supabase/functions/_shared/pdf-text.ts';
 import { extractMetadata, parseFlexibleDate } from '../../supabase/functions/_shared/metadata.ts';
 import { cleanText } from '../../supabase/functions/_shared/text.ts';
-import { mentionsDate, mentionsAmount, mentionsPhone, mentionsText, refuses, devanagariShare, hasMarkdown } from '../lib/match.mjs';
+import {
+  attachmentParts, classifyAttachment, allowedReturnOrigin, sniffType, storageFileName, senderDomain,
+} from '../../supabase/functions/_shared/gmail-rules.ts';
+import {
+  importTokenKey, sealToken, openToken, pkceChallenge, sha256Hex, base64url, fromBase64,
+} from '../../supabase/functions/_shared/gmail-crypto.ts';
+import { mentionsDate, mentionsAmount, mentionsPhone, mentionsText, refuses, devanagariShare, scriptShare, hasMarkdown } from '../lib/match.mjs';
 import { judgeAnswer } from '../lib/checks/ask.mjs';
 import { vehicleInsurance } from '../lib/tiny-pdf.mjs';
 import { loadQuestions, selectQuestions, groupCount, rotationGroup, estimateFor } from '../lib/questions.mjs';
@@ -48,6 +54,11 @@ await test('amounts with Indian grouping and lakh', () => {
   assert.ok(!mentionsAmount('₹10,00,000', 300000));
   assert.ok(mentionsAmount('₹10,00,000', 1000000));
   assert.ok(mentionsAmount('the rent is Rs. 32,000 a month', 32000));
+  // Answers in other Indian languages may write their own digits.
+  for (const [s, v] of [['মোট ২,৮৪৫ টাকা', 2845], ['₹ ૧,૧૦૩ ચૂકવ્યા', 1103], ['௫,௧௨௦ ரூபாய்', 5120], ['₹೭೫,೦೦೦', 75000], ['൧൨,൬൦൦ രൂപ', 12600], ['₹ ੪,੩੭੫', 4375], ['₹౧౮,౫౦౦', 18500]]) {
+    assert.ok(mentionsAmount(s, v), s);
+  }
+  assert.ok(!mentionsAmount('₹ ૧,૧૪૫', 1103), 'another receipt\'s amount');
 });
 
 await test('phones, identifiers, refusals, script, markdown', () => {
@@ -61,6 +72,10 @@ await test('phones, identifiers, refusals, script, markdown', () => {
   assert.ok(!refuses("Asha Verma's passport expires on 19 July 2033."));
   assert.ok(devanagariShare('आशा वर्मा का पासपोर्ट 19 जुलाई 2033 को समाप्त होगा।') > 0.9);
   assert.ok(devanagariShare('The passport expires in 2033.') === 0);
+  assert.ok(scriptShare('সুমিতা ঘোষের বিদ্যুৎ বিলে মোট ২,৮৪৫ টাকা দিতে হবে।', 'bengali') > 0.9);
+  assert.ok(scriptShare('மீனா சுப்பிரமணியம் ₹5,120 செலுத்த வேண்டும்.', 'tamil') > 0.9);
+  assert.ok(scriptShare('மீனா சுப்பிரமணியம் ₹5,120 செலுத்த வேண்டும்.', 'malayalam') === 0, 'Tamil is not Malayalam');
+  assert.ok(scriptShare('Meena Subramaniam has to pay ₹5,120.', 'tamil') === 0);
   assert.ok(hasMarkdown('**19 July 2033**') && hasMarkdown('- item') && !hasMarkdown('It expires on 19 July 2033.'));
 });
 
@@ -89,6 +104,21 @@ await test('judgeAnswer catches wrong answers', () => {
   assert.ok(noVectors.some((r) => r.includes('NOT embedded')));
   const markdown = judgeAnswer(byId.get('voice-mode'), { answer: 'It expires on **19 July 2033**.', sources: passport, debug: healthy });
   assert.ok(markdown.some((r) => r.includes('markdown')));
+});
+
+await test('judgeAnswer in other Indian languages', () => {
+  const bengali = [{ file_name: 'electricity_bill_bengali_specimen_v1.pdf' }];
+  const tamilPhoto = [{ file_name: 'water_tax_receipt_tamil_photo_specimen_v1.jpg' }];
+  assert.deepEqual(judgeAnswer(byId.get('lang-bengali-voice'), { answer: 'সুমিতা ঘোষের বিদ্যুৎ বিলে মোট ২,৮৪৫ টাকা দিতে হবে।', sources: bengali, answer_language: 'bn-IN', debug: healthy }), []);
+  assert.deepEqual(judgeAnswer(byId.get('lang-tamil-photo-voice'), { answer: 'மீனா சுப்பிரமணியம் ₹5,120 குடிநீர் வரி செலுத்த வேண்டும்.', sources: tamilPhoto, answer_language: 'ta-IN', debug: healthy }), []);
+  // The other Tamil bill's amount, for the wrong person.
+  const other = judgeAnswer(byId.get('lang-tamil-photo-voice'), { answer: 'அவர் ₹6,480 செலுத்த வேண்டும்.', sources: [{ file_name: 'water_tax_receipt_tamil_specimen_v1.pdf' }], answer_language: 'ta-IN', debug: healthy });
+  assert.equal(other.length, 3, other.join('; '));
+  // Right amount, but in English: a Bengali speaker asked aloud.
+  const english = judgeAnswer(byId.get('lang-bengali-voice'), { answer: 'Sumita Ghosh has to pay ₹2,845.', sources: bengali, answer_language: 'bn-IN', debug: healthy });
+  assert.ok(english.some((r) => r.includes('Bengali script')), english.join('; '));
+  // A typed question sends no language, so its answer's language is not judged.
+  assert.deepEqual(judgeAnswer(byId.get('lang-tamil-typed'), { answer: 'Karthik Rajan has to pay ₹6,480.', sources: [{ file_name: 'water_tax_receipt_tamil_specimen_v1.pdf' }], debug: healthy }), []);
 });
 
 await test('the run-time vehicle PDF reads as a text layer with its facts', async () => {
@@ -150,6 +180,108 @@ await test('the Hindi PDF: the server reads NULs, and cleanText makes it storabl
   for (const fact of hindi.facts) assert.ok(clean.replace(/\s+/g, ' ').includes(fact), `lost "${fact}"`);
 });
 
+await test('gmail: the attachments of a message, at any depth', () => {
+  // A forwarded email: the PDF sits two levels down; a logo and a Word file do not count.
+  const payload = {
+    partId: '', mimeType: 'multipart/mixed', headers: [{ name: 'From', value: 'Asha <asha@example.com>' }],
+    parts: [
+      { partId: '0', mimeType: 'text/plain', filename: '', body: { size: 120 } },
+      { partId: '1', mimeType: 'image/png', filename: 'image001.png', headers: [{ name: 'Content-ID', value: '<logo>' }], body: { size: 9000, attachmentId: 'A1' } },
+      { partId: '2', mimeType: 'message/rfc822', filename: '', parts: [
+        { partId: '2.0', mimeType: 'multipart/mixed', parts: [
+          { partId: '2.0.1', mimeType: 'application/octet-stream', filename: 'Policy Schedule.PDF', body: { size: 245000, attachmentId: 'A2' } },
+          { partId: '2.0.2', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', filename: 'notes.docx', body: { size: 5000, attachmentId: 'A3' } },
+        ] },
+      ] },
+    ],
+  };
+  const parts = attachmentParts(payload);
+  assert.deepEqual(parts.map((p) => [p.partId, p.mimeType, p.inline]), [['1', 'image/png', true], ['2.0.1', 'application/pdf', false]]);
+  assert.equal(parts[1].attachmentId, 'A2');
+});
+
+await test('gmail: suggest documents, drop email furniture, never read "company" as PAN', () => {
+  const c = (fileName, extra = {}) => classifyAttachment({
+    fileName, mimeType: /\.pdf$/i.test(fileName) ? 'application/pdf' : 'image/jpeg', size: 250_000, inline: false,
+    from: 'Friend <friend@example.com>', subject: '', labelIds: ['INBOX'], ...extra,
+  });
+  assert.deepEqual(c('passport_scan.jpg'), { suggestion: 'suggested', reason: 'file name says passport', category: 'Passport' });
+  assert.equal(c('Offer_Letter_Mira.pdf').suggestion, 'suggested', 'an offer LETTER is not marketing');
+  assert.equal(c('Offer_Letter_Mira.pdf').category, 'Employment Letters');
+  assert.equal(c('Sale_Deed_Flat402.pdf').category, 'Property Documents', 'a sale DEED is not marketing');
+  assert.equal(c('Form16_FY2025-26.pdf').category, 'Tax Returns');
+  assert.equal(c('e-Aadhaar.pdf').category, 'National ID / Aadhaar');
+  assert.equal(c('aadhar card.jpg').category, 'National ID / Aadhaar', 'the common spelling');
+  assert.equal(c('PAN_card.jpg').category, 'PAN Card');
+  assert.equal(c('company_profile.pdf').category, null, '"company" does not contain the word PAN');
+  assert.equal(c('company_profile.pdf').suggestion, 'maybe');
+  // The subject is weaker evidence than the file name.
+  assert.deepEqual(c('IMG_20260512_101010.jpg', { subject: 'Aadhaar card copy' }),
+    { suggestion: 'maybe', reason: 'email is about Aadhaar', category: 'National ID / Aadhaar' });
+  // A known issuer, and a lookalike of one.
+  assert.equal(c('document.pdf', { from: 'HDFC Bank <alerts@hdfcbank.net>' }).suggestion, 'suggested');
+  assert.equal(c('document.pdf', { from: 'HDFC Bank <alerts@hdfcbank.net>' }).category, 'Bank Statements');
+  assert.equal(c('document.pdf', { from: 'HDFC <alerts@hdfcbank.net.example.com>' }).suggestion, 'maybe');
+  assert.equal(senderDomain('"Passport Seva" <noreply@passportindia.gov.in>'), 'passportindia.gov.in');
+  assert.equal(c('document.pdf', { from: 'noreply@passportindia.gov.in' }).reason, 'from a government (passportindia.gov.in)');
+  // Marketing, and furniture.
+  assert.equal(c('Diwali_Sale_Catalogue.pdf').suggestion, 'unlikely');
+  assert.equal(c('brochure.pdf', { from: 'alerts@hdfcbank.net', subject: 'Exclusive offers for you' }).suggestion, 'unlikely');
+  assert.equal(c('logo.png', { size: 8000, mimeType: 'image/png' }), null);
+  assert.equal(c('image001.png', { size: 60_000, inline: true, mimeType: 'image/png' }), null);
+  assert.equal(c('company-logo.jpg', { size: 90_000 }), null);
+  assert.equal(c('passport.pdf', { size: 20 * 1024 * 1024 }).suggestion, 'unlikely', 'too big to import');
+  assert.equal(c('passport.pdf', { labelIds: ['CATEGORY_PROMOTIONS'] }).suggestion, 'unlikely');
+});
+
+await test('gmail: Google\'s answer returns only to an allowed origin', () => {
+  const dev = 'https://family-vault-git-dev-subhendu16740.vercel.app';
+  assert.equal(allowedReturnOrigin(dev, `${dev}/`), dev, 'a trailing slash in the secret is fine');
+  assert.equal(allowedReturnOrigin(`${dev}/gmail-import?x=1`, dev), dev, 'only the origin is kept');
+  assert.equal(allowedReturnOrigin('https://family-vault-cyan.vercel.app', dev), null, 'not listed');
+  assert.equal(allowedReturnOrigin('https://family-vault-cyan.vercel.app', ` ${dev} , https://family-vault-cyan.vercel.app`), 'https://family-vault-cyan.vercel.app');
+  const pattern = 'https://family-vault-*-subhendu16740.vercel.app';
+  assert.equal(allowedReturnOrigin('https://family-vault-dbmzqbq0v-subhendu16740.vercel.app', pattern), 'https://family-vault-dbmzqbq0v-subhendu16740.vercel.app');
+  assert.equal(allowedReturnOrigin('https://family-vault-a.evil.com-subhendu16740.vercel.app', pattern), null, '* never spans a dot');
+  assert.equal(allowedReturnOrigin('https://evil.example/family-vault-x-subhendu16740.vercel.app', pattern), null);
+  assert.equal(allowedReturnOrigin('http://localhost:8081', ''), 'http://localhost:8081', 'local development needs no configuration');
+  assert.equal(allowedReturnOrigin('http://evil.example', 'http://evil.example'), null, 'plain http only for localhost');
+  assert.equal(allowedReturnOrigin(`https://user:pw@${dev.slice(8)}`, dev), null, 'no credentials');
+  assert.equal(allowedReturnOrigin('javascript:alert(1)', dev), null);
+  assert.equal(allowedReturnOrigin(undefined, dev), null);
+});
+
+await test('gmail: stored files are what their bytes say, under a safe name', () => {
+  const bytes = (...b) => new Uint8Array(b);
+  assert.equal(sniffType(new TextEncoder().encode('%PDF-1.7\n...')), 'pdf');
+  assert.equal(sniffType(new TextEncoder().encode('\r\n  junk %PDF-1.4')), 'pdf', 'a little junk before %PDF- is allowed');
+  assert.equal(sniffType(bytes(0xff, 0xd8, 0xff, 0xe0)), 'jpg');
+  assert.equal(sniffType(bytes(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)), 'png');
+  assert.equal(sniffType(new TextEncoder().encode('PK\u0003\u0004 a zip named .pdf')), null);
+  assert.equal(storageFileName('My Passport (2024).PDF', 'pdf'), 'My_Passport_2024.pdf');
+  assert.equal(storageFileName('scan.pdf', 'jpg'), 'scan.jpg', 'the bytes decide the extension');
+  assert.equal(storageFileName('पासपोर्ट.pdf', 'pdf'), 'document.pdf');
+  assert.equal(storageFileName('../../etc/passwd.jpg', 'jpg'), 'etc_passwd.jpg', 'no path survives');
+});
+
+await test('gmail: refresh tokens are sealed, and PKCE matches RFC 7636', async () => {
+  const key = await importTokenKey(base64url(crypto.getRandomValues(new Uint8Array(32))));
+  const sealed = await sealToken(key, '1//refresh-token-value');
+  assert.ok(sealed.startsWith('v1.') && !sealed.includes('refresh-token-value'));
+  assert.equal(await openToken(key, sealed), '1//refresh-token-value');
+  assert.notEqual(await sealToken(key, 'same'), await sealToken(key, 'same'), 'a fresh IV every time');
+  const [v, iv, data] = sealed.split('.');
+  // Change the second-to-last character (the last may hold only padding bits).
+  const flipped = `${v}.${iv}.${data.slice(0, -2)}${data.at(-2) === 'A' ? 'B' : 'A'}${data.slice(-1)}`;
+  await assert.rejects(openToken(key, flipped), 'a tampered token must not open');
+  const other = await importTokenKey(Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64'));
+  await assert.rejects(openToken(other, sealed), 'another key must not open it');
+  await assert.rejects(importTokenKey('c2hvcnQ='), /32 random bytes/);
+  assert.equal(await pkceChallenge('dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk'), 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM');
+  assert.equal(await sha256Hex(new TextEncoder().encode('abc')), 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
+  assert.deepEqual([...fromBase64(base64url(new Uint8Array([251, 255, 0, 1])))], [251, 255, 0, 1]);
+});
+
 await test('questions.yaml is consistent with the fixtures', () => {
   const files = new Set(permanentDocuments.map((d) => d.file));
   for (const q of questions) if (q.expect.source) assert.ok(files.has(q.expect.source), `${q.id} cites ${q.expect.source}, which is not a permanent fixture`);
@@ -174,9 +306,33 @@ await test('every suite stays inside its Groq budget', () => {
   assert.equal(seen.size, groups, 'consecutive days cover every rotation group');
 });
 
+await test('the languages suite: by hand only, every language, half a day at most', () => {
+  const languages = selectQuestions(questions, 'languages', 1);
+  assert.equal(languages.length, 12);
+  assert.ok(estimateFor(languages).helperShare <= 0.45, `the languages suite would spend ${Math.round(estimateFor(languages).helperShare * 100)}% of the helper model's day`);
+  for (let g = 1; g <= groupCount(questions); g++) {
+    assert.ok(!selectQuestions(questions, 'nightly', g).some((q) => q.tier === 'languages'), `nightly group ${g} asks a languages question`);
+  }
+  assert.ok(!selectQuestions(questions, 'full', 1).some((q) => q.tier === 'languages'), 'full asks a languages question');
+  assert.ok(!selectQuestions(questions, 'smoke', 1).some((q) => q.tier === 'languages'));
+  // Every language the app offers beyond English and Hindi has a question.
+  const fixtureLanguage = new Map(permanentDocuments.map((d) => [d.file, d.language]));
+  const covered = new Set(languages.map((q) => fixtureLanguage.get(q.expect.source)));
+  for (const lang of ['Bengali', 'Tamil', 'Telugu', 'Marathi', 'Gujarati', 'Kannada', 'Malayalam', 'Punjabi']) assert.ok(covered.has(lang), `no question about the ${lang} document`);
+  // A voice-mode question says what it expects back, in which script.
+  const script = { bn: 'bengali', ta: 'tamil', te: 'telugu', mr: 'devanagari', hi: 'devanagari', gu: 'gujarati', kn: 'kannada', ml: 'malayalam', pa: 'gurmukhi' };
+  for (const q of languages.filter((x) => x.language)) {
+    const base = q.language.split('-')[0];
+    assert.ok(q.voice, `${q.id}: the app sends a language only in voice mode`);
+    assert.equal(q.expect.answer_language, base, `${q.id}: answer_language`);
+    assert.equal(q.expect.script, script[base], `${q.id}: script`);
+    assert.ok(q.expect.no_markdown, `${q.id}: a voice answer must be speakable`);
+  }
+});
+
 if (failures.length) {
   console.error(failures.map((f) => `✗ ${f}`).join('\n'));
   console.error(`\n${failures.length} self-test(s) failed, ${passed} passed.`);
   process.exit(1);
 }
-console.log(`✓ ${passed} self-tests passed — matchers, judge, run-time PDF, metadata, text cleaning, questions and budget.`);
+console.log(`✓ ${passed} self-tests passed — matchers, judge, run-time PDF, metadata, text cleaning, Gmail rules and token sealing, questions and budget.`);
