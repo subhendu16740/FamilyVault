@@ -287,7 +287,10 @@ async function rechunkPhase(
  * Bounded by construction: a document that yields text leaves this list by
  * gaining chunks, and one that yields none is marked 'failed' and never tried
  * again. Either way it is gone from the list after a single attempt, so this
- * cannot become work repeated on every search.
+ * cannot become work repeated on every search. The one exception is a
+ * failure that was not the document's (`retryable`: no OCR key, or OCR.space
+ * down) — it stays, for a later rebuild. Rebuilds run only while an index is
+ * stale, never on an up-to-date one, so that is still not per-search work.
  */
 async function retryStuckDocuments(
   supabase: SupabaseClient,
@@ -316,9 +319,9 @@ async function retryStuckDocuments(
         familyId, documentId: doc.id, storagePath: doc.storage_path,
       });
       if (result.empty && result.retryable) {
-        // Configuration, not the document: OCR was needed and no key is set.
-        // Marking it failed would bury it for good, and setting the secret is
-        // all that stands between this file and being readable.
+        // Not the document: OCR was needed and could not run — no key is set,
+        // or OCR.space is down or rate-limiting. Marking it failed would bury
+        // it for good, when a secret or a later run is all it needs.
         console.warn(`[reembed] ${doc.file_name} needs OCR: ${result.reason}`);
       } else if (result.empty) {
         console.warn(`[reembed] Nothing readable in ${doc.file_name} — marking failed: ${result.reason ?? 'no reason given'}`);

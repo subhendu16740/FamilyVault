@@ -6,12 +6,15 @@ import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../lib/auth';
+import { useFamily } from '../lib/family-context';
 import { fetchNotifications, markNotificationRead, type NotificationRow } from '../lib/api';
 
 const typeConfig: Record<string, { icon: string; bg: string; color: string }> = {
   expiry: { icon: 'clock', bg: '#FEF2F2', color: '#DC2626' },
   upload: { icon: 'upload', bg: '#EFF6FF', color: '#2563EB' },
   invite: { icon: 'user-plus', bg: '#F0FDF4', color: '#16A34A' },
+  // "You were added to <family>" — migration 025's add_family_member().
+  member: { icon: 'user-plus', bg: '#F0FDF4', color: '#16A34A' },
   system: { icon: 'info', bg: '#F3F4F6', color: '#6B7280' },
 };
 
@@ -29,6 +32,7 @@ function getRelativeTime(dateStr: string): string {
 
 export default function NotificationsScreen() {
   const { user } = useAuth();
+  const { currentFamily, switchFamily } = useFamily();
   const [notifications, setNotifications] = useState<NotificationRow[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -51,11 +55,23 @@ export default function NotificationsScreen() {
         );
       } catch { /* ignore */ }
     }
+    // Each notification belongs to one family, and it may not be the one on
+    // screen: the document viewer looks documents up in the current family,
+    // so a tap that opens something opens it in the notification's own. (A
+    // family the person has since left falls back to their default, as any
+    // stale choice does.)
+    const opens = !!notif.document_ref || notif.type === 'member';
+    if (opens && notif.family_id && notif.family_id !== currentFamily?.id) {
+      switchFamily(notif.family_id);
+    }
     // Navigate to document if linked
     if (notif.document_ref) {
       router.push(`/document/${notif.document_ref}` as any);
+    } else if (notif.type === 'member') {
+      // Where the new family can be switched to, or left.
+      router.push('/family' as any);
     }
-  }, [user]);
+  }, [user, currentFamily?.id, switchFamily]);
 
   const renderItem = ({ item }: { item: NotificationRow }) => {
     const cfg = typeConfig[item.type] || typeConfig.system;

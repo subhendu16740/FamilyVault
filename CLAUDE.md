@@ -11,14 +11,40 @@ Expo / React Native app (SDK 55) with expo-router. Backend is Supabase
 
 ## ⚠️ Read this first
 
-Two things will mislead you if you assume otherwise:
+Four things will mislead you if you assume otherwise:
 
-1. **The committed SQL migrations cannot rebuild the database.** They are a
-   snapshot from an earlier stage. 11 RPCs the app calls at runtime are not
-   defined anywhere in this repo, and the committed `document_chunks` table
-   has no `vector` column. See [Database](#database) — do not assume
-   `supabase/migrations/` is the source of truth.
-2. **This app targets both native and web from one codebase.** Day-to-day
+1. **The schema-taking RPCs are service-role ONLY, and that is load-bearing.**
+   Twelve functions (`rag_*`, `get_document_chunks`) take the family's schema
+   as a *parameter* and check no membership, so reachability IS the access
+   control. Migration 022 revokes them from `anon` and `authenticated`; before
+   it, any signed-in account could read or destroy any family's documents by
+   naming their schema. Never grant one of these to a client role, and never
+   add a new schema-taking function without the same revoke.
+2. **A user id passed as an argument is not an identity.** A `SECURITY DEFINER`
+   function runs with the owner's rights, so RLS never applies inside it. If
+   a client role can execute it, it must take the caller from `auth.uid()` —
+   or open with `perform public.assert_caller_is(p_user_id)` /
+   `assert_caller_in_family(p_family_id)` (migration 023) — never from a
+   parameter. Before 023, thirteen functions broke this rule, and `anon` with
+   no login could rename, delete or add any family's documents and read
+   anyone's notifications. Functions only the server calls get
+   `REVOKE ... FROM PUBLIC, anon, authenticated` and a grant to
+   `service_role`, nothing more. The sweep at the bottom of 023 must return
+   zero rows on both projects; run it after any change to a function. It
+   lives in `qa/sql/sweep.sql`, and the QA workflow runs it on every run.
+3. **Clients write only the columns the app writes, and add no members.**
+   Supabase grants `anon` and `authenticated` every column of every table,
+   and RLS checks rows, not columns — so `users_update_own` let any account
+   set its own `is_superuser` (and then read every family's member list and
+   every profile), and a family admin could rewrite `storage_namespace`.
+   Migration 025 revokes table-wide INSERT and UPDATE on `users`, `families`,
+   `family_members`, `notifications` and `invitations` and grants back only
+   the columns the app changes (listed in 025's header). **A new writable
+   column needs its own `GRANT` in a migration.** Membership has no
+   invitations and no requests: only an admin adds a person, through the
+   `add-member` Edge Function, and clients cannot insert a membership row at
+   all. See [Membership](#membership--an-admin-adds-nobody-requests-025).
+4. **This app targets both native and web from one codebase.** Day-to-day
    review happens on the web build (deployed to Vercel), but native
    Android/iOS is a real target with platform-specific code paths. A change
    that works on web can break native. See [Platform splits](#platform-splits).
@@ -47,14 +73,41 @@ npm run typecheck              # tsc --noEmit
 
 | Command | State | Why |
 |---|---|---|
-| `npm run typecheck` | **Fails — 19 errors, all in `src/lib/api.ts`** | `src/lib/database.types.ts` is stale. It predates the RPCs the app now calls, so every `.rpc()` types as `never`. Fix by regenerating types once the live schema is captured (see [Database](#database)). The 19 errors are pre-existing — don't treat them as caused by your change, but don't add more either. |
+| `npm run typecheck` | **Passes — 0 errors** | It failed with 19 errors for most of the project's life, all from a stale `src/lib/database.types.ts` in which every `.rpc()` typed as `never`. Regenerating it fixed all 19 at once. **Keep it at 0.** After any migration, regenerate the file — and re-append the hand-written block at the bottom, which the generator does not produce. |
 | `npm run lint` | **Does not work in a clean clone** | No ESLint config is committed. `expo lint` tries to download one at runtime and fails on any network-restricted machine. There is no working lint gate. |
 
 ### Testing
 
-**There is no test framework.** No Jest, no test files, no `test` script.
-Verification today means: `npm run typecheck` (error count must not grow past
-19), `npm run build` must succeed, and manual checks in the browser.
+The app itself has no unit tests: `npm run typecheck` (**must stay at 0
+errors**) and `npm run build` are the local gates.
+
+**`qa/` is an end-to-end suite against the DEV project**, run by
+`.github/workflows/qa.yml` — after every Edge Function deploy to DEV, nightly
+at 03:10 IST, and on pushes that change `qa/`. It uploads synthetic SPECIMEN
+documents to its own vault (QA Vault A, account A), asks questions about
+them, and checks the answers on facts and sources, never wording. It also
+runs the 023 sweep and the 024 DEV/PROD fingerprint, 39 access probes (a
+logged-out visitor and a second account must be refused everywhere), the
+membership model (the second account, added as a viewer, must not be able to
+escalate, and must be able to leave), and the full upload → ingest →
+expiry-notification pipeline. See `qa/README.md`.
+
+- **It spends the free Groq budget carefully, by design.** Each question is
+  ~9K tokens, mostly on the relevance judge (`gpt-oss-20b`: 8K tokens/min,
+  200K/day). Questions go one at a time, 90s apart; the run backs off on a
+  rate limit and stops if Groq pushes back twice; at most two post-deploy
+  runs a day may ask questions. A rate limit is *inconclusive*, never a
+  failure. Worst day ≈ half of `gpt-oss-20b`'s free allowance.
+- **It never touches PROD data** — the runner refuses a PROD URL. Its only
+  PROD access is the two read-only catalog queries above.
+- **Everything in `qa/fixtures/` is fictional and says so.** This repo is
+  public: never commit a real document there, or anywhere.
+- `qa/` has its own `package.json` and lockfile (like `marketing/video`), so
+  the app's `npm ci` and the Vercel build never install it.
+- **Known issues** (🐞) are real defects the suite already understands: listed
+  in every run's summary without turning it red, and they pass by themselves
+  once fixed. Currently one open, plus three fixed in the ingest code that QA
+  reports until DEV runs it — see [Known issues found by QA](#known-issues-found-by-qa).
 
 ---
 
@@ -150,7 +203,7 @@ npx supabase@latest login
 # Deploy an Edge Function (after ANY change under supabase/functions/)
 npx supabase@latest functions deploy rag-search       --project-ref <ref>
 npx supabase@latest functions deploy ingest-document  --project-ref <ref>
-npx supabase@latest functions deploy invite-member    --project-ref <ref>
+npx supabase@latest functions deploy add-member       --project-ref <ref>
 npx supabase@latest functions deploy reembed-index    --project-ref <ref>
 
 # Set or rotate a secret (server-side only; never in this repo)
@@ -313,6 +366,11 @@ supabase/
   functions/                 # Deno Edge Functions (NOT typechecked by tsconfig)
   migrations/                # SQL — incomplete, see Database
 
+qa/                          # end-to-end QA against DEV (own package.json)
+  run.mjs  questions.yaml    # the runner, and what it asks
+  fixtures/documents.mjs     # the SPECIMEN documents and the facts they carry
+  sql/                       # the 023 sweep and the 024 fingerprint
+
 scripts/setup.sh             # cloud bootstrap
 vercel.json                  # build + SPA rewrite
 ```
@@ -329,7 +387,7 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `auth.tsx` | `AuthProvider`: session, signIn, signUp, signInWithGoogle, signOut |
 | `family-context.tsx` | `FamilyProvider`: currentFamily, members, membership, needsFamily |
 | `drawer-context.tsx` | Profile drawer open/close state |
-| `api.ts` | **All** Supabase queries — documents, search, upload, RAG, notifications, invitations |
+| `api.ts` | **All** Supabase queries — documents, search, upload, RAG, notifications, adding and leaving families |
 | `ocr.ts` | Platform-split OCR with progress callback; reads the person's chosen languages |
 | `ocr-languages.ts` | The document-language picker list, and `resolveOcrLanguages()` which always appends English |
 | `preferences.tsx` | `PreferencesProvider`: voice toggle + language, document languages. Cached locally, stored on `public.users`; reads and writes fall back to the older column set so an unapplied migration degrades one setting rather than all of them |
@@ -398,44 +456,103 @@ File blobs live in a Supabase Storage bucket named `documents`. **The bucket is
 not created by any migration** — it was made by hand in the dashboard and must
 be created manually in any new project.
 
-### The migration gap
+### The migration gap — closed, and checked properly this time
 
 `.gitignore` previously contained `supabase/migrations/*.sql`, so everything
-authored after that rule landed was silently never committed. The rule has been
-removed, but the missing files were never recovered.
+authored after that rule landed was silently never committed. Migrations
+`019`–`024` recovered it: **every function in `public` is now in a committed
+migration, and DEV and PROD match.**
 
-**Not defined in any committed migration, yet called at runtime:**
+An earlier version of this section also said the two databases were
+"identical". That was checked by comparing function **names and counts** —
+not bodies, not columns — and it was wrong. Migration 024 records what the
+proper comparison found; the three that mattered:
 
-```
-check_expiry_notifications   delete_family_document     get_user_notifications
-hybrid_search_documents      insert_family_document     mark_notification_read
-update_family_document       complete_document_ingestion
-create_expiry_alert          get_document_chunks
-```
+- **PROD could not create a vault.** `families.is_personal` (and
+  `users.emergency_info`) had been added to DEV by hand. `create_family()`
+  writes `is_personal`, so on PROD it failed and the first real user would
+  have been stuck at setup.
+- **PROD's document list and viewer failed** with `column reference "id" is
+  ambiguous` — a bare `WHERE id = …` inside a function whose output also has
+  an `id`. DEV had been fixed by hand, PROD never was.
+- **Five functions existed only in the databases**, including the two ingest
+  writes through (`complete_document_ingestion`, `create_expiry_alert`).
 
-`rag_retrieve_chunks` was in this list until migration `011` captured it — the
-other ten still exist only in the live database. Migration `012` adds the two
-voice-preference columns to `public.users`; the app tolerates their absence
-(falls back to the local cache) but the setting won't follow the account until
-it is applied. Migration `014` adds `public.users.document_languages` on the
-same terms. Migration `013` adds `public.family_embedding_state` plus three
-service-role helpers (`rag_chunk_total`, `rag_chunks_to_embed`,
-`rag_set_chunk_embedding`) and must be applied before `reembed-index` can run.
+**How "the same" is checked now** — a fingerprint, run on both projects,
+must return identical rows: one per object type (functions with their bodies
+and grants, columns, policies, RLS flags, app triggers, indexes, constraints,
+table grants, the columns clients may write, buckets, categories), each with a
+count and a hash. After 024 it did, for all ten types. Migration 025's
+protection lives in column grants, which table grants cannot see, so they are
+an eleventh type; after 025 both projects match on all eleven. The query lives
+in **`qa/sql/fingerprint.sql`** — paste it into the SQL editor of each
+project, or let the QA workflow compare the two for you on every run.
 
-Also missing: `CREATE EXTENSION vector`, and the committed `document_chunks`
-table declares `embedding_id VARCHAR(100)` rather than a `vector(384)` column
-with an HNSW index. Layer 3 exists only in the live database.
+Run it after applying any migration to both projects. **Changing a database
+by hand without a migration is what caused every item above** — if something
+is applied in the SQL editor, it goes in a migration file in the same change.
 
-**Consequences:** a fresh Supabase project cannot be stood up from this repo.
-Until the live schema is dumped back into `supabase/migrations/`, treat the
-live DB as the only source of truth, and never assume a migration file
-reflects production.
+Deliberately outside the check: `pg_graphql` (enabled on PROD only), its
+event triggers, and a few `storage.buckets` triggers. Those come with the
+Supabase platform version, not from this app.
 
-To close the gap: `pg_dump --schema-only` against the live project, commit as
-`supabase/migrations/010_*.sql`, then regenerate `src/lib/database.types.ts`
-(which also fixes `npm run typecheck`).
+What that recovery turned up, all of which had been invisible:
 
----
+- **Storage was not scoped to a family** (019). Every policy was
+  `bucket_id = 'documents'` for `authenticated`, with no check on the path —
+  so any signed-in account could list, download and DELETE every family's
+  files. Measured on DEV: an account owning 8 files saw all 16.
+- **`create_family()` did not create the search columns** (020). Existing
+  families have `embedding`/`search_vector`/HNSW only because
+  `upgrade_family_schema_for_search()` was run by hand, and nothing called it.
+  The next family to sign up would have had search silently broken forever.
+- **PROD carried a second, four-argument `create_family`** (020). PostgREST
+  resolves by exact argument names and `src/lib/api.ts` passes exactly those
+  four, so the fix would have applied and done nothing. The `DROP` is
+  load-bearing.
+- **Twelve schema-taking RPCs were callable by any signed-in user** (022).
+  See the warning at the top.
+- **`REVOKE ... FROM PUBLIC` is not enough.** Migrations 013, 016 and 017 all
+  did it, and the functions stayed reachable: Supabase grants `anon` and
+  `authenticated` **explicitly**, so they must be revoked by name.
+- **Thirteen owner-rights functions trusted a caller-supplied user id, or
+  checked nothing** (023). 022 missed them because it only swept functions
+  whose first argument is `p_schema`. Two of the thirteen had been restated
+  with their holes intact by 020 and 021, which captured bodies without
+  auditing them. **Capturing a function is not reviewing it.**
+- **`get_user_notifications` has never worked** (fixed in 023). The declared
+  result says `title text`, the column is `varchar`, and `RETURN QUERY`
+  demands an exact match, so every call raised a type error and the
+  notifications screen showed nothing — on both projects.
+
+`supabase/migrations/` is now the source of truth. Keep it that way: anything
+applied to a database belongs in a migration file, in the same change.
+
+**Still true:** the `documents` storage bucket is created by hand in the
+dashboard (no CLI, no migration), and `db dump` excludes the `storage` schema,
+so storage policies live only in `019`.
+
+### Membership — an admin adds, nobody requests (025)
+
+- **There are no invitations.** The old flow wrote an `invitations` row and
+  sent a sign-up email, and nothing ever accepted one, so invited people never
+  joined. Meanwhile the `family_members` INSERT policy ended `OR user_id =
+  auth.uid()`: anyone could add THEMSELVES to any family, as admin.
+- **Now:** `add-member` → `add_family_member()` (service role only) finds the
+  person in `auth.users` by the email they sign in with — confirmed, not
+  deleted, not anonymous — and adds them as a viewer, with a `member`
+  notification and an audit row, in one transaction. No such account → the
+  admin is told to ask them to sign up, and nothing is created.
+- **Being added needs no consent, so it must be visible and reversible.** The
+  person is notified, sees every family they are in under Manage Family, and
+  can leave any of them (`family_members_delete_self`). The last admin cannot
+  leave.
+- **The default family never changes by itself.** `fetchUserFamilies()` is
+  oldest membership first and the chosen family is remembered per device
+  (`switchFamily()`), so being added somewhere never swaps the vault a person
+  sees — and uploads into — for one picked by whoever added them.
+- `invitations` is kept, write-locked, because the app still on PROD reads
+  it. Drop it once PROD runs this release.
 
 ## Edge Functions
 
@@ -451,7 +568,11 @@ To close the gap: `pg_dump --schema-only` against the live project, commit as
   Chunks (500 tokens, 50 overlap, paragraph-aware) → embeds via HuggingFace
   `all-MiniLM-L6-v2` → extracts metadata (expiry dates, passport/PAN/Aadhaar/
   policy numbers) → stores via `complete_document_ingestion` → creates expiry
-  alerts.
+  alerts. Extracted text passes through `cleanText()` (`_shared/text.ts`)
+  before any of that — Postgres refuses a NUL, and PDF.js emits one per glyph
+  it cannot map — and `extractMetadata()` lives in `_shared/metadata.ts`.
+  Both are pure (`ingest.ts` reads secrets at load time), so the QA self-test
+  imports them directly.
 - **`reembed-index`** — rebuilds one family's chunk vectors on the current
   embedding model, in batches, resuming from a cursor in
   `public.family_embedding_state`. Any member may read progress; only an admin
@@ -482,9 +603,15 @@ To close the gap: `pg_dump --schema-only` against the live project, commit as
   retrieval (the index is English) and the answer is written in the person's
   language; `voice` asks for short spoken sentences with no markdown. The
   response echoes `answer_language`.
-- **`invite-member`** — sends family invitation emails via Supabase Auth.
+- **`add-member`** — a family admin adds a person who already has an
+  account, by email: checks the caller is an admin, then calls
+  `add_family_member()` (025) as the service role. Answers 404 `no_account`,
+  409 `already_member`, and 503 `needs_migration` where 025 is not applied.
+  It replaced `invite-member`, which the deploy workflow deletes from each
+  project it deploys to — a function removed from the repo otherwise stays
+  live, running its old code.
 
-All three handle CORS preflight explicitly.
+All of them handle CORS preflight explicitly.
 
 ### PDF text — read by position, not by content-stream order
 
@@ -510,6 +637,37 @@ layout from coordinates.
 - `EXTRACTOR_VERSION` in `_shared/ingest.ts` records which reader produced a
   family's stored text. Bumping it re-runs extraction over stored PDFs, the
   same way changing the embedding model re-runs embedding.
+
+### Known issues found by QA
+
+The QA suite reports these on every run (🐞) until they are fixed; each
+check passes by itself once the defect is gone.
+
+- **Browser-made Hindi PDFs lose letters in the server's text layer.**
+  pdfjs-serverless drops Devanagari conjuncts, reph and the pre-base vowel
+  sign when their glyphs carry no ToUnicode mapping: "आशा वर्मा" is stored
+  as "आशा वमा", "संपत्ति" as "संप", "विभाग" as "वभाग". Digits and Latin text
+  survive, so amounts, dates and ID numbers are still found; Hindi names and
+  words are not. Poppler reads the same file correctly, so this is the
+  reader, not the file. The server's OCR fallback is English-only, so it
+  cannot rescue these either. Found by `qa/tools/check-fixtures.mjs`.
+**Fixed in the ingest code, and reported until DEV runs it** — each then
+reads ✅ by itself, and the offline self-test guards the first two:
+
+- **Every DD/MM/YYYY expiry was stored twice, once truncated** ("17/10/2026"
+  and "17/10/20"), and the document viewer showed both. The YYYY-first
+  pattern in `extractMetadata()` (`_shared/metadata.ts`) now needs a
+  four-digit year.
+- **That Hindi PDF did not ingest at all.** PDF.js emits U+0000 for the
+  glyphs it cannot map, Postgres refuses a NUL in `text`/`jsonb`, and
+  `complete_document_ingestion` failed (HTTP 500), leaving it `pending`.
+  `cleanText()` (`_shared/text.ts`) strips it before anything is stored. The
+  letters above are still lost until the reader changes, but the document is
+  searchable by its amounts, dates and numbers.
+- **For images, an OCR outage looked like a bad file**: the OCR error was
+  dropped, so a 503 read "Nothing readable could be extracted" and was not
+  `retryable`. Images keep the reason now; the retryable rule is under
+  [A scan is told from a text layer](#a-scan-is-told-from-a-text-layer-per-page-not-per-document).
 
 ### Chunking — sized to the model's window, not to taste
 
@@ -617,11 +775,13 @@ characters that were *entirely* that stamp — and because the old test was
   back with a reason, and `ingestDocument` returns `empty` rather than storing
   a signature stamp as a passage — the same failure the placeholder chunk
   caused.
-- **`OCR_SPACE_API_KEY` missing is a CONFIGURATION failure, not a bad
-  document**, and the two must not look alike: one is fixed by setting a
-  secret, the other by replacing the file. Such a document comes back
-  `retryable: true` and the rebuild does **not** mark it permanently failed,
-  so setting the secret is enough to make it readable.
+- **An OCR failure that is not the document's is not a bad document**, and
+  the two must not look alike. `OCR_SPACE_API_KEY` missing is fixed by
+  setting a secret; OCR.space answering 5xx or 429, timing out or being
+  unreachable, by waiting; an unreadable file only by replacing it. The first
+  two come back `retryable: true` — images as well as PDFs — and the rebuild
+  does **not** mark such a document permanently failed, so the secret, or a
+  later run, is enough to make it readable.
 
 ### RAG pipeline
 
