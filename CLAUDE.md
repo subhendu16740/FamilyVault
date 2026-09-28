@@ -11,7 +11,7 @@ Expo / React Native app (SDK 55) with expo-router. Backend is Supabase
 
 ## ⚠️ Read this first
 
-Three things will mislead you if you assume otherwise:
+Four things will mislead you if you assume otherwise:
 
 1. **The schema-taking RPCs are service-role ONLY, and that is load-bearing.**
    Twelve functions (`rag_*`, `get_document_chunks`) take the family's schema
@@ -32,7 +32,19 @@ Three things will mislead you if you assume otherwise:
    `service_role`, nothing more. The sweep at the bottom of 023 must return
    zero rows on both projects; run it after any change to a function. It
    lives in `qa/sql/sweep.sql`, and the QA workflow runs it on every run.
-3. **This app targets both native and web from one codebase.** Day-to-day
+3. **Clients write only the columns the app writes, and add no members.**
+   Supabase grants `anon` and `authenticated` every column of every table,
+   and RLS checks rows, not columns — so `users_update_own` let any account
+   set its own `is_superuser` (and then read every family's member list and
+   every profile), and a family admin could rewrite `storage_namespace`.
+   Migration 025 revokes table-wide INSERT and UPDATE on `users`, `families`,
+   `family_members`, `notifications` and `invitations` and grants back only
+   the columns the app changes (listed in 025's header). **A new writable
+   column needs its own `GRANT` in a migration.** Membership has no
+   invitations and no requests: only an admin adds a person, through the
+   `add-member` Edge Function, and clients cannot insert a membership row at
+   all. See [Membership](#membership--an-admin-adds-nobody-requests-025).
+4. **This app targets both native and web from one codebase.** Day-to-day
    review happens on the web build (deployed to Vercel), but native
    Android/iOS is a real target with platform-specific code paths. A change
    that works on web can break native. See [Platform splits](#platform-splits).
@@ -74,9 +86,11 @@ errors**) and `npm run build` are the local gates.
 at 03:10 IST, and on pushes that change `qa/`. It uploads synthetic SPECIMEN
 documents to its own vault (QA Vault A, account A), asks questions about
 them, and checks the answers on facts and sources, never wording. It also
-runs the 023 sweep and the 024 DEV/PROD fingerprint, 34 access probes (a
-logged-out visitor and a second account must be refused everywhere), and the
-full upload → ingest → expiry-notification pipeline. See `qa/README.md`.
+runs the 023 sweep and the 024 DEV/PROD fingerprint, 39 access probes (a
+logged-out visitor and a second account must be refused everywhere), the
+membership model (the second account, added as a viewer, must not be able to
+escalate, and must be able to leave), and the full upload → ingest →
+expiry-notification pipeline. See `qa/README.md`.
 
 - **It spends the free Groq budget carefully, by design.** Each question is
   ~9K tokens, mostly on the relevance judge (`gpt-oss-20b`: 8K tokens/min,
@@ -92,7 +106,8 @@ full upload → ingest → expiry-notification pipeline. See `qa/README.md`.
   the app's `npm ci` and the Vercel build never install it.
 - **Known issues** (🐞) are real defects the suite already understands: listed
   in every run's summary without turning it red, and they pass by themselves
-  once fixed. Currently four — see [Known issues found by QA](#known-issues-found-by-qa).
+  once fixed. Currently one open, plus three fixed in the ingest code that QA
+  reports until DEV runs it — see [Known issues found by QA](#known-issues-found-by-qa).
 
 ---
 
@@ -188,7 +203,7 @@ npx supabase@latest login
 # Deploy an Edge Function (after ANY change under supabase/functions/)
 npx supabase@latest functions deploy rag-search       --project-ref <ref>
 npx supabase@latest functions deploy ingest-document  --project-ref <ref>
-npx supabase@latest functions deploy invite-member    --project-ref <ref>
+npx supabase@latest functions deploy add-member       --project-ref <ref>
 npx supabase@latest functions deploy reembed-index    --project-ref <ref>
 
 # Set or rotate a secret (server-side only; never in this repo)
@@ -372,7 +387,7 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `auth.tsx` | `AuthProvider`: session, signIn, signUp, signInWithGoogle, signOut |
 | `family-context.tsx` | `FamilyProvider`: currentFamily, members, membership, needsFamily |
 | `drawer-context.tsx` | Profile drawer open/close state |
-| `api.ts` | **All** Supabase queries — documents, search, upload, RAG, notifications, invitations |
+| `api.ts` | **All** Supabase queries — documents, search, upload, RAG, notifications, adding and leaving families |
 | `ocr.ts` | Platform-split OCR with progress callback; reads the person's chosen languages |
 | `ocr-languages.ts` | The document-language picker list, and `resolveOcrLanguages()` which always appends English |
 | `preferences.tsx` | `PreferencesProvider`: voice toggle + language, document languages. Cached locally, stored on `public.users`; reads and writes fall back to the older column set so an unapplied migration degrades one setting rather than all of them |
@@ -515,6 +530,28 @@ applied to a database belongs in a migration file, in the same change.
 dashboard (no CLI, no migration), and `db dump` excludes the `storage` schema,
 so storage policies live only in `019`.
 
+### Membership — an admin adds, nobody requests (025)
+
+- **There are no invitations.** The old flow wrote an `invitations` row and
+  sent a sign-up email, and nothing ever accepted one, so invited people never
+  joined. Meanwhile the `family_members` INSERT policy ended `OR user_id =
+  auth.uid()`: anyone could add THEMSELVES to any family, as admin.
+- **Now:** `add-member` → `add_family_member()` (service role only) finds the
+  person in `auth.users` by the email they sign in with — confirmed, not
+  deleted, not anonymous — and adds them as a viewer, with a `member`
+  notification and an audit row, in one transaction. No such account → the
+  admin is told to ask them to sign up, and nothing is created.
+- **Being added needs no consent, so it must be visible and reversible.** The
+  person is notified, sees every family they are in under Manage Family, and
+  can leave any of them (`family_members_delete_self`). The last admin cannot
+  leave.
+- **The default family never changes by itself.** `fetchUserFamilies()` is
+  oldest membership first and the chosen family is remembered per device
+  (`switchFamily()`), so being added somewhere never swaps the vault a person
+  sees — and uploads into — for one picked by whoever added them.
+- `invitations` is kept, write-locked, because the app still on PROD reads
+  it. Drop it once PROD runs this release.
+
 ## Edge Functions
 
 `supabase/functions/` — Deno, excluded from `tsconfig.json` (they use remote
@@ -529,7 +566,11 @@ so storage policies live only in `019`.
   Chunks (500 tokens, 50 overlap, paragraph-aware) → embeds via HuggingFace
   `all-MiniLM-L6-v2` → extracts metadata (expiry dates, passport/PAN/Aadhaar/
   policy numbers) → stores via `complete_document_ingestion` → creates expiry
-  alerts.
+  alerts. Extracted text passes through `cleanText()` (`_shared/text.ts`)
+  before any of that — Postgres refuses a NUL, and PDF.js emits one per glyph
+  it cannot map — and `extractMetadata()` lives in `_shared/metadata.ts`.
+  Both are pure (`ingest.ts` reads secrets at load time), so the QA self-test
+  imports them directly.
 - **`reembed-index`** — rebuilds one family's chunk vectors on the current
   embedding model, in batches, resuming from a cursor in
   `public.family_embedding_state`. Any member may read progress; only an admin
@@ -560,9 +601,15 @@ so storage policies live only in `019`.
   retrieval (the index is English) and the answer is written in the person's
   language; `voice` asks for short spoken sentences with no markdown. The
   response echoes `answer_language`.
-- **`invite-member`** — sends family invitation emails via Supabase Auth.
+- **`add-member`** — a family admin adds a person who already has an
+  account, by email: checks the caller is an admin, then calls
+  `add_family_member()` (025) as the service role. Answers 404 `no_account`,
+  409 `already_member`, and 503 `needs_migration` where 025 is not applied.
+  It replaced `invite-member`, which the deploy workflow deletes from each
+  project it deploys to — a function removed from the repo otherwise stays
+  live, running its old code.
 
-All three handle CORS preflight explicitly.
+All of them handle CORS preflight explicitly.
 
 ### PDF text — read by position, not by content-stream order
 
@@ -602,21 +649,23 @@ check passes by itself once the defect is gone.
   words are not. Poppler reads the same file correctly, so this is the
   reader, not the file. The server's OCR fallback is English-only, so it
   cannot rescue these either. Found by `qa/tools/check-fixtures.mjs`.
-- **Every DD/MM/YYYY expiry is stored twice, once truncated.** The second
-  expiry pattern in `extractMetadata()` (`_shared/ingest.ts`) is meant for
-  YYYY-first dates but also matches "17/10/2026" and keeps "17/10/20". The
-  expiry alert uses the first, correct value, but the document viewer lists
-  every metadata row, so people see a bogus expiry beside the real one.
-- **That Hindi PDF does not ingest at all.** The glyphs PDF.js cannot map come
-  out as U+0000, Postgres refuses a NUL in `text`/`jsonb`, and
-  `complete_document_ingestion` fails with `unsupported Unicode escape
-  sequence` (HTTP 500). The document stays `pending`, never searchable.
-  Stripping `\u0000` from extracted text in `_shared/ingest.ts` fixes the
-  failure; the letters above are still lost until the reader changes.
-- **For images, an OCR outage looks like a bad file.** `extractTextFromImage()`
-  keeps only the text from `ocrWithOcrSpace()` and drops its error, so a 503
-  from OCR.space is reported as "Nothing readable could be extracted" and is
-  not `retryable` — the opposite of what PDFs already do.
+**Fixed in the ingest code, and reported until DEV runs it** — each then
+reads ✅ by itself, and the offline self-test guards the first two:
+
+- **Every DD/MM/YYYY expiry was stored twice, once truncated** ("17/10/2026"
+  and "17/10/20"), and the document viewer showed both. The YYYY-first
+  pattern in `extractMetadata()` (`_shared/metadata.ts`) now needs a
+  four-digit year.
+- **That Hindi PDF did not ingest at all.** PDF.js emits U+0000 for the
+  glyphs it cannot map, Postgres refuses a NUL in `text`/`jsonb`, and
+  `complete_document_ingestion` failed (HTTP 500), leaving it `pending`.
+  `cleanText()` (`_shared/text.ts`) strips it before anything is stored. The
+  letters above are still lost until the reader changes, but the document is
+  searchable by its amounts, dates and numbers.
+- **For images, an OCR outage looked like a bad file**: the OCR error was
+  dropped, so a 503 read "Nothing readable could be extracted" and was not
+  `retryable`. Images keep the reason now; the retryable rule is under
+  [A scan is told from a text layer](#a-scan-is-told-from-a-text-layer-per-page-not-per-document).
 
 ### Chunking — sized to the model's window, not to taste
 
@@ -724,11 +773,13 @@ characters that were *entirely* that stamp — and because the old test was
   back with a reason, and `ingestDocument` returns `empty` rather than storing
   a signature stamp as a passage — the same failure the placeholder chunk
   caused.
-- **`OCR_SPACE_API_KEY` missing is a CONFIGURATION failure, not a bad
-  document**, and the two must not look alike: one is fixed by setting a
-  secret, the other by replacing the file. Such a document comes back
-  `retryable: true` and the rebuild does **not** mark it permanently failed,
-  so setting the secret is enough to make it readable.
+- **An OCR failure that is not the document's is not a bad document**, and
+  the two must not look alike. `OCR_SPACE_API_KEY` missing is fixed by
+  setting a secret; OCR.space answering 5xx or 429, timing out or being
+  unreachable, by waiting; an unreadable file only by replacing it. The first
+  two come back `retryable: true` — images as well as PDFs — and the rebuild
+  does **not** mark such a document permanently failed, so the secret, or a
+  later run, is enough to make it readable.
 
 ### RAG pipeline
 
