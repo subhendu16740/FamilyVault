@@ -13,6 +13,11 @@ with objs as (
   union all select 'index', indexname||' '||indexdef from pg_indexes where schemaname='public'
   union all select 'constraint', conrelid::regclass::text||'.'||conname||' '||pg_get_constraintdef(oid) from pg_constraint where connamespace='public'::regnamespace
   union all select 'tablegrant', table_name||' '||grantee||' '||privilege_type from information_schema.role_table_grants where table_schema='public' and grantee in ('anon','authenticated','service_role')
+  -- Migration 025's protection lives in COLUMN grants (which columns a client
+  -- may write), and table grants cannot see them: `GRANT UPDATE (is_superuser)
+  -- ON users TO authenticated` on one project would leave every row above
+  -- unchanged.
+  union all select 'columngrant', table_name||'.'||column_name||' '||grantee||' '||privilege_type from information_schema.column_privileges where table_schema='public' and grantee in ('anon','authenticated') and privilege_type in ('INSERT','UPDATE')
   union all select 'bucket', id||' public='||public from storage.buckets
   union all select 'category', name from public.document_categories
 )
