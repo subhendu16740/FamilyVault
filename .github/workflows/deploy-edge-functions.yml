@@ -91,13 +91,24 @@ jobs:
           echo "Deploying to ${{ steps.target.outputs.name }} (${{ steps.target.outputs.ref }})"
 
           # --use-api bundles server-side, so the runner needs no Docker.
-          for fn in ingest-document rag-search add-member reembed-index; do
+          for fn in ingest-document rag-search add-member reembed-index gmail-connect gmail-scan gmail-import; do
             echo "::group::$fn"
             supabase functions deploy "$fn" \
               --project-ref "${{ steps.target.outputs.ref }}" \
               --use-api
             echo "::endgroup::"
           done
+
+          # The one function deployed WITHOUT the gateway's JWT check: Google's
+          # redirect back from the consent page carries no Supabase session.
+          # It only relays the browser to the page that started the flow; the
+          # code is traded for a token by gmail-connect, which does check.
+          echo "::group::gmail-callback (no JWT check)"
+          supabase functions deploy gmail-callback \
+            --project-ref "${{ steps.target.outputs.ref }}" \
+            --use-api \
+            --no-verify-jwt
+          echo "::endgroup::"
 
       - name: Retire removed functions
         env:
@@ -126,6 +137,8 @@ jobs:
             echo "- \`rag-search\`"
             echo "- \`add-member\`"
             echo "- \`reembed-index\`"
+            echo "- \`gmail-connect\`, \`gmail-scan\`, \`gmail-import\`"
+            echo "- \`gmail-callback\` (no JWT check — Google's redirect target)"
             echo ""
             echo "Migrations are not run by this workflow — apply SQL in the dashboard."
           } >> "$GITHUB_STEP_SUMMARY"
