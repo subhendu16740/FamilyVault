@@ -90,7 +90,10 @@ runs the 023 sweep and the 024 DEV/PROD fingerprint, 39 access probes (a
 logged-out visitor and a second account must be refused everywhere), the
 membership model (the second account, added as a viewer, must not be able to
 escalate, and must be able to leave), and the full upload → ingest →
-expiry-notification pipeline. See `qa/README.md`.
+expiry-notification pipeline. By hand only, suite `languages` asks 12
+questions about documents in eight more Indian languages — two of them
+photos OCR'd the way the web app does it, with Tesseract — which is about
+43% of the free Groq day on its own. See `qa/README.md`.
 
 - **It spends the free Groq budget carefully, by design.** Each question is
   ~9K tokens, mostly on the relevance judge (`gpt-oss-20b`: 8K tokens/min,
@@ -106,8 +109,9 @@ expiry-notification pipeline. See `qa/README.md`.
   the app's `npm ci` and the Vercel build never install it.
 - **Known issues** (🐞) are real defects the suite already understands: listed
   in every run's summary without turning it red, and they pass by themselves
-  once fixed. Currently one open, plus three fixed in the ingest code that QA
-  reports until DEV runs it — see [Known issues found by QA](#known-issues-found-by-qa).
+  once fixed. Currently two open, both about reading Indian scripts, plus
+  three fixed in the ingest code that QA reports until DEV runs it — see
+  [Known issues found by QA](#known-issues-found-by-qa).
 
 ---
 
@@ -643,14 +647,23 @@ layout from coordinates.
 The QA suite reports these on every run (🐞) until they are fixed; each
 check passes by itself once the defect is gone.
 
-- **Browser-made Hindi PDFs lose letters in the server's text layer.**
-  pdfjs-serverless drops Devanagari conjuncts, reph and the pre-base vowel
-  sign when their glyphs carry no ToUnicode mapping: "आशा वर्मा" is stored
-  as "आशा वमा", "संपत्ति" as "संप", "विभाग" as "वभाग". Digits and Latin text
-  survive, so amounts, dates and ID numbers are still found; Hindi names and
-  words are not. Poppler reads the same file correctly, so this is the
-  reader, not the file. The server's OCR fallback is English-only, so it
-  cannot rescue these either. Found by `qa/tools/check-fixtures.mjs`.
+- **Browser-made PDFs in every Indian script lose letters in the server's
+  text layer** — measured on Hindi and the eight other languages the app
+  offers. pdfjs-serverless emits U+0000 for glyphs with no ToUnicode mapping
+  (conjuncts, reph, the pre-base vowel sign, which `cleanText()` then
+  strips), and stores vowel signs drawn before their consonant in drawing
+  order: "आशा वर्मा" is stored as "आशा वमा", "ಠೇವಣಿ" as "ೕವಣಿ", "தென்னகர்" as
+  "ெதன்னகர்". Names suffer most: of four canary words per document, Hindi,
+  Bengali, Telugu and Kannada lose all four, Tamil and Malayalam three,
+  Marathi, Gujarati and Punjabi two. Digits and Latin text survive, so
+  amounts, dates and ID numbers are still found. Poppler reads the Hindi
+  file correctly, so this is the reader, not the file. The server's OCR
+  fallback is English-only, so it cannot rescue these either. Found by
+  `qa/tools/check-fixtures.mjs`; suite `languages` measures what it costs
+  at answer time. Photos are not affected on the web: Tesseract in the
+  browser reads the names intact. Inside a Tamil read it does misread the ₹
+  and an account number's Latin letters, though not the digits.
+
 **Fixed in the ingest code, and reported until DEV runs it** — each then
 reads ✅ by itself, and the offline self-test guards the first two:
 
