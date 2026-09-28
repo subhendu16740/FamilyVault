@@ -36,7 +36,11 @@ await test('dates in every common form', () => {
   for (const s of ['on 19/07/2033', 'on 19-07-2033', '19.7.2033', 'expires 19 July 2033.', '19th July, 2033', 'July 19, 2033', '2033-07-19', '19 जुलाई 2033 को', '१९/०७/२०३३']) {
     assert.ok(mentionsDate(s, '2033-07-19'), s);
   }
-  for (const s of ['on 20/07/2033', 'July 2033', '19/07/2032', '119/07/2033']) assert.ok(!mentionsDate(s, '2033-07-19'), s);
+  for (const s of ['on 20/07/2033', 'July 2033', '19/07/2032', '119/07/2033', '19 / 07 / 2032']) assert.ok(!mentionsDate(s, '2033-07-19'), s);
+  // Spaced separators, as the answer model copied them from the Hindi notice's
+  // text layer: "The final deadline … is **30 / 11 / 2026**".
+  for (const s of ['**30 / 11 / 2026**', '30 - 11 - 2026', '30. 11. 2026']) assert.ok(mentionsDate(s, '2026-11-30'), s);
+  assert.ok(!mentionsDate('30 / 11 / 2025', '2026-11-30'));
 });
 
 await test('amounts with Indian grouping and lakh', () => {

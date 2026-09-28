@@ -39,7 +39,9 @@ export function mentionsDate(answer, iso) {
   const dd = `0?${d}`;
   const mm = `0?${m}`;
   const yy = `(?:${y}|${String(y).slice(2)})`;
-  const sep = '[\\s./-]';
+  // "30/11/2026", "30.11.2026", "30 11 2026" — and "30 / 11 / 2026", which
+  // the answer model copies from PDFs whose text layer spaces the slashes.
+  const sep = '(?:\\s*[./-]\\s*|\\s+)';
   const names = MONTHS[m - 1].map(escapeRe).join('|');
   const ord = '(?:st|nd|rd|th)?';
   return [
