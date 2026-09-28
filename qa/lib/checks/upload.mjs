@@ -61,17 +61,17 @@ export async function runUploadChecks(cfg, { a, vaultA }, results, today) {
           : `status ${status}; expiry_date ${expiries.join(' / ') || 'missing'} (want ${vehicle.expiry}); policy_number ${values('policy_number').join(' / ') || 'missing'} (want ${vehicle.policyNumber})`,
       });
 
-    // KNOWN ISSUE: the second expiry pattern in _shared/ingest.ts
-    // extractMetadata() is meant for YYYY-first dates, but also matches
-    // DD/MM/YYYY and cuts the year: "Valid until: 17/10/2026" is stored
-    // twice, as 17/10/2026 AND 17/10/20. The document viewer lists every
-    // metadata row, so people see a bogus expiry. Passes once fixed.
+    // KNOWN ISSUE, fixed in _shared/metadata.ts: the YYYY-first expiry
+    // pattern also matched DD/MM/YYYY and cut the year, so "Valid until:
+    // 17/10/2026" was stored twice, as 17/10/2026 AND 17/10/20, and the
+    // document viewer showed both. Reported until DEV runs the fixed ingest
+    // function; the offline self-test guards the regex itself.
     const bogus = expiries.filter((v) => v !== vehicle.expiry);
     if (expiryOk) {
       results.add('upload', 'vehicle:metadata-clean', 'No bogus second expiry date is stored', bogus.length ? 'known' : 'pass', {
         why: bogus.length
-          ? `also stored ${bogus.join(', ')} — the YYYY-first expiry regex in _shared/ingest.ts matches DD/MM/YYYY and truncates the year; the viewer shows both`
-          : 'known issue fixed: only the real expiry is stored',
+          ? `also stored ${bogus.join(', ')} — DEV still runs the ingest function whose YYYY-first expiry regex truncates DD/MM/YYYY (fixed in _shared/metadata.ts)`
+          : 'only the real expiry is stored',
       });
     }
 

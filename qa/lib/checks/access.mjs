@@ -17,6 +17,11 @@
 // Writes are aimed at a SACRIFICIAL document created for the purpose, so a
 // regression cannot damage the permanent fixtures; anything a probe manages
 // to create is removed again, and the probe fails loudly.
+//
+// B's writes to its OWN rows (migration 025's holes) are built so a hole
+// can never leave damage: a change that goes through is read back and
+// undone at once, and an insert is aimed at a key that already exists, so
+// an open policy shows up as a duplicate-key error instead of a new row.
 // ────────────────────────────────────────────────────────────────
 
 import { randomUUID } from 'node:crypto';
@@ -24,13 +29,14 @@ import { invokeFunction } from '../supabase.mjs';
 import { permanentDocuments } from '../../fixtures/documents.mjs';
 
 // The phrasings this app's refusals actually use: 42501 from the 023
-// asserts, "Access denied" (P0001) from the read RPCs in 024, the RLS and
-// storage messages, and the Edge Functions' own 401/403 bodies.
+// asserts and from column privileges (025), "Access denied" (P0001) from the
+// read RPCs in 024, delete_family_document's own permission check, the RLS
+// and storage messages, and the Edge Functions' own 401/403 bodies.
 const AUTH_REFUSAL =
-  /permission denied|access denied|not allowed|not a member|row-level security|jwt|sign in required|not authori[sz]ed|unauthori[sz]ed|forbidden|upload permission|object not found/i;
+  /permission denied|access denied|not allowed|not a member|does not have permission|row-level security|jwt|sign in required|not authori[sz]ed|unauthori[sz]ed|forbidden|upload permission|object not found/i;
 const AUTH_CODES = new Set(['42501', '401', '403', 'PGRST301', 'PGRST302']);
 
-function refusedByAuth(error) {
+export function refusedByAuth(error) {
   if (!error) return false;
   const code = String(error.code ?? error.statusCode ?? error.status ?? '');
   // PGRST202 is "no such function": the call never reached an access check.
@@ -60,7 +66,23 @@ function judge(expect, outcome) {
   }
 }
 
-const short = (error) => String(error?.message ?? error?.error ?? error).slice(0, 90);
+export const short = (error) => String(error?.message ?? error?.error ?? error).slice(0, 90);
+
+// For a write that must be refused: an authorization error passes; a
+// duplicate-key error (23505) means the policy LET IT THROUGH and only a
+// constraint stopped this particular row; no error at all is judged by
+// what the probe read back.
+function judgeWrite(open) {
+  return ({ error, allowed, reverted }) => {
+    if (error) {
+      if (refusedByAuth(error)) return ['pass', short(error)];
+      if (String(error.code) === '23505') return ['fail', `ALLOWED — only a duplicate key stopped this row: ${open}`];
+      return ['fail', `stopped for another reason (${short(error)}) — update this probe`];
+    }
+    if (allowed) return ['fail', `ALLOWED: ${open} (${reverted === false ? 'COULD NOT UNDO IT' : 'undone'})`];
+    return ['pass', 'no row changed'];
+  };
+}
 
 async function attempt(fn) {
   try {
@@ -182,6 +204,41 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     ['B', "read A's rows in the notifications table", 'refused-or-empty', () => b.client.from('notifications').select('id').eq('user_id', A.user)],
     ['B', "read A's user profile", 'refused-or-empty', () => b.client.from('users').select('id').eq('id', A.user)],
     ['B', 'invite itself into QA Vault A as admin', 'refused', () => b.client.from('invitations').insert({ family_id: A.family, invited_by: b.user.id, invitee_email: cfg.b.email, role: 'admin', token: `qa-${cfg.runId}`, expires_at: new Date(Date.now() + 86_400_000).toISOString() })],
+
+    // Its own rows, which RLS lets it reach — so only column privileges
+    // (025) stand in the way.
+    ['B', 'change its own profile email', judgeWrite("an address held in public.users blocks that person's sign-up (users_email_key)"), async () => {
+      const { data: before } = await b.client.from('users').select('email').eq('id', b.user.id).single();
+      const probe = `qa-probe-${cfg.runId}@example.invalid`;
+      const { error } = await b.client.from('users').update({ email: probe }).eq('id', b.user.id);
+      if (error) return { error };
+      const { data: now } = await b.client.from('users').select('email').eq('id', b.user.id).single();
+      if (now?.email !== probe) return {};
+      const { error: undo } = await b.client.from('users').update({ email: before?.email }).eq('id', b.user.id);
+      return { allowed: true, reverted: !undo };
+    }],
+    ['B', 'create a user row', judgeWrite('anyone can insert into public.users, and a row with a fresh id and someone else\'s email blocks their sign-up'),
+      () => b.client.from('users').insert({ id: b.user.id, email: `qa-probe-${cfg.runId}@example.invalid`, display_name: 'QA probe' })],
+    ['B', 'create a family row directly', judgeWrite('families_insert lets a client create a family with no schema behind it'),
+      () => b.client.from('families').insert({ name: 'QA intrusion', created_by: b.user.id, storage_namespace: vaultB.namespace, vector_namespace: `qa_probe_${cfg.runId}` })],
+    ['B', "point its own vault at QA Vault A's storage namespace", judgeWrite('an admin can rewrite families.storage_namespace, which every family RPC and storage policy resolves'), async () => {
+      const { error } = await b.client.from('families').update({ storage_namespace: A.ns }).eq('id', vaultB.id);
+      if (error) return { error };
+      const { data } = await b.client.from('families').select('storage_namespace').eq('id', vaultB.id).single();
+      if (data?.storage_namespace !== A.ns) return {};
+      const { error: undo } = await b.client.from('families').update({ storage_namespace: vaultB.namespace }).eq('id', vaultB.id);
+      return { allowed: true, reverted: !undo };
+    }],
+    // Undone the moment it is seen: a superuser B would make every read
+    // probe above meaningless, so this runs after them.
+    ['B', 'make itself superuser', judgeWrite("is_superuser() then opens every family's members, invitations, notifications and profiles"), async () => {
+      const { error } = await b.client.from('users').update({ is_superuser: true }).eq('id', b.user.id);
+      if (error) return { error };
+      const { data } = await b.client.from('users').select('is_superuser').eq('id', b.user.id).single();
+      if (!data?.is_superuser) return {};
+      const { error: undo } = await b.client.from('users').update({ is_superuser: false }).eq('id', b.user.id);
+      return { allowed: true, reverted: !undo };
+    }],
     // LAST, deliberately: if this succeeds B becomes an admin of QA Vault A,
     // and every probe after it would be testing an insider, not a stranger.
     // (Run 1 learned this the hard way: the invitation probe above "passed"
@@ -193,11 +250,13 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
   for (const [who, what, expect, run] of probes) {
     n++;
     const outcome = await attempt(run);
-    const [status, why] = judge(expect, outcome);
+    const [status, why] = typeof expect === 'function' ? expect(outcome) : judge(expect, outcome);
     results.add('access', `probe:${n}`, `${who === 'anon' ? 'Logged-out visitor' : 'Account B'} cannot ${what}`, status, { why });
   }
 
   // ── Clean up anything a probe managed to create, and verify the target survived.
+  // (Superuser first: harmless when refused, essential if a probe died mid-way.)
+  await b.client.from('users').update({ is_superuser: false }).eq('id', b.user.id);
   await a.client.storage.from('documents').remove([intrusionPath]);
   await b.client.from('family_members').delete().eq('family_id', A.family).eq('user_id', b.user.id);
   await a.client.from('invitations').delete().eq('family_id', A.family).eq('token', `qa-${cfg.runId}`);

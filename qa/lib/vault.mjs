@@ -163,7 +163,7 @@ export async function syncFixtures(cfg, actor, vault, results) {
       } else if (fixture.kind === 'photo' && ocrOutage && /nothing readable/i.test(error)) {
         [status, why] = ['inconclusive', 'OCR.space was down this run, so this photo could not be read; retried on the next run'];
         results.add('setup', 'known:image-ocr-reason', 'An OCR outage is reported as an OCR outage for images too', 'known', {
-          why: 'for images, ingest says "Nothing readable could be extracted" and drops the OCR error (PDFs keep it), so an outage looks like a bad file and is not marked retryable — extractTextFromImage() in _shared/ingest.ts discards ocrWithOcrSpace().error',
+          why: 'for images, ingest said "Nothing readable could be extracted" and dropped the OCR error (PDFs keep it), so an outage looked like a bad file and was not retryable — fixed in _shared/ingest.ts; seen only while DEV runs the old ingest function',
         });
       } else if (known) {
         [status, why] = ['known', known.why];
@@ -195,6 +195,6 @@ const OCR_OUTAGE = /OCR service (returned HTTP 5\d\d|unreachable)/i;
 const KNOWN_INGEST_FAILURES = [
   {
     match: /unsupported Unicode escape sequence/i,
-    why: 'the whole ingestion fails (500): PDF.js emits U+0000 for Devanagari glyphs it cannot map, and Postgres refuses a NUL in text/jsonb, so complete_document_ingestion rejects the chunks and the document never becomes searchable — strip \\u0000 from extracted text in _shared/ingest.ts',
+    why: 'the whole ingestion fails (500): PDF.js emits U+0000 for Devanagari glyphs it cannot map, and Postgres refuses a NUL in text/jsonb — fixed by cleanText() (_shared/text.ts); this signature means DEV still runs the old ingest function, and the upload passes once the fix is deployed',
   },
 ];

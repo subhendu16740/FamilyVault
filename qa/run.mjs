@@ -30,6 +30,7 @@ import { loadQuestions, groupCount, rotationGroup, selectQuestions, estimateFor 
 import { ensureVault, syncFixtures, VAULT_A, VAULT_B } from './lib/vault.mjs';
 import { runDbChecks } from './lib/checks/db.mjs';
 import { runAccessChecks } from './lib/checks/access.mjs';
+import { runMemberChecks } from './lib/checks/members.mjs';
 import { runUploadChecks, checkIndex } from './lib/checks/upload.mjs';
 import { runQuestions } from './lib/checks/ask.mjs';
 import { writeReport, annotate } from './lib/report.mjs';
@@ -94,6 +95,9 @@ async function main() {
       if (want('access')) {
         section('Access');
         await runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }, results);
+        // After the stranger probes: this one makes B an insider, then removes it.
+        section('Members');
+        await runMemberChecks(cfg, { a, b, vaultA }, results);
       }
       if (want('upload')) {
         section('Upload');

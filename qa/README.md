@@ -11,7 +11,8 @@ GitHub Actions (`.github/workflows/qa.yml`); nothing here ships with the app.
 |---|---|---|
 | Database | 023 sweep is zero rows on DEV and PROD; the 024 fingerprint matches between them | nothing (read-only catalog queries) |
 | Setup | QA Vault A holds all 7 SPECIMEN documents, indexed (uploaded once, on the first run) | first run only |
-| Access | 34 probes: a logged-out visitor and account B (another family) are refused by every app RPC, the server-only RPCs, all Edge Functions and storage — each with a positive control | nothing |
+| Access | 39 probes: a logged-out visitor and account B (another family) are refused by every app RPC, the server-only RPCs, all Edge Functions and storage, and B cannot rewrite the columns 025 locked (its own `is_superuser` and email, a family's storage namespace) or create user, family or membership rows — each with a positive control | nothing |
+| Members | only an admin adds (`add-member`): A adds B as a viewer, B is notified and sees the vault; "already a member" and "no account" are reported; B, now an insider, cannot make itself admin, give itself delete rights, delete A's document, add members, remove A or rename the vault; B can leave | nothing |
 | Upload | a fresh PDF goes through storage → insert → ingest-document; chunks, vectors, metadata, expiry alert → notification; a password-protected PDF fails visibly | 1 small embedding call, 1 OCR request |
 | Index | no unindexed documents; index up to date | nothing |
 | Questions | answers carry the right facts from the right document; refusals; Hindi; follow-ups; voice | Groq — see below |
@@ -72,15 +73,20 @@ node run.mjs --suite smoke
 - The server's PDF reader (pdfjs-serverless) drops Devanagari conjuncts, reph
   and the pre-base vowel sign from browser-made Hindi PDFs — "आशा वर्मा" reads
   as "आशा वमा". Reported by `check-fixtures` on every run.
-- `extractMetadata()` in `_shared/ingest.ts` stores a second, truncated
-  expiry for every DD/MM/YYYY date ("17/10/2026" and "17/10/20"); the document
-  viewer shows both.
-- Ingesting that Hindi PDF fails outright (500, `unsupported Unicode escape
-  sequence`): PDF.js emits U+0000 for the unmapped glyphs and Postgres refuses
-  a NUL, so the document never becomes searchable.
-- For images, an OCR.space outage is reported as "Nothing readable could be
-  extracted" — `extractTextFromImage()` drops the OCR error — so it looks like
-  a bad file and is not retried.
+
+Three more are fixed in the ingest code and read 🐞 only while DEV still runs
+the old function; they turn ✅ by themselves once it is deployed:
+
+- a second, truncated expiry for every DD/MM/YYYY date ("17/10/2026" and
+  "17/10/20") — `_shared/metadata.ts`, guarded by the self-test;
+- that Hindi PDF failing to ingest at all (a NUL Postgres refuses) —
+  `cleanText()` in `_shared/text.ts`, guarded by the self-test;
+- an OCR.space outage on an image reported as "Nothing readable could be
+  extracted", and not retryable.
+
+The membership probes (Access and Members) fail or skip until migration 025
+is applied to DEV and `add-member` is deployed there: before that, account B
+really can make itself superuser, and the checks say so.
 
 OCR.space itself answering 5xx is treated as **inconclusive** (an outage
 outside the app), and a question whose document is not indexed is
