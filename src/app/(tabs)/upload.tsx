@@ -224,7 +224,7 @@ export default function UploadScreen() {
             <Text style={styles.sectionTitle}>Choose source</Text>
 
             <View style={styles.primaryActions}>
-              <TouchableOpacity onPress={pickFromCamera} activeOpacity={0.85} style={styles.primaryTouch}>
+              <TouchableOpacity onPress={pickFromCamera} activeOpacity={0.85} style={styles.scanTouch}>
                 <LinearGradient
                   colors={['#2A3D66', '#4A6491']}
                   start={{ x: 0, y: 0 }}
@@ -246,37 +246,30 @@ export default function UploadScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* Rows, like the drawer's, so a ★ Family Plus tag has room to sit
-                beside its label. */}
-            <View style={styles.moreSources}>
+            <View style={styles.secondaryActions}>
               <TouchableOpacity
-                style={styles.sourceRow}
+                style={styles.secondaryBtn}
                 onPress={pickFromGallery}
-                activeOpacity={0.7}
+                activeOpacity={0.8}
                 accessibilityRole="button"
               >
-                <View style={styles.sourceIcon}>
-                  <Feather name="image" size={16} color={color.primary} />
-                </View>
-                <Text style={styles.sourceLabel}>Gallery</Text>
-                <Feather name="chevron-right" size={16} color="#9CA3AF" />
+                <Feather name="image" size={22} color={color.primary} />
+                <Text style={styles.secondaryBtnText}>Gallery</Text>
               </TouchableOpacity>
               {/* Web only: connecting Gmail from the phone app needs a native
                   auth session, not built yet (see gmail-import.tsx).
                   ★: part of Family Plus, the paid plan. It works for everyone
-                  until the plan exists. */}
+                  until the plan exists; the tag sits under the label. */}
               {Platform.OS === 'web' && (
                 <TouchableOpacity
-                  style={[styles.sourceRow, styles.sourceRowBorder]}
+                  style={styles.secondaryBtn}
                   onPress={() => router.push('/gmail-import' as any)}
-                  activeOpacity={0.7}
+                  activeOpacity={0.8}
                   accessibilityRole="button"
                   accessibilityLabel="From Gmail, part of Family Plus"
                 >
-                  <View style={styles.sourceIcon}>
-                    <Feather name="mail" size={16} color={color.primary} />
-                  </View>
-                  <Text style={styles.sourceLabel}>From Gmail</Text>
+                  <Feather name="mail" size={22} color={color.primary} />
+                  <Text style={styles.secondaryBtnText}>From Gmail</Text>
                   <PlusTag />
                 </TouchableOpacity>
               )}
@@ -504,13 +497,15 @@ const styles = StyleSheet.create({
   sectionTitle: { ...type.heading, marginBottom: space.md },
   sectionTitleLater: { marginTop: space.xl },
   primaryActions: { flexDirection: 'row', gap: space.md, marginBottom: space.md },
-  // The gradient's own flex means nothing inside a wrapper that has none:
-  // without this, Scan shrinks to its label while Browse Files takes the row.
-  primaryTouch: { flex: 1 },
+  // Scan narrow, Browse Files wide, 2 to 5. The first version looked like this
+  // by accident — Scan's wrapper had no flex, so it shrank to its label — and
+  // people liked it; the ratio makes it hold on every screen width.
+  scanTouch: { flex: 2 },
   primaryBtn: {
     flex: 1,
     borderRadius: radius.card,
-    padding: space.lg,
+    paddingVertical: space.lg,
+    paddingHorizontal: space.md,
     alignItems: 'center',
     justifyContent: 'center',
     gap: space.sm,
@@ -520,7 +515,7 @@ const styles = StyleSheet.create({
   },
   primaryBtnText: { ...type.button, color: '#FFFFFF' },
   primaryBtnOutline: {
-    flex: 1,
+    flex: 5,
     borderRadius: radius.card,
     padding: space.lg,
     alignItems: 'center',
@@ -532,29 +527,22 @@ const styles = StyleSheet.create({
     backgroundColor: color.surface,
   },
   primaryBtnOutlineText: { ...type.button, color: color.primary },
-  moreSources: {
+  secondaryActions: { flexDirection: 'row', gap: space.md, marginBottom: space.md },
+  secondaryBtn: {
+    flex: 1,
     backgroundColor: color.surface,
+    borderWidth: 1,
+    borderColor: color.border,
     borderRadius: radius.card,
-    marginBottom: space.md,
-    ...shadow.card,
-  },
-  sourceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.md,
-    minHeight: size.row,
-    paddingHorizontal: space.lg,
-  },
-  sourceRowBorder: { borderTopWidth: 1, borderTopColor: color.divider },
-  sourceIcon: {
-    width: size.iconBox,
-    height: size.iconBox,
-    borderRadius: 8,
-    backgroundColor: color.tint,
+    paddingVertical: space.md,
+    paddingHorizontal: space.sm,
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 6,
+    minHeight: 80,
+    ...shadow.card,
   },
-  sourceLabel: { ...type.label, flex: 1 },
+  secondaryBtnText: type.label,
   hintCard: {
     flexDirection: 'row',
     alignItems: 'center',
