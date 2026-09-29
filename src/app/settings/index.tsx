@@ -7,43 +7,50 @@ import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useAuth } from '../lib/auth';
-import { isProduction, environmentDescription } from '../lib/environment';
-import { useFamily } from '../lib/family-context';
-import { usePreferences } from '../lib/preferences';
-import { indexStatus, type IndexStatus } from '../lib/api';
-import { VOICE_LANGUAGES, voiceLanguage } from '../lib/voice-languages';
-import { OCR_LANGUAGES, describeOcrLanguages } from '../lib/ocr-languages';
-import { hasVoiceFor } from '../lib/speech';
+import { useAuth } from '../../lib/auth';
+import { isProduction, environmentDescription } from '../../lib/environment';
+import { useFamily } from '../../lib/family-context';
+import { usePreferences } from '../../lib/preferences';
+import { indexStatus, type IndexStatus } from '../../lib/api';
+import { VOICE_LANGUAGES, voiceLanguage } from '../../lib/voice-languages';
+import { OCR_LANGUAGES, describeOcrLanguages } from '../../lib/ocr-languages';
+import { hasVoiceFor } from '../../lib/speech';
+import { BackButton } from '../../components/back-button';
+import { appVersion } from '../../lib/app-info';
 
-const settingsGroups = [
-  {
-    title: 'Account',
-    items: [
-      { icon: 'user', label: 'Profile', sub: 'Edit your name and photo' },
-      { icon: 'shield', label: 'Security', sub: 'Password & biometrics' },
-      { icon: 'bell', label: 'Notifications', sub: 'Expiry alerts and reminders' },
-    ],
-  },
-  {
-    title: 'Vault',
-    items: [
-      { icon: 'users', label: 'Manage Families', sub: 'View and switch families', route: '/family' },
-      { icon: 'mail', label: 'Import from Gmail', sub: 'Find documents in your email', route: '/gmail-import' },
-      { icon: 'lock', label: 'Privacy', sub: 'Data isolation settings' },
-      { icon: 'cloud', label: 'Storage', sub: 'Manage cloud backup' },
-    ],
-  },
-  {
-    title: 'Support',
-    items: [
-      { icon: 'help-circle', label: 'Help & FAQ', sub: 'How FamilyVault works' },
-      // The badge says WHICH build this is at a glance; this says what that
-      // means, in the one place someone goes to check.
-      { icon: 'info', label: 'About', sub: isProduction ? 'Version 1.0.0' : `Version 1.0.0 · ${environmentDescription}` },
-    ],
-  },
-];
+// A row with an arrow opens a screen — every one of them. Rows that opened
+// nothing used to sit here, which tells the person using the app that it is
+// broken, or that they did something wrong. Import from Gmail lives on Upload.
+type LinkItem = { icon: string; label: string; sub: string; route: string; value?: string };
+
+function LinkGroup({ title, items }: { title: string; items: LinkItem[] }) {
+  return (
+    <View style={styles.group}>
+      <Text style={styles.groupTitle}>{title}</Text>
+      <View style={styles.groupCard}>
+        {items.map((item, i) => (
+          <TouchableOpacity
+            key={item.route}
+            style={[styles.settingRow, i > 0 && styles.settingRowBorder]}
+            activeOpacity={0.7}
+            onPress={() => router.push(item.route as any)}
+            accessibilityRole="button"
+          >
+            <View style={styles.settingIconWrap}>
+              <Feather name={item.icon as any} size={18} color="#2A3D66" />
+            </View>
+            <View style={styles.settingText}>
+              <Text style={styles.settingLabel}>{item.label}</Text>
+              <Text style={styles.settingSub}>{item.sub}</Text>
+            </View>
+            {!!item.value && <Text style={styles.settingValue}>{item.value}</Text>}
+            <Feather name="chevron-right" size={18} color="#9CA3AF" />
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+}
 
 /** Supabase function errors arrive in several shapes; show something a person can read. */
 function readableError(err: unknown): string {
@@ -56,9 +63,33 @@ export default function SettingsScreen() {
   const { user, signOut } = useAuth();
   const { membership, currentFamily } = useFamily();
   const {
-    voiceMode, voiceLanguage: voiceLang, documentLanguages,
+    voiceMode, voiceLanguage: voiceLang, documentLanguages, notificationsEnabled,
     setVoiceMode, setVoiceLanguage, setDocumentLanguages,
   } = usePreferences();
+
+  const accountItems: LinkItem[] = [
+    { icon: 'user', label: 'Profile', sub: 'Your name and phone number', route: '/settings/profile' },
+    { icon: 'shield', label: 'Security', sub: 'Password and signing out', route: '/settings/security' },
+    {
+      icon: 'bell', label: 'Notifications', sub: 'Expiry alerts and family news',
+      route: '/settings/notifications', value: notificationsEnabled ? 'On' : 'Off',
+    },
+  ];
+  const vaultItems: LinkItem[] = [
+    { icon: 'users', label: 'Manage Families', sub: 'View and switch families', route: '/family' },
+    { icon: 'hard-drive', label: 'Storage', sub: 'How much space your documents use', route: '/settings/storage' },
+    { icon: 'lock', label: 'Privacy', sub: 'Who can see your documents', route: '/settings/privacy' },
+  ];
+  const helpItems: LinkItem[] = [
+    { icon: 'help-circle', label: 'Help & FAQ', sub: 'Answers, feedback and contact', route: '/settings/help' },
+    // The badge says WHICH build this is at a glance; About says what that
+    // means, in the one place someone goes to check.
+    {
+      icon: 'info', label: 'About FamilyVault',
+      sub: isProduction ? `Version ${appVersion}` : `Version ${appVersion} · ${environmentDescription}`,
+      route: '/settings/about',
+    },
+  ];
   const [langPickerOpen, setLangPickerOpen] = useState(false);
   const [docLangPickerOpen, setDocLangPickerOpen] = useState(false);
 
@@ -155,6 +186,11 @@ export default function SettingsScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
+      <View style={styles.header}>
+        <BackButton />
+        <Text style={styles.title}>Settings</Text>
+      </View>
+
       <ScrollView showsVerticalScrollIndicator={false}>
         {/* Profile Card */}
         <LinearGradient
@@ -175,31 +211,8 @@ export default function SettingsScreen() {
           </View>
         </LinearGradient>
 
-        {/* Settings Groups */}
-        {settingsGroups.map((group, gIdx) => (
-          <View key={gIdx} style={styles.group}>
-            <Text style={styles.groupTitle}>{group.title}</Text>
-            <View style={styles.groupCard}>
-              {group.items.map((item, iIdx) => (
-                <TouchableOpacity
-                  key={iIdx}
-                  style={[styles.settingRow, iIdx > 0 && styles.settingRowBorder]}
-                  activeOpacity={0.7}
-                  onPress={item.route ? () => router.push(item.route as any) : undefined}
-                >
-                  <View style={styles.settingIconWrap}>
-                    <Feather name={item.icon as any} size={18} color="#2A3D66" />
-                  </View>
-                  <View style={styles.settingText}>
-                    <Text style={styles.settingLabel}>{item.label}</Text>
-                    <Text style={styles.settingSub}>{item.sub}</Text>
-                  </View>
-                  <Feather name="chevron-right" size={18} color="#9CA3AF" />
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-        ))}
+        <LinkGroup title="Account" items={accountItems} />
+        <LinkGroup title="Vault" items={vaultItems} />
 
         {/* Accessibility — the one group with live controls */}
         <View style={styles.group}>
@@ -288,6 +301,8 @@ export default function SettingsScreen() {
             </TouchableOpacity>
           </View>
         </View>
+
+        <LinkGroup title="Help" items={helpItems} />
 
         {/* Sign Out */}
         <View style={styles.signOutSection}>
@@ -385,6 +400,16 @@ export default function SettingsScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#F8F9FC' },
+  header: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 24,
+    paddingTop: 8,
+    paddingBottom: 16,
+    gap: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  title: { fontSize: 22, fontWeight: '700', color: '#2A3D66' },
   profileCard: {
     flexDirection: 'row',
     alignItems: 'center',

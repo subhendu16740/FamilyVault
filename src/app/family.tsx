@@ -10,6 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../lib/auth';
 import { useFamily } from '../lib/family-context';
 import { addFamilyMember, leaveFamily, removeFamilyMember, updateMemberRole } from '../lib/api';
+import { BackButton } from '../components/back-button';
 
 const relations = ['Father', 'Mother', 'Spouse', 'Son', 'Daughter', 'Brother', 'Sister', 'Other'];
 
@@ -140,12 +141,8 @@ export default function FamilyScreen() {
     return (
       <SafeAreaView style={styles.safe} edges={['top']}>
         <View style={styles.header}>
-          <View style={styles.headerLeft}>
-            <TouchableOpacity onPress={() => router.replace('/home' as any)} style={styles.backBtn}>
-              <Feather name="arrow-left" size={24} color="#4B5563" />
-            </TouchableOpacity>
-            <Text style={styles.title}>Manage Family</Text>
-          </View>
+          <BackButton />
+          <Text style={styles.title}>Manage Family</Text>
         </View>
         <View style={styles.noFamilyWrap}>
           <Feather name="users" size={48} color="#D1D5DB" />
@@ -175,30 +172,28 @@ export default function FamilyScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <TouchableOpacity onPress={() => router.replace('/home' as any)} style={styles.backBtn}>
-            <Feather name="arrow-left" size={24} color="#4B5563" />
-          </TouchableOpacity>
-          <View>
+        <BackButton />
+        <View style={styles.headerRow}>
+          <View style={styles.headerTitles}>
             <Text style={styles.title}>{currentFamily.name}</Text>
             <Text style={styles.subtitle}>{members.length} member{members.length !== 1 ? 's' : ''}</Text>
           </View>
-        </View>
-        {isAdmin && (
-          <TouchableOpacity
-            onPress={() => setShowAddMember(true)}
-            activeOpacity={0.85}
-          >
-            <LinearGradient
-              colors={['#2A3D66', '#4A6491']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.addBtn}
+          {isAdmin && (
+            <TouchableOpacity
+              onPress={() => setShowAddMember(true)}
+              activeOpacity={0.85}
             >
-              <Text style={styles.addBtnText}>+ Add Member</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        )}
+              <LinearGradient
+                colors={['#2A3D66', '#4A6491']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.addBtn}
+              >
+                <Text style={styles.addBtnText}>+ Add Member</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
@@ -469,12 +464,10 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    gap: 8,
   },
-  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  backBtn: { padding: 4 },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
+  headerTitles: { flex: 1 },
   title: { fontSize: 22, fontWeight: '700', color: '#2A3D66' },
   subtitle: { fontSize: 13, color: '#6B7280', marginTop: 2 },
   addBtn: {

@@ -18,6 +18,7 @@ import {
 import { usePreferences } from '../../lib/preferences';
 import { describeOcrLanguages } from '../../lib/ocr-languages';
 import type { Database } from '../../lib/database.types';
+import { BackButton } from '../../components/back-button';
 
 type DocumentCategory = Database['public']['Tables']['document_categories']['Row'];
 
@@ -215,12 +216,8 @@ export default function UploadScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
-        <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-            <Feather name="arrow-left" size={24} color="#4B5563" />
-          </TouchableOpacity>
-          <Text style={styles.title}>Upload Document</Text>
-        </View>
+        <BackButton />
+        <Text style={styles.title}>Upload Document</Text>
       </View>
 
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
@@ -491,9 +488,8 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
+    gap: 8,
   },
-  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  backBtn: { padding: 4 },
   title: { fontSize: 22, fontWeight: '700', color: '#2A3D66' },
   scroll: { flex: 1 },
   body: { padding: 24 },

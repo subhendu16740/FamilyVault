@@ -1,6 +1,16 @@
+// ─── The menu behind the name button on Home ────────────────────
+//
+// A drawer, not a screen: it slides in from the left over the page, the page
+// stays visible behind it, and it closes with Close, a tap outside it, or the
+// back button. Layout from the v4 design (who you are on top, then Home,
+// Manage Family, Reminders and Settings, Sign Out at the bottom), in the
+// app's own colours.
+// ────────────────────────────────────────────────────────────────
+
+import { useEffect, useRef, useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  Modal, Pressable, Dimensions,
+  Modal, Pressable, Animated, Easing, Platform, useWindowDimensions,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -8,19 +18,43 @@ import { router } from 'expo-router';
 import { useAuth } from '../lib/auth';
 import { useFamily } from '../lib/family-context';
 import { useDrawer } from '../lib/drawer-context';
+import { appVersion } from '../lib/app-info';
+import { PlusTag } from './screen-header';
 
-const DRAWER_WIDTH = Math.min(Dimensions.get('window').width * 0.8, 320);
-
-const menuItems = [
+const menuItems: { icon: string; label: string; route: string; plus?: boolean }[] = [
   { icon: 'home', label: 'Home', route: '/home' },
   { icon: 'users', label: 'Manage Family', route: '/family' },
+  // ★: part of Family Plus, the paid plan. The screen works for everyone.
+  { icon: 'clock', label: 'Reminders', route: '/reminders', plus: true },
   { icon: 'settings', label: 'Settings', route: '/settings' },
 ];
+
+// The native driver does not exist on the web; asking for it there warns.
+const useNativeDriver = Platform.OS !== 'web';
 
 export default function ProfileDrawer() {
   const { user, signOut } = useAuth();
   const { currentFamily, membership } = useFamily();
   const { isDrawerOpen, closeDrawer } = useDrawer();
+  const { width } = useWindowDimensions();
+  const drawerWidth = Math.min(300, Math.round(width * 0.86));
+
+  // Stay mounted while sliding out, so closing animates rather than vanishes.
+  const [mounted, setMounted] = useState(isDrawerOpen);
+  const progress = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (isDrawerOpen) {
+      setMounted(true);
+      Animated.timing(progress, {
+        toValue: 1, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver,
+      }).start();
+    } else {
+      Animated.timing(progress, {
+        toValue: 0, duration: 180, easing: Easing.in(Easing.cubic), useNativeDriver,
+      }).start(({ finished }) => { if (finished) setMounted(false); });
+    }
+  }, [isDrawerOpen, progress]);
 
   const displayName =
     user?.user_metadata?.display_name ||
@@ -28,11 +62,12 @@ export default function ProfileDrawer() {
     user?.email?.split('@')[0] || 'User';
   const email = user?.email || '';
   const initial = displayName.charAt(0).toUpperCase();
-  const role = membership?.role || 'member';
+  const role = membership?.role ? membership.role.charAt(0).toUpperCase() + membership.role.slice(1) : '';
+  const familyLine = [currentFamily?.name, role].filter(Boolean).join(' · ');
 
   const handleNavigate = (route: string) => {
     closeDrawer();
-    setTimeout(() => router.push(route as any), 150);
+    setTimeout(() => router.navigate(route as any), 150);
   };
 
   const handleSignOut = async () => {
@@ -41,43 +76,48 @@ export default function ProfileDrawer() {
     router.replace('/login' as any);
   };
 
-  return (
-    <Modal
-      visible={isDrawerOpen}
-      transparent
-      animationType="fade"
-      onRequestClose={closeDrawer}
-    >
-      <View style={styles.overlay}>
-        <Pressable style={styles.backdrop} onPress={closeDrawer} />
+  const translateX = progress.interpolate({ inputRange: [0, 1], outputRange: [-drawerWidth, 0] });
 
-        <View style={styles.drawer}>
-          {/* Profile Header */}
+  return (
+    <Modal visible={mounted} transparent animationType="none" onRequestClose={closeDrawer}>
+      <View style={styles.overlay}>
+        <Animated.View style={[styles.backdrop, { opacity: progress }]}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={closeDrawer}
+            accessibilityRole="button"
+            accessibilityLabel="Close menu"
+          />
+        </Animated.View>
+
+        <Animated.View
+          style={[styles.drawer, { width: drawerWidth, transform: [{ translateX }] }]}
+          accessibilityViewIsModal
+        >
           <LinearGradient
             colors={['#2A3D66', '#4A6491']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.profileHeader}
           >
+            <TouchableOpacity
+              onPress={closeDrawer}
+              style={styles.closeBtn}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Close menu"
+            >
+              <Feather name="x" size={18} color="#FFFFFF" />
+              <Text style={styles.closeText}>Close</Text>
+            </TouchableOpacity>
             <View style={styles.avatarCircle}>
               <Text style={styles.avatarText}>{initial}</Text>
             </View>
             <Text style={styles.profileName}>{displayName}</Text>
-            <Text style={styles.profileEmail}>{email}</Text>
-            <View style={styles.roleBadge}>
-              <Text style={styles.roleBadgeText}>{role}</Text>
-            </View>
+            {!!email && <Text style={styles.profileSub}>{email}</Text>}
+            {!!familyLine && <Text style={styles.profileSub}>{familyLine}</Text>}
           </LinearGradient>
 
-          {/* Family Name */}
-          {currentFamily && (
-            <View style={styles.familyRow}>
-              <Feather name="shield" size={16} color="#2A3D66" />
-              <Text style={styles.familyName}>{currentFamily.name}</Text>
-            </View>
-          )}
-
-          {/* Menu Items */}
           <View style={styles.menuList}>
             {menuItems.map((item) => (
               <TouchableOpacity
@@ -85,29 +125,30 @@ export default function ProfileDrawer() {
                 style={styles.menuItem}
                 onPress={() => handleNavigate(item.route)}
                 activeOpacity={0.7}
+                accessibilityRole="button"
               >
                 <View style={styles.menuIconWrap}>
                   <Feather name={item.icon as any} size={20} color="#2A3D66" />
                 </View>
                 <Text style={styles.menuLabel}>{item.label}</Text>
-                <Feather name="chevron-right" size={18} color="#9CA3AF" />
+                {item.plus ? <PlusTag /> : <Feather name="chevron-right" size={18} color="#9CA3AF" />}
               </TouchableOpacity>
             ))}
           </View>
 
-          {/* Bottom */}
           <View style={styles.bottomSection}>
             <TouchableOpacity
               style={styles.signOutBtn}
               onPress={handleSignOut}
               activeOpacity={0.8}
+              accessibilityRole="button"
             >
               <Feather name="log-out" size={18} color="#DC2626" />
               <Text style={styles.signOutText}>Sign Out</Text>
             </TouchableOpacity>
-            <Text style={styles.version}>FamilyVault v1.0.0</Text>
+            <Text style={styles.version}>FamilyVault {appVersion}</Text>
           </View>
-        </View>
+        </Animated.View>
       </View>
     </Modal>
   );
@@ -120,84 +161,70 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(13, 17, 23, 0.55)',
   },
+  // A fixed width and no `flex`. On the web `flex: 1` makes the panel fill
+  // the whole row (the old drawer covered the page like a screen), and
+  // `flex: 0` shrinks it to nothing; the width alone is what native does.
   drawer: {
-    width: DRAWER_WIDTH,
     backgroundColor: '#FFFFFF',
-    flex: 1,
-    zIndex: 10,
+    height: '100%',
+    boxShadow: '8px 0px 24px rgba(13, 17, 23, 0.25)',
+    elevation: 16,
   },
   profileHeader: {
-    paddingTop: 60,
-    paddingBottom: 24,
-    paddingHorizontal: 24,
-    alignItems: 'center',
+    paddingTop: 16,
+    paddingBottom: 22,
+    paddingHorizontal: 20,
+    gap: 4,
   },
+  closeBtn: {
+    alignSelf: 'flex-end',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minHeight: 44,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    marginBottom: 6,
+  },
+  closeText: { fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
   avatarCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: 'rgba(255,255,255,0.25)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   avatarText: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: '700',
     color: '#FFFFFF',
   },
   profileName: {
-    fontSize: 18,
+    fontSize: 19,
     fontWeight: '700',
     color: '#FFFFFF',
-    textAlign: 'center',
   },
-  profileEmail: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.75)',
-    marginTop: 4,
-    textAlign: 'center',
-  },
-  roleBadge: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    marginTop: 8,
-  },
-  roleBadgeText: {
-    fontSize: 11,
-    color: '#FFFFFF',
-    fontWeight: '500',
-    textTransform: 'capitalize',
-  },
-  familyRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-  },
-  familyName: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#2A3D66',
+  profileSub: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.85)',
   },
   menuList: {
     flex: 1,
-    paddingTop: 8,
   },
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
-    paddingHorizontal: 24,
-    paddingVertical: 14,
-    minHeight: 56,
+    paddingHorizontal: 20,
+    minHeight: 60,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
   },
   menuIconWrap: {
     width: 36,
@@ -209,15 +236,13 @@ const styles = StyleSheet.create({
   },
   menuLabel: {
     flex: 1,
-    fontSize: 15,
-    fontWeight: '500',
+    fontSize: 17,
+    fontWeight: '600',
     color: '#1F2937',
   },
   bottomSection: {
-    paddingHorizontal: 24,
-    paddingBottom: 40,
-    borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
+    paddingHorizontal: 20,
+    paddingBottom: 28,
     paddingTop: 16,
   },
   signOutBtn: {
@@ -227,19 +252,19 @@ const styles = StyleSheet.create({
     gap: 8,
     backgroundColor: '#FEF2F2',
     borderRadius: 14,
-    paddingVertical: 14,
+    minHeight: 52,
     borderWidth: 1,
     borderColor: '#FECACA',
   },
   signOutText: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '600',
     color: '#DC2626',
   },
   version: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#9CA3AF',
     textAlign: 'center',
-    marginTop: 16,
+    marginTop: 14,
   },
 });

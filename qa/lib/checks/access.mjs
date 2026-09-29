@@ -106,6 +106,15 @@ function gmailCallbackJudge({ status, data }) {
   return ['fail', `HTTP ${status}: the state lookup failed`];
 }
 
+// public.feedback ships with migration 027. Until it is applied to DEV the
+// table does not exist, and a refusal from a table that is not there proves
+// nothing — so that is a skip, like the Gmail probes before 026.
+const missingTable = (error) => !!error && (['PGRST205', '42P01'].includes(String(error.code))
+  || /could not find the table|does not exist/i.test(String(error.message ?? '')));
+const feedbackJudge = (expect) => (outcome) => (missingTable(outcome.error)
+  ? ['skipped', 'migration 027 is not applied to DEV yet']
+  : judge(expect, outcome));
+
 async function attempt(fn) {
   try {
     const out = await fn();
@@ -239,6 +248,18 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
       const { error: undo } = await b.client.from('users').update({ email: before?.email }).eq('id', b.user.id);
       return { allowed: true, reverted: !undo };
     }],
+    // Since 027 a person may change their own name — and only their own:
+    // users_update_own is what keeps that grant to one row.
+    ['B', "rename account A", judgeWrite("users_update_own is what limits 027's name grant to the person's own row"), async () => {
+      const { data: before } = await a.client.from('users').select('display_name').eq('id', A.user).single();
+      const probe = `QA intrusion ${cfg.runId}`;
+      const { error } = await b.client.from('users').update({ display_name: probe }).eq('id', A.user);
+      if (error) return { error };
+      const { data: now } = await a.client.from('users').select('display_name').eq('id', A.user).single();
+      if (now?.display_name !== probe) return {};
+      const { error: undo } = await a.client.from('users').update({ display_name: before?.display_name }).eq('id', A.user);
+      return { allowed: true, reverted: !undo };
+    }],
     ['B', 'create a user row', judgeWrite('anyone can insert into public.users, and a row with a fresh id and someone else\'s email blocks their sign-up'),
       () => b.client.from('users').insert({ id: b.user.id, email: `qa-probe-${cfg.runId}@example.invalid`, display_name: 'QA probe' })],
     ['B', 'create a family row directly', judgeWrite('families_insert lets a client create a family with no schema behind it'),
@@ -270,6 +291,12 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
       if ((s === 400 && d?.status === 'origin_not_allowed') || (s === 503 && d?.status === 'not_configured')) return ['pass', d.status];
       return ['fail', `HTTP ${s}: ${JSON.stringify(d).slice(0, 160)}`];
     }), fn(b, 'gmail-connect', { action: 'start', return_origin: 'https://evil.example' })],
+
+    // Feedback (027): anyone signed in may send one as themselves, and nobody
+    // but the team reads them back.
+    ['anon', 'send feedback', feedbackJudge('refused'), () => anon.client.from('feedback').insert({ message: `QA probe ${cfg.runId}` })],
+    ['B', 'send feedback as account A', feedbackJudge('refused'), () => b.client.from('feedback').insert({ user_id: A.user, message: `QA probe ${cfg.runId}` })],
+    ['B', 'read the feedback people have sent', feedbackJudge('refused-or-empty'), () => b.client.from('feedback').select('id, message').limit(5)],
 
     // Undone the moment it is seen: a superuser B would make every read
     // probe above meaningless, so this runs after them.

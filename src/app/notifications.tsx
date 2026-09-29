@@ -8,6 +8,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../lib/auth';
 import { useFamily } from '../lib/family-context';
 import { fetchNotifications, markNotificationRead, type NotificationRow } from '../lib/api';
+import { BackButton } from '../components/back-button';
+import { usePreferences } from '../lib/preferences';
 
 const typeConfig: Record<string, { icon: string; bg: string; color: string }> = {
   expiry: { icon: 'clock', bg: '#FEF2F2', color: '#DC2626' },
@@ -33,16 +35,19 @@ function getRelativeTime(dateStr: string): string {
 export default function NotificationsScreen() {
   const { user } = useAuth();
   const { currentFamily, switchFamily } = useFamily();
+  const { notificationsEnabled, setNotificationsEnabled } = usePreferences();
   const [notifications, setNotifications] = useState<NotificationRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!user) return;
+    // Switched off in Settings: the list is hidden, so there is nothing to load.
+    if (!user || !notificationsEnabled) return;
+    setLoading(true);
     fetchNotifications(user.id)
       .then(setNotifications)
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [user?.id]);
+  }, [user?.id, notificationsEnabled]);
 
   const handlePress = useCallback(async (notif: NotificationRow) => {
     if (!user) return;
@@ -99,14 +104,25 @@ export default function NotificationsScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Feather name="arrow-left" size={24} color="#4B5563" />
-        </TouchableOpacity>
+        <BackButton />
         <Text style={styles.headerTitle}>Notifications</Text>
-        <View style={{ width: 32 }} />
       </View>
 
-      {loading ? (
+      {!notificationsEnabled ? (
+        <View style={styles.center}>
+          <Feather name="bell-off" size={48} color="#D1D5DB" />
+          <Text style={styles.emptyTitle}>Notifications are off</Text>
+          <Text style={styles.emptySubtitle}>Nothing has been deleted. Turn them on to see your alerts.</Text>
+          <TouchableOpacity
+            style={styles.turnOnBtn}
+            onPress={() => setNotificationsEnabled(true)}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+          >
+            <Text style={styles.turnOnText}>Turn on notifications</Text>
+          </TouchableOpacity>
+        </View>
+      ) : loading ? (
         <View style={styles.center}>
           <ActivityIndicator size="large" color="#2A3D66" />
         </View>
@@ -132,19 +148,28 @@ export default function NotificationsScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#F8F9FC' },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 24,
+    paddingTop: 8,
+    paddingBottom: 16,
+    gap: 8,
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
   },
-  backBtn: { padding: 4 },
-  headerTitle: { flex: 1, fontSize: 20, fontWeight: '700', color: '#2A3D66', textAlign: 'center' },
+  headerTitle: { fontSize: 22, fontWeight: '700', color: '#2A3D66' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
   emptyTitle: { fontSize: 16, fontWeight: '600', color: '#6B7280' },
-  emptySubtitle: { fontSize: 13, color: '#9CA3AF' },
+  emptySubtitle: { fontSize: 13, color: '#9CA3AF', textAlign: 'center', paddingHorizontal: 32 },
+  turnOnBtn: {
+    marginTop: 12,
+    minHeight: 52,
+    paddingHorizontal: 22,
+    borderRadius: 14,
+    backgroundColor: '#2A3D66',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  turnOnText: { fontSize: 17, fontWeight: '700', color: '#FFFFFF' },
   list: { padding: 16, gap: 10 },
   card: {
     flexDirection: 'row',
