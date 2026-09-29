@@ -31,6 +31,8 @@ function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
               onPress={onPress}
               style={styles.searchTabItem}
               activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Ask FamilyVault"
             >
               <LinearGradient
                 colors={['#2A3D66', '#4A6491']}
@@ -38,7 +40,7 @@ function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
                 end={{ x: 1, y: 1 }}
                 style={styles.searchBtn}
               >
-                <Feather name="search" size={28} color="#FFFFFF" />
+                <Feather name="search" size={24} color="#FFFFFF" />
               </LinearGradient>
             </TouchableOpacity>
           );
@@ -54,8 +56,10 @@ function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
             onPress={onPress}
             style={styles.tabItem}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityState={{ selected: isFocused }}
           >
-            <Feather name={iconName} size={24} color={color} />
+            <Feather name={iconName} size={22} color={color} />
             <Text style={[styles.tabLabel, { color }]}>{label}</Text>
           </TouchableOpacity>
         );
@@ -83,9 +87,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: '#E5E7EB',
-    height: 80,
+    height: 64,
     alignItems: 'center',
-    paddingBottom: 8,
+    paddingBottom: 4,
     paddingHorizontal: 8,
     maxWidth: 390,
     alignSelf: 'center',
@@ -95,26 +99,27 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: 8,
+    paddingTop: 4,
     minHeight: 44,
     outlineStyle: 'none',
   } as any,
   tabLabel: {
-    fontSize: 11,
-    marginTop: 4,
+    fontSize: 12,
+    lineHeight: 16,
+    marginTop: 2,
     fontWeight: '500',
   },
   searchTabItem: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: -24,
+    marginTop: -20,
     outlineStyle: 'none',
   } as any,
   searchBtn: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
     boxShadow: '0px 4px 8px rgba(42, 61, 102, 0.35)',

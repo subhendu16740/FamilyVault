@@ -1,7 +1,7 @@
 // ─── The menu behind the name button on Home ────────────────────
 //
 // A drawer, not a screen: it slides in from the left over the page, the page
-// stays visible behind it, and it closes with Close, a tap outside it, or the
+// stays visible behind it, and it closes with the ✕, a tap outside it, or the
 // back button. Layout from the v4 design (who you are on top, then Home,
 // Manage Family, Reminders and Settings, Sign Out at the bottom), in the
 // app's own colours.
@@ -20,6 +20,7 @@ import { useFamily } from '../lib/family-context';
 import { useDrawer } from '../lib/drawer-context';
 import { appVersion } from '../lib/app-info';
 import { PlusTag } from './screen-header';
+import { color, radius, size, space, type } from '../constants/design';
 
 const menuItems: { icon: string; label: string; route: string; plus?: boolean }[] = [
   { icon: 'home', label: 'Home', route: '/home' },
@@ -100,22 +101,23 @@ export default function ProfileDrawer() {
             end={{ x: 1, y: 1 }}
             style={styles.profileHeader}
           >
-            <TouchableOpacity
-              onPress={closeDrawer}
-              style={styles.closeBtn}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel="Close menu"
-            >
-              <Feather name="x" size={18} color="#FFFFFF" />
-              <Text style={styles.closeText}>Close</Text>
-            </TouchableOpacity>
-            <View style={styles.avatarCircle}>
-              <Text style={styles.avatarText}>{initial}</Text>
+            <View style={styles.headerTop}>
+              <View style={styles.avatarCircle}>
+                <Text style={styles.avatarText}>{initial}</Text>
+              </View>
+              <TouchableOpacity
+                onPress={closeDrawer}
+                style={styles.closeBtn}
+                activeOpacity={0.6}
+                accessibilityRole="button"
+                accessibilityLabel="Close menu"
+              >
+                <Feather name="x" size={size.icon} color="#FFFFFF" />
+              </TouchableOpacity>
             </View>
-            <Text style={styles.profileName}>{displayName}</Text>
-            {!!email && <Text style={styles.profileSub}>{email}</Text>}
-            {!!familyLine && <Text style={styles.profileSub}>{familyLine}</Text>}
+            <Text style={styles.profileName} numberOfLines={1}>{displayName}</Text>
+            {!!email && <Text style={styles.profileSub} numberOfLines={1}>{email}</Text>}
+            {!!familyLine && <Text style={styles.profileSub} numberOfLines={1}>{familyLine}</Text>}
           </LinearGradient>
 
           <View style={styles.menuList}>
@@ -128,10 +130,10 @@ export default function ProfileDrawer() {
                 accessibilityRole="button"
               >
                 <View style={styles.menuIconWrap}>
-                  <Feather name={item.icon as any} size={20} color="#2A3D66" />
+                  <Feather name={item.icon as any} size={16} color={color.primary} />
                 </View>
                 <Text style={styles.menuLabel}>{item.label}</Text>
-                {item.plus ? <PlusTag /> : <Feather name="chevron-right" size={18} color="#9CA3AF" />}
+                {item.plus ? <PlusTag /> : <Feather name="chevron-right" size={16} color="#9CA3AF" />}
               </TouchableOpacity>
             ))}
           </View>
@@ -143,7 +145,7 @@ export default function ProfileDrawer() {
               activeOpacity={0.8}
               accessibilityRole="button"
             >
-              <Feather name="log-out" size={18} color="#DC2626" />
+              <Feather name="log-out" size={16} color={color.danger} />
               <Text style={styles.signOutText}>Sign Out</Text>
             </TouchableOpacity>
             <Text style={styles.version}>FamilyVault {appVersion}</Text>
@@ -173,98 +175,79 @@ const styles = StyleSheet.create({
     elevation: 16,
   },
   profileHeader: {
-    paddingTop: 16,
-    paddingBottom: 22,
-    paddingHorizontal: 20,
-    gap: 4,
+    paddingTop: space.sm,
+    paddingBottom: space.lg,
+    paddingLeft: space.lg,
+    paddingRight: space.xs,
+    gap: 2,
   },
-  closeBtn: {
-    alignSelf: 'flex-end',
+  headerTop: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    minHeight: 44,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-    marginBottom: 6,
+    justifyContent: 'space-between',
+    marginBottom: space.sm,
   },
-  closeText: { fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
+  // The ✕ is drawn at 24px, like the back arrow, in a 44px touch area.
+  closeBtn: {
+    width: size.control,
+    height: size.control,
+    borderRadius: size.control / 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   avatarCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: 'rgba(255,255,255,0.25)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
+    marginTop: space.sm,
   },
-  avatarText: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  profileName: {
-    fontSize: 19,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  profileSub: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.85)',
-  },
+  avatarText: { fontSize: 20, fontWeight: '600', color: '#FFFFFF' },
+  profileName: { ...type.title, color: '#FFFFFF', paddingRight: space.md },
+  profileSub: { ...type.caption, color: 'rgba(255,255,255,0.85)', paddingRight: space.md },
   menuList: {
     flex: 1,
+    paddingTop: space.xs,
   },
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    paddingHorizontal: 20,
-    minHeight: 60,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
+    gap: space.md,
+    paddingHorizontal: space.lg,
+    minHeight: 52,
   },
   menuIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: '#EFF6FF',
+    width: size.iconBox,
+    height: size.iconBox,
+    borderRadius: 8,
+    backgroundColor: color.tint,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  menuLabel: {
-    flex: 1,
-    fontSize: 17,
-    fontWeight: '600',
-    color: '#1F2937',
-  },
+  menuLabel: { ...type.label, flex: 1 },
   bottomSection: {
-    paddingHorizontal: 20,
-    paddingBottom: 28,
-    paddingTop: 16,
+    paddingHorizontal: space.lg,
+    paddingBottom: space.xl,
+    paddingTop: space.lg,
   },
   signOutBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: space.sm,
     backgroundColor: '#FEF2F2',
-    borderRadius: 14,
-    minHeight: 52,
+    borderRadius: radius.control,
+    minHeight: size.control,
     borderWidth: 1,
     borderColor: '#FECACA',
   },
-  signOutText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#DC2626',
-  },
+  signOutText: { ...type.button, color: color.danger },
   version: {
     fontSize: 12,
     color: '#9CA3AF',
     textAlign: 'center',
-    marginTop: 14,
+    marginTop: space.md,
   },
 });

@@ -13,6 +13,7 @@ import { useDrawer } from '../../lib/drawer-context';
 import { fetchRecentDocuments, fetchFamilyStats, fetchUnreadNotificationCount, checkExpiryNotifications } from '../../lib/api';
 import { usePreferences } from '../../lib/preferences';
 import type { FamilyDocumentRow } from '../../lib/database.types';
+import { color, radius, shadow, size, space, type } from '../../constants/design';
 
 
 function getTimeGreeting(): string {
@@ -142,9 +143,9 @@ export default function HomeScreen() {
               style={styles.searchBar}
               activeOpacity={0.8}
             >
-              <Feather name="search" size={20} color="rgba(255,255,255,0.8)" />
+              <Feather name="search" size={18} color="rgba(255,255,255,0.8)" />
               <Text style={styles.searchPlaceholder}>Search documents...</Text>
-              <Feather name="mic" size={20} color="rgba(255,255,255,0.8)" />
+              <Feather name="mic" size={18} color="rgba(255,255,255,0.8)" />
             </TouchableOpacity>
           </SafeAreaView>
         </LinearGradient>
@@ -168,7 +169,7 @@ export default function HomeScreen() {
             <ActivityIndicator size="small" color="#2A3D66" style={{ marginTop: 20 }} />
           ) : recentDocs.length === 0 ? (
             <View style={styles.emptyState}>
-              <Feather name="file-plus" size={40} color="#D1D5DB" />
+              <Feather name="file-plus" size={32} color="#D1D5DB" />
               <Text style={styles.emptyTitle}>No documents yet</Text>
               <Text style={styles.emptySubtitle}>Upload your first document to get started</Text>
             </View>
@@ -187,7 +188,7 @@ export default function HomeScreen() {
                     end={{ x: 1, y: 1 }}
                     style={styles.docIcon}
                   >
-                    <Feather name={getDocIcon(doc.file_type) as any} size={22} color="#FFFFFF" />
+                    <Feather name={getDocIcon(doc.file_type) as any} size={18} color="#FFFFFF" />
                   </LinearGradient>
                   <View style={styles.docInfo}>
                     <Text style={[styles.docTitle, isDark && styles.textLight]} numberOfLines={1}>
@@ -219,20 +220,20 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F8F9FC' },
+  container: { flex: 1, backgroundColor: color.background },
   containerDark: { backgroundColor: '#0D1117' },
   header: {
-    paddingHorizontal: 24,
-    paddingBottom: 24,
-    borderBottomLeftRadius: 32,
-    borderBottomRightRadius: 32,
+    paddingHorizontal: space.lg,
+    paddingBottom: space.lg + 4,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
   },
   headerTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
-    paddingTop: 8,
+    marginBottom: space.lg,
+    paddingTop: space.sm,
   },
   headerLeft: {
     flexDirection: 'row',
@@ -248,12 +249,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   profileInitial: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 17,
+    fontWeight: '600',
     color: '#FFFFFF',
   },
-  greeting: { fontSize: 13, color: 'rgba(255,255,255,0.8)', marginBottom: 2 },
-  headerTitle: { fontSize: 22, fontWeight: '700', color: '#FFFFFF' },
+  greeting: { ...type.caption, color: 'rgba(255,255,255,0.8)' },
+  headerTitle: { fontSize: 20, lineHeight: 26, fontWeight: '600', color: '#FFFFFF' },
   bellBtn: {
     width: 44,
     height: 44,
@@ -268,8 +269,8 @@ const styles = StyleSheet.create({
     right: 4,
     backgroundColor: '#DC2626',
     borderRadius: 10,
-    minWidth: 18,
-    height: 18,
+    minWidth: 20,
+    height: 20,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 4,
@@ -278,57 +279,57 @@ const styles = StyleSheet.create({
   },
   bellBadgeText: {
     color: '#FFFFFF',
-    fontSize: 10,
+    fontSize: 12,
+    lineHeight: 14,
     fontWeight: '700',
   },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
     backgroundColor: 'rgba(255,255,255,0.2)',
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    borderRadius: radius.control,
+    paddingHorizontal: space.lg,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.3)',
-    minHeight: 56,
+    minHeight: 48,
   },
-  searchPlaceholder: { flex: 1, color: 'rgba(255,255,255,0.7)', fontSize: 15 },
-  section: { paddingHorizontal: 24, marginTop: 24 },
-  sectionBottom: { marginBottom: 24 },
-  sectionTitle: { fontSize: 17, fontWeight: '600', color: '#1F2937', marginBottom: 16 },
+  searchPlaceholder: { ...type.body, flex: 1, color: 'rgba(255,255,255,0.75)' },
+  section: { paddingHorizontal: space.lg, marginTop: space.lg },
+  sectionBottom: { marginBottom: space.xl },
+  sectionTitle: { ...type.overline, marginBottom: space.sm, marginLeft: space.xs },
   statsBar: {
-    backgroundColor: '#EFF6FF',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    backgroundColor: color.tint,
+    borderRadius: radius.control,
+    paddingHorizontal: space.lg,
+    paddingVertical: 10,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
   },
   statsBarDark: { backgroundColor: '#161B22', borderWidth: 1, borderColor: '#30363D' },
-  statText: { fontSize: 13, color: '#2A3D66', fontWeight: '500' },
+  statText: { ...type.caption, color: color.primary, fontWeight: '500' },
   statTextDark: { color: '#4A6491' },
   statDivider: { color: '#9CA3AF' },
   emptyState: {
     alignItems: 'center',
-    paddingVertical: 40,
-    gap: 8,
+    paddingVertical: 32,
+    gap: space.sm,
   },
-  emptyTitle: { fontSize: 16, fontWeight: '600', color: '#6B7280' },
-  emptySubtitle: { fontSize: 13, color: '#9CA3AF' },
-  docList: { gap: 12 },
+  emptyTitle: { ...type.heading, color: color.textMuted },
+  emptySubtitle: { ...type.caption, textAlign: 'center' },
+  docList: { gap: space.sm },
   docCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 16,
+    backgroundColor: color.surface,
+    borderRadius: radius.control,
+    paddingVertical: space.md,
+    paddingHorizontal: space.lg,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
-    minHeight: 80,
-    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.06)',
-    elevation: 3,
+    gap: space.md,
+    minHeight: size.row,
+    ...shadow.card,
   },
   docCardDark: {
     backgroundColor: '#161B22',
@@ -336,19 +337,19 @@ const styles = StyleSheet.create({
     borderColor: '#30363D',
   },
   docIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
+    width: 40,
+    height: 40,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  docInfo: { flex: 1 },
-  docTitle: { fontSize: 15, fontWeight: '600', color: '#1F2937', marginBottom: 6 },
+  docInfo: { flex: 1, minWidth: 0 },
+  docTitle: { ...type.label, marginBottom: space.xs },
   docMeta: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
-  categoryBadge: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
-  categoryBadgeText: { fontSize: 10, color: '#FFFFFF', fontWeight: '600' },
-  docOwner: { fontSize: 11, color: '#9CA3AF' },
-  docDot: { fontSize: 11, color: '#9CA3AF' },
-  docDate: { fontSize: 11, color: '#9CA3AF' },
+  categoryBadge: { borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 1 },
+  categoryBadgeText: { ...type.meta, color: '#FFFFFF', fontWeight: '600' },
+  docOwner: type.meta,
+  docDot: type.meta,
+  docDate: type.meta,
   textLight: { color: '#E6EDF3' },
 });

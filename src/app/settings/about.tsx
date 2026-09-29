@@ -10,6 +10,7 @@ import { isProduction, environmentDescription } from '../../lib/environment';
 import { longDate } from '../../lib/dates';
 import { ScreenHeader } from '../../components/screen-header';
 import { Card, screenStyles } from '../../components/settings-ui';
+import { color, space, type } from '../../constants/design';
 
 export default function AboutScreen() {
   const rows: { label: string; value: string }[] = [
@@ -25,7 +26,7 @@ export default function AboutScreen() {
       <ScrollView contentContainerStyle={screenStyles.body}>
         <Card style={styles.hero}>
           <LinearGradient colors={['#2A3D66', '#4A6491']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.logo}>
-            <Feather name="shield" size={34} color="#FFFFFF" />
+            <Feather name="shield" size={26} color="#FFFFFF" />
           </LinearGradient>
           <Text style={styles.name}>FamilyVault</Text>
           <Text style={styles.tagline}>Your family's important papers, safe and easy to find.</Text>
@@ -45,13 +46,13 @@ export default function AboutScreen() {
 }
 
 const styles = StyleSheet.create({
-  hero: { alignItems: 'center', paddingVertical: 24 },
-  logo: { width: 72, height: 72, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  name: { fontSize: 24, fontWeight: '700', color: '#2A3D66' },
-  tagline: { fontSize: 16, lineHeight: 23, color: '#4B5563', textAlign: 'center' },
-  table: { paddingVertical: 4, gap: 0 },
-  row: { paddingVertical: 14, gap: 2 },
-  rowBorder: { borderTopWidth: 1, borderTopColor: '#F3F4F6' },
-  label: { fontSize: 14, fontWeight: '600', color: '#6B7280' },
-  value: { fontSize: 17, fontWeight: '600', color: '#1F2937' },
+  hero: { alignItems: 'center', paddingVertical: space.xl, gap: space.sm },
+  logo: { width: 56, height: 56, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginBottom: space.xs },
+  name: { fontSize: 20, lineHeight: 26, fontWeight: '600', color: color.primary },
+  tagline: { ...type.body, color: color.textMuted, textAlign: 'center' },
+  table: { paddingVertical: space.xs, gap: 0 },
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.md, minHeight: 48, paddingVertical: 10 },
+  rowBorder: { borderTopWidth: 1, borderTopColor: color.divider },
+  label: { ...type.body, color: color.textMuted },
+  value: { ...type.label, flexShrink: 1, textAlign: 'right' },
 });

@@ -15,8 +15,9 @@ import { indexStatus, type IndexStatus } from '../../lib/api';
 import { VOICE_LANGUAGES, voiceLanguage } from '../../lib/voice-languages';
 import { OCR_LANGUAGES, describeOcrLanguages } from '../../lib/ocr-languages';
 import { hasVoiceFor } from '../../lib/speech';
-import { BackButton } from '../../components/back-button';
+import { ScreenHeader } from '../../components/screen-header';
 import { appVersion } from '../../lib/app-info';
+import { color, radius, shadow, size, space, type } from '../../constants/design';
 
 // A row with an arrow opens a screen — every one of them. Rows that opened
 // nothing used to sit here, which tells the person using the app that it is
@@ -37,14 +38,14 @@ function LinkGroup({ title, items }: { title: string; items: LinkItem[] }) {
             accessibilityRole="button"
           >
             <View style={styles.settingIconWrap}>
-              <Feather name={item.icon as any} size={18} color="#2A3D66" />
+              <Feather name={item.icon as any} size={16} color={color.primary} />
             </View>
             <View style={styles.settingText}>
               <Text style={styles.settingLabel}>{item.label}</Text>
               <Text style={styles.settingSub}>{item.sub}</Text>
             </View>
             {!!item.value && <Text style={styles.settingValue}>{item.value}</Text>}
-            <Feather name="chevron-right" size={18} color="#9CA3AF" />
+            <Feather name="chevron-right" size={16} color="#9CA3AF" />
           </TouchableOpacity>
         ))}
       </View>
@@ -186,10 +187,7 @@ export default function SettingsScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={styles.header}>
-        <BackButton />
-        <Text style={styles.title}>Settings</Text>
-      </View>
+      <ScreenHeader title="Settings" />
 
       <ScrollView showsVerticalScrollIndicator={false}>
         {/* Profile Card */}
@@ -220,7 +218,7 @@ export default function SettingsScreen() {
           <View style={styles.groupCard}>
             <View style={styles.settingRow}>
               <View style={styles.settingIconWrap}>
-                <Feather name="mic" size={18} color="#2A3D66" />
+                <Feather name="mic" size={16} color={color.primary} />
               </View>
               <View style={styles.settingText}>
                 <Text style={styles.settingLabel}>Voice assistant</Text>
@@ -240,14 +238,14 @@ export default function SettingsScreen() {
               onPress={() => setLangPickerOpen(true)}
             >
               <View style={styles.settingIconWrap}>
-                <Feather name="globe" size={18} color="#2A3D66" />
+                <Feather name="globe" size={16} color={color.primary} />
               </View>
               <View style={styles.settingText}>
                 <Text style={styles.settingLabel}>Voice language</Text>
                 <Text style={styles.settingSub}>What you speak, and what it speaks back</Text>
               </View>
               <Text style={styles.settingValue}>{voiceLanguage(voiceLang).native}</Text>
-              <Feather name="chevron-right" size={18} color="#9CA3AF" />
+              <Feather name="chevron-right" size={16} color="#9CA3AF" />
             </TouchableOpacity>
           </View>
         </View>
@@ -262,7 +260,7 @@ export default function SettingsScreen() {
               onPress={() => setDocLangPickerOpen(true)}
             >
               <View style={styles.settingIconWrap}>
-                <Feather name="file-text" size={18} color="#2A3D66" />
+                <Feather name="file-text" size={16} color={color.primary} />
               </View>
               <View style={styles.settingText}>
                 <Text style={styles.settingLabel}>Document languages</Text>
@@ -271,7 +269,7 @@ export default function SettingsScreen() {
               <Text style={styles.settingValue} numberOfLines={1}>
                 {describeOcrLanguages(documentLanguages)}
               </Text>
-              <Feather name="chevron-right" size={18} color="#9CA3AF" />
+              <Feather name="chevron-right" size={16} color="#9CA3AF" />
             </TouchableOpacity>
           </View>
         </View>
@@ -287,7 +285,7 @@ export default function SettingsScreen() {
               onPress={rebuildIndex}
             >
               <View style={styles.settingIconWrap}>
-                <Feather name="refresh-cw" size={18} color="#2A3D66" />
+                <Feather name="refresh-cw" size={16} color={color.primary} />
               </View>
               <View style={styles.settingText}>
                 <Text style={styles.settingLabel}>Search index</Text>
@@ -311,7 +309,7 @@ export default function SettingsScreen() {
             onPress={handleSignOut}
             activeOpacity={0.8}
           >
-            <Feather name="log-out" size={18} color="#DC2626" />
+            <Feather name="log-out" size={16} color={color.danger} />
             <Text style={styles.signOutText}>Sign Out</Text>
           </TouchableOpacity>
         </View>
@@ -343,7 +341,7 @@ export default function SettingsScreen() {
                         {l.english}{unavailable ? ' · No voice on this phone' : ''}
                       </Text>
                     </View>
-                    {selected && <Feather name="check" size={20} color="#2A3D66" />}
+                    {selected && <Feather name="check" size={18} color={color.primary} />}
                   </TouchableOpacity>
                 );
               })}
@@ -384,8 +382,8 @@ export default function SettingsScreen() {
                     </View>
                     <Feather
                       name={selected ? 'check-square' : 'square'}
-                      size={20}
-                      color={selected ? '#2A3D66' : '#D1D5DB'}
+                      size={18}
+                      color={selected ? color.primary : '#D1D5DB'}
                     />
                   </TouchableOpacity>
                 );
@@ -399,125 +397,107 @@ export default function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F8F9FC' },
-  header: {
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 24,
-    paddingTop: 8,
-    paddingBottom: 16,
-    gap: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  title: { fontSize: 22, fontWeight: '700', color: '#2A3D66' },
+  safe: { flex: 1, backgroundColor: color.background },
   profileCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
-    margin: 20,
-    padding: 20,
-    borderRadius: 24,
-    boxShadow: '0px 4px 12px rgba(42, 61, 102, 0.3)',
-    elevation: 6,
+    gap: space.md,
+    margin: space.lg,
+    padding: space.lg,
+    borderRadius: radius.card,
+    boxShadow: '0px 2px 8px rgba(42, 61, 102, 0.2)',
+    elevation: 3,
   },
   avatarWrap: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: 'rgba(255,255,255,0.2)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarInitial: { fontSize: 26, fontWeight: '700', color: '#FFFFFF' },
-  profileInfo: { flex: 1 },
-  profileName: { fontSize: 18, fontWeight: '700', color: '#FFFFFF' },
-  profileEmail: { fontSize: 13, color: 'rgba(255,255,255,0.75)', marginTop: 2 },
+  avatarInitial: { fontSize: 20, fontWeight: '600', color: '#FFFFFF' },
+  profileInfo: { flex: 1, minWidth: 0 },
+  profileName: { ...type.heading, color: '#FFFFFF' },
+  profileEmail: { ...type.caption, color: 'rgba(255,255,255,0.8)' },
   adminBadge: {
     backgroundColor: 'rgba(255,255,255,0.2)',
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 3,
+    borderRadius: radius.pill,
+    paddingHorizontal: space.sm,
+    paddingVertical: 2,
     alignSelf: 'flex-start',
-    marginTop: 6,
+    marginTop: space.xs,
   },
-  adminBadgeText: { fontSize: 11, color: '#FFFFFF', fontWeight: '500' },
-  group: { paddingHorizontal: 20, marginBottom: 20 },
-  groupTitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#9CA3AF',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginBottom: 8,
-  },
+  adminBadgeText: { fontSize: 12, color: '#FFFFFF', fontWeight: '500', textTransform: 'capitalize' },
+  group: { paddingHorizontal: space.lg, marginBottom: space.lg },
+  groupTitle: { ...type.overline, marginBottom: space.sm, marginLeft: space.xs },
   groupCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.06)',
-    elevation: 3,
+    backgroundColor: color.surface,
+    borderRadius: radius.card,
+    ...shadow.card,
   },
   settingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    minHeight: 64,
+    gap: space.md,
+    paddingHorizontal: space.lg,
+    paddingVertical: 10,
+    minHeight: size.row,
   },
   settingRowBorder: {
     borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
+    borderTopColor: color.divider,
   },
   settingIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: '#EFF6FF',
+    width: size.iconBox,
+    height: size.iconBox,
+    borderRadius: 8,
+    backgroundColor: color.tint,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  settingText: { flex: 1 },
-  settingLabel: { fontSize: 15, fontWeight: '500', color: '#1F2937' },
-  settingSub: { fontSize: 12, color: '#9CA3AF', marginTop: 1 },
-  settingValue: { fontSize: 15, color: '#4B5563', maxWidth: 140 },
-  settingAction: { fontSize: 15, fontWeight: '600', color: '#2A3D66' },
+  settingText: { flex: 1, minWidth: 0 },
+  settingLabel: type.label,
+  settingSub: type.caption,
+  settingValue: { ...type.caption, maxWidth: 120 },
+  settingAction: { ...type.button, color: color.primary },
   sheetBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(13, 17, 23, 0.45)',
     justifyContent: 'flex-end',
   },
   sheet: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingTop: 20,
-    paddingBottom: 32,
+    backgroundColor: color.surface,
+    borderTopLeftRadius: radius.card,
+    borderTopRightRadius: radius.card,
+    paddingTop: space.lg,
+    paddingBottom: space.xl,
     maxHeight: '75%',
   },
-  sheetTitle: { fontSize: 17, fontWeight: '700', color: '#2A3D66', paddingHorizontal: 20, marginBottom: 8 },
-  sheetNote: { fontSize: 12, color: '#6B7280', paddingHorizontal: 20, marginBottom: 12, lineHeight: 17 },
-  sheetList: { paddingHorizontal: 4 },
+  sheetTitle: { ...type.title, paddingHorizontal: space.lg, marginBottom: space.sm },
+  sheetNote: { ...type.caption, paddingHorizontal: space.lg, marginBottom: space.md },
+  sheetList: { paddingHorizontal: 0 },
   langRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    minHeight: 60,
+    gap: space.md,
+    paddingHorizontal: space.lg,
+    paddingVertical: 10,
+    minHeight: size.row,
   },
-  langNative: { fontSize: 18, color: '#1F2937' },
-  langSelected: { color: '#2A3D66', fontWeight: '700' },
-  signOutSection: { paddingHorizontal: 20, paddingBottom: 32 },
+  langNative: type.label,
+  langSelected: { color: color.primary, fontWeight: '600' },
+  signOutSection: { paddingHorizontal: space.lg, paddingBottom: space.xl },
   signOutBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: space.sm,
     backgroundColor: '#FEF2F2',
-    borderRadius: 16,
-    paddingVertical: 16,
+    borderRadius: radius.control,
+    minHeight: size.control,
     borderWidth: 1,
     borderColor: '#FECACA',
   },
-  signOutText: { fontSize: 15, fontWeight: '600', color: '#DC2626' },
+  signOutText: { ...type.button, color: color.danger },
 });

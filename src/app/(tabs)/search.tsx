@@ -19,7 +19,8 @@ import {
   recognitionSupported, listen, stopListening, speak, stopSpeaking, type SpeechErrorCode,
 } from '../../lib/speech';
 import { toSpeech } from '../../lib/speech-text';
-import { BackButton } from '../../components/back-button';
+import { ScreenHeader, HeaderIconButton } from '../../components/screen-header';
+import { color, space, type } from '../../constants/design';
 
 type DocumentCategory = Database['public']['Tables']['document_categories']['Row'];
 
@@ -260,25 +261,14 @@ export default function SearchScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={0}
       >
-        {/* Header */}
-        <View style={styles.header}>
-          {/* Back leaves Ask, as on every screen but Home; + starts a new
-              question, which is what the old arrow here used to do. */}
-          <BackButton />
-          <View style={styles.headerRow}>
-            <Text style={styles.title}>Ask FamilyVault</Text>
-            {hasMessages && (
-              <TouchableOpacity
-                onPress={() => { stopVoice(); setMessages([]); }}
-                style={styles.newChatBtn}
-                accessibilityRole="button"
-                accessibilityLabel="New question"
-              >
-                <Feather name="plus" size={18} color="#2A3D66" />
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
+        {/* Back leaves Ask, as on every screen but Home; + starts a new
+            question, which is what the old arrow here used to do. */}
+        <ScreenHeader
+          title="Ask FamilyVault"
+          right={hasMessages
+            ? <HeaderIconButton icon="plus" label="New question" onPress={() => { stopVoice(); setMessages([]); }} />
+            : undefined}
+        />
 
         {/* Chat Area */}
         <ScrollView
@@ -534,58 +524,36 @@ export default function SearchScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F8F9FC' },
+  safe: { flex: 1, backgroundColor: color.background },
   flex: { flex: 1 },
-  header: {
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 12,
-    gap: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  title: { flex: 1, fontSize: 20, fontWeight: '700', color: '#2A3D66' },
-  newChatBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#EFF6FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   chatArea: { flex: 1 },
   emptyContainer: { flexGrow: 1, justifyContent: 'center' },
-  chatContent: { padding: 16, paddingBottom: 8 },
+  chatContent: { padding: space.lg, paddingBottom: space.sm },
   // ─── Empty State ──────────────────────────────────────
   emptyWrapper: { flexGrow: 1, justifyContent: 'space-between' },
-  emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
-  categoriesSection: { paddingHorizontal: 20, paddingBottom: 16 },
+  emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: space.xl },
+  categoriesSection: { paddingHorizontal: space.lg, paddingBottom: space.lg },
   emptyIcon: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 20,
+    marginBottom: space.lg,
   },
-  emptyTitle: { fontSize: 18, fontWeight: '700', color: '#1F2937', textAlign: 'center', marginBottom: 8 },
-  emptySub: { fontSize: 14, color: '#6B7280', textAlign: 'center', lineHeight: 20, maxWidth: 300 },
-  categoriesWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center' },
+  emptyTitle: { ...type.title, color: color.text, textAlign: 'center', marginBottom: space.xs },
+  emptySub: { ...type.caption, textAlign: 'center', maxWidth: 300 },
+  categoriesWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, justifyContent: 'center' },
   categoryChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    backgroundColor: '#FFFFFF',
+    minHeight: 32,
+    justifyContent: 'center',
+    paddingHorizontal: space.md,
+    backgroundColor: color.surface,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: color.border,
     borderRadius: 999,
   },
-  categoryChipText: { fontSize: 12, color: '#374151' },
+  categoryChipText: { fontSize: 13, lineHeight: 18, color: color.textBody },
   // ─── Chat Messages ────────────────────────────────────
   messageBubble: {
     flexDirection: 'row',
@@ -618,14 +586,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E5E7EB',
   },
-  messageText: {
-    fontSize: 15,
-    color: '#1F2937',
-    lineHeight: 22,
-  },
+  messageText: { ...type.body, color: color.text },
   userText: { color: '#FFFFFF' },
   typingRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  typingText: { fontSize: 13, color: '#6B7280' },
+  typingText: type.caption,
   sourcesWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -644,8 +608,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
   },
-  sourceText: { fontSize: 11, color: '#2A3D66', fontWeight: '500', maxWidth: 150 },
-  searchedFor: { fontSize: 11, color: '#9CA3AF', marginTop: 8, fontStyle: 'italic', lineHeight: 15 },
+  sourceText: { fontSize: 12, lineHeight: 16, color: color.primary, fontWeight: '500', maxWidth: 160 },
+  searchedFor: { fontSize: 12, lineHeight: 16, color: '#9CA3AF', marginTop: space.sm, fontStyle: 'italic' },
   indexStrip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -656,7 +620,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#DBE7FB',
   },
-  indexStripText: { flex: 1, fontSize: 12, color: '#2A3D66' },
+  indexStripText: { flex: 1, fontSize: 13, lineHeight: 18, color: color.primary },
   indexStripError: { backgroundColor: '#FFF7E6', borderTopColor: '#F5D9A0' },
   indexStripErrorText: { color: '#7A5200' },
   // ─── Input Bar ────────────────────────────────────────
@@ -664,20 +628,20 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: '#E5E7EB',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: space.lg,
+    paddingVertical: 10,
   },
   inputBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8F9FC',
-    borderRadius: 24,
+    backgroundColor: color.background,
+    borderRadius: 22,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: color.border,
     paddingLeft: 14,
-    paddingRight: 6,
-    gap: 8,
-    minHeight: 48,
+    paddingRight: 4,
+    gap: space.sm,
+    minHeight: 44,
   },
   inputIcon: { marginLeft: 2 },
   input: {

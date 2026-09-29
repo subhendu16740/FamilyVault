@@ -13,6 +13,7 @@ import { ScreenHeader } from '../../components/screen-header';
 import {
   Card, CardTitle, Body, Muted, Field, PrimaryButton, SecondaryButton, DangerButton, Status, screenStyles,
 } from '../../components/settings-ui';
+import { space, type } from '../../constants/design';
 
 const PROVIDER_NAMES: Record<string, string> = { email: 'Email and password', google: 'Google' };
 
@@ -70,7 +71,7 @@ export default function SecurityScreen() {
           {providers.length === 0 && <Body>{user?.email}</Body>}
           {providers.map((p) => (
             <View key={p} style={styles.line}>
-              <Feather name="check-circle" size={18} color="#166534" />
+              <Feather name="check-circle" size={16} color="#166534" />
               <Text style={styles.lineText}>{PROVIDER_NAMES[p] ?? p}</Text>
             </View>
           ))}
@@ -126,6 +127,6 @@ export default function SecurityScreen() {
 }
 
 const styles = StyleSheet.create({
-  line: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  lineText: { fontSize: 16, fontWeight: '600', color: '#1F2937' },
+  line: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  lineText: type.label,
 });

@@ -28,7 +28,8 @@ import {
   gmailStartConnect, gmailStatus, GmailApiError, type GmailImportResult, type GmailItem, type GmailStatus,
 } from '../lib/api';
 import type { Database } from '../lib/database.types';
-import { BackButton } from '../components/back-button';
+import { ScreenHeader, PlusTag } from '../components/screen-header';
+import { color, radius, shadow, size, space, type } from '../constants/design';
 
 type DocumentCategory = Database['public']['Tables']['document_categories']['Row'];
 type Notice = { tone: 'error' | 'info' | 'success'; text: string };
@@ -411,10 +412,9 @@ export default function GmailImportScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={styles.header}>
-        <BackButton fallback="/upload" />
-        <Text style={styles.title}>Import from Gmail</Text>
-      </View>
+      {/* ★: part of Family Plus, the paid plan. It works for everyone until
+          the plan exists, and says so. */}
+      <ScreenHeader title="Import from Gmail" fallback="/upload" right={<PlusTag />} />
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
         {notice && (
@@ -432,7 +432,7 @@ export default function GmailImportScreen() {
         )}
 
         {loading ? (
-          <ActivityIndicator style={{ marginTop: 48 }} size="large" color="#2A3D66" />
+          <ActivityIndicator style={{ marginTop: 48 }} color={color.primary} />
         ) : unavailable ? (
           <View style={styles.card}>
             <Feather name="tool" size={28} color="#9CA3AF" />
@@ -463,6 +463,12 @@ export default function GmailImportScreen() {
                   </View>
                 ))}
               </View>
+            )}
+            {!status?.expired && (
+              <Text style={styles.plusNote}>
+                <Text style={styles.plusNoteTag}>★ Family Plus</Text>
+                {'  '}Part of the paid plan, coming soon. Free for everyone until then.
+              </Text>
             )}
             <TouchableOpacity onPress={connect} disabled={connecting} activeOpacity={0.85} style={styles.fullWidth}>
               <LinearGradient colors={['#2A3D66', '#4A6491']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.primaryBtn}>
@@ -641,134 +647,126 @@ export default function GmailImportScreen() {
 // ─── Styles ───────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F8F9FC' },
-  header: {
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 24,
-    paddingTop: 8,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-    gap: 8,
-  },
-  title: { fontSize: 22, fontWeight: '700', color: '#2A3D66' },
+  safe: { flex: 1, backgroundColor: color.background },
   scroll: { flex: 1 },
-  body: { padding: 24, paddingBottom: 140 },
+  body: { padding: space.lg, paddingBottom: 140 },
   notice: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 8,
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 16,
+    gap: space.sm,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: space.md,
+    marginBottom: space.lg,
     borderWidth: 1,
   },
   notice_error: { backgroundColor: '#FEF2F2', borderColor: '#FECACA' },
   notice_success: { backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' },
-  notice_info: { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' },
-  noticeText: { flex: 1, fontSize: 13, color: '#1F2937', lineHeight: 18 },
+  notice_info: { backgroundColor: color.tint, borderColor: '#BFDBFE' },
+  noticeText: { flex: 1, fontSize: 14, lineHeight: 20, color: color.text },
   card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 24,
+    backgroundColor: color.surface,
+    borderRadius: radius.card,
+    padding: space.xl,
     alignItems: 'center',
-    gap: 12,
-    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.06)',
-    elevation: 2,
+    gap: space.md,
+    ...shadow.card,
   },
   heroIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: '#EEF2FA',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  cardTitle: { fontSize: 18, fontWeight: '700', color: '#1F2937', textAlign: 'center' },
-  cardText: { fontSize: 14, color: '#4B5563', textAlign: 'center', lineHeight: 20 },
-  promises: { alignSelf: 'stretch', gap: 8, marginVertical: 4 },
-  promiseRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  promiseText: { flex: 1, fontSize: 13, color: '#374151' },
+  cardTitle: { ...type.heading, textAlign: 'center' },
+  cardText: { ...type.body, color: '#4B5563', textAlign: 'center' },
+  promises: { alignSelf: 'stretch', gap: space.sm, marginVertical: space.xs },
+  promiseRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  promiseText: { ...type.caption, flex: 1, color: color.textBody },
+  plusNote: { ...type.caption, color: color.textBody, textAlign: 'center' },
+  plusNoteTag: { fontWeight: '600', color: color.accent },
   fullWidth: { alignSelf: 'stretch' },
   primaryBtn: {
-    borderRadius: 20,
+    borderRadius: radius.control,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 56,
-    paddingHorizontal: 16,
+    minHeight: size.control,
+    paddingHorizontal: space.lg,
   },
-  primaryBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
-  fineprint: { fontSize: 11, color: '#9CA3AF', textAlign: 'center', lineHeight: 15 },
+  primaryBtnText: { ...type.button, color: '#FFFFFF' },
+  fineprint: { ...type.meta, textAlign: 'center' },
   accountRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 14,
+    backgroundColor: color.surface,
+    borderRadius: radius.control,
+    paddingVertical: 10,
+    paddingHorizontal: space.md,
+    minHeight: size.row,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    marginBottom: 12,
+    borderColor: color.border,
+    marginBottom: space.md,
   },
-  accountText: { flex: 1, fontSize: 14, fontWeight: '500', color: '#1F2937' },
-  linkText: { fontSize: 13, fontWeight: '600', color: '#2A3D66' },
+  accountText: { ...type.label, flex: 1 },
+  linkText: { ...type.caption, fontWeight: '600', color: color.primary },
   scanCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    gap: 12,
-    marginBottom: 24,
-    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.06)',
-    elevation: 2,
+    backgroundColor: color.surface,
+    borderRadius: radius.card,
+    padding: space.lg,
+    gap: space.md,
+    marginBottom: space.xl,
+    ...shadow.card,
   },
   scanRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  scanText: { flex: 1, fontSize: 14, color: '#374151', lineHeight: 20 },
+  scanText: { ...type.body, flex: 1 },
   scanBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    borderRadius: 14,
-    minHeight: 48,
+    gap: space.sm,
+    borderRadius: radius.control,
+    minHeight: size.control,
   },
-  scanBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '600' },
-  sectionTitle: { fontSize: 16, fontWeight: '600', color: '#1F2937', marginBottom: 12 },
-  chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 24 },
+  scanBtnText: { ...type.button, color: '#FFFFFF' },
+  sectionTitle: { ...type.heading, marginBottom: space.md },
+  chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, marginBottom: space.xl },
   chip: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 999,
-    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 14,
+    borderRadius: radius.pill,
+    backgroundColor: color.surface,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    minHeight: 44,
+    borderColor: color.inputBorder,
+    minHeight: 40,
     justifyContent: 'center',
   },
-  chipSelected: { backgroundColor: '#2A3D66', borderColor: '#2A3D66' },
-  chipText: { fontSize: 13, fontWeight: '500', color: '#374151' },
+  chipSelected: { backgroundColor: color.primary, borderColor: color.primary },
+  chipText: { fontSize: 14, lineHeight: 20, fontWeight: '500', color: color.textBody },
   chipTextSelected: { color: '#FFFFFF' },
-  group: { marginBottom: 24 },
+  group: { marginBottom: space.xl },
   groupHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  groupTitle: { fontSize: 16, fontWeight: '700', color: '#2A3D66' },
-  groupHint: { fontSize: 12, color: '#6B7280', marginTop: 2, marginBottom: 10 },
+  groupTitle: { ...type.heading, color: color.primary },
+  groupHint: { ...type.caption, marginTop: 2, marginBottom: 10 },
   itemRow: {
     flexDirection: 'row',
-    gap: 12,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 12,
+    gap: space.md,
+    backgroundColor: color.surface,
+    borderRadius: radius.control,
+    padding: space.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    marginBottom: 8,
+    borderColor: color.border,
+    marginBottom: space.sm,
   },
   checkbox: { paddingTop: 2, width: 24, alignItems: 'center' },
-  itemBody: { flex: 1, gap: 3 },
+  itemBody: { flex: 1, minWidth: 0, gap: 3 },
   itemTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  itemName: { flex: 1, fontSize: 14, fontWeight: '600', color: '#1F2937' },
-  itemMeta: { fontSize: 12, color: '#6B7280' },
-  itemSubject: { fontSize: 12, color: '#9CA3AF' },
-  itemFooter: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
-  itemReason: { flex: 1, fontSize: 11, color: '#6B7280', fontStyle: 'italic' },
+  itemName: { ...type.label, flex: 1 },
+  itemMeta: { ...type.meta, color: color.textMuted },
+  itemSubject: type.meta,
+  itemFooter: { flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: space.xs },
+  itemReason: { ...type.meta, flex: 1, color: color.textMuted, fontStyle: 'italic' },
   categoryChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -776,65 +774,65 @@ const styles = StyleSheet.create({
     maxWidth: 170,
     paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: 999,
+    borderRadius: radius.pill,
     backgroundColor: '#EEF2FA',
   },
-  categoryChipText: { fontSize: 12, fontWeight: '500', color: '#2A3D66', flexShrink: 1 },
-  itemDoneRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 4 },
-  itemDoneText: { flex: 1, fontSize: 12, color: '#15803D' },
-  itemError: { fontSize: 12, color: '#B91C1C', marginTop: 4 },
+  categoryChipText: { ...type.meta, fontWeight: '500', color: color.primary, flexShrink: 1 },
+  itemDoneRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, marginTop: space.xs },
+  itemDoneText: { ...type.meta, flex: 1, color: '#15803D' },
+  itemError: { ...type.meta, color: '#B91C1C', marginTop: space.xs },
   footer: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
-    padding: 16,
-    paddingBottom: 24,
-    backgroundColor: '#FFFFFF',
+    padding: space.lg,
+    paddingBottom: space.xl,
+    backgroundColor: color.surface,
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
+    borderTopColor: color.border,
     gap: 6,
   },
-  footerHint: { fontSize: 12, color: '#6B7280', textAlign: 'center' },
+  footerHint: { ...type.meta, color: color.textMuted, textAlign: 'center' },
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 24,
+    padding: space.xl,
   },
   dialog: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 24,
+    backgroundColor: color.surface,
+    borderRadius: radius.card,
+    padding: space.xl,
     width: '100%',
     maxWidth: 360,
     alignItems: 'center',
   },
-  dialogTitle: { fontSize: 18, fontWeight: '700', color: '#1F2937', marginBottom: 12 },
-  dialogMsg: { fontSize: 14, color: '#6B7280', textAlign: 'center', marginBottom: 20, lineHeight: 20 },
-  dialogBtns: { flexDirection: 'row', gap: 12, width: '100%' },
+  dialogTitle: { ...type.title, color: color.text, marginBottom: space.sm },
+  dialogMsg: { ...type.body, color: color.textMuted, textAlign: 'center', marginBottom: space.xl },
+  dialogBtns: { flexDirection: 'row', gap: space.md, width: '100%' },
   dialogBtnOutline: {
     flex: 1,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: '#2A3D66',
+    borderRadius: radius.control,
+    borderWidth: 1,
+    borderColor: color.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 14,
+    minHeight: size.control,
   },
-  dialogBtnOutlineText: { fontSize: 15, fontWeight: '600', color: '#2A3D66' },
+  dialogBtnOutlineText: { ...type.button, color: color.primary },
   dialogBtnFilled: {
     flex: 1,
-    borderRadius: 14,
+    borderRadius: radius.control,
     backgroundColor: '#B91C1C',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 14,
+    minHeight: size.control,
   },
-  dialogBtnFilledText: { fontSize: 15, fontWeight: '600', color: '#FFFFFF' },
-  pickerRow: { paddingVertical: 12, paddingHorizontal: 4, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  pickerText: { fontSize: 15, color: '#1F2937' },
+  dialogBtnFilledText: { ...type.button, color: '#FFFFFF' },
+  pickerRow: { minHeight: size.control, justifyContent: 'center', paddingHorizontal: space.xs, borderBottomWidth: 1, borderBottomColor: color.divider },
+  pickerText: type.body,
 });
 
 const noticeTone = { error: styles.notice_error, success: styles.notice_success, info: styles.notice_info };
