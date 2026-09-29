@@ -18,7 +18,7 @@ import {
 import { usePreferences } from '../../lib/preferences';
 import { describeOcrLanguages } from '../../lib/ocr-languages';
 import type { Database } from '../../lib/database.types';
-import { ScreenHeader } from '../../components/screen-header';
+import { ScreenHeader, PlusTag } from '../../components/screen-header';
 import { color, radius, shadow, size, space, type } from '../../constants/design';
 
 type DocumentCategory = Database['public']['Tables']['document_categories']['Row'];
@@ -246,17 +246,38 @@ export default function UploadScreen() {
               </TouchableOpacity>
             </View>
 
-            <View style={styles.secondaryActions}>
-              <TouchableOpacity style={styles.secondaryBtn} onPress={pickFromGallery}>
-                <Feather name="image" size={18} color={color.primary} />
-                <Text style={styles.secondaryBtnText}>Gallery</Text>
+            {/* Rows, like the drawer's, so a ★ Family Plus tag has room to sit
+                beside its label. */}
+            <View style={styles.moreSources}>
+              <TouchableOpacity
+                style={styles.sourceRow}
+                onPress={pickFromGallery}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+              >
+                <View style={styles.sourceIcon}>
+                  <Feather name="image" size={16} color={color.primary} />
+                </View>
+                <Text style={styles.sourceLabel}>Gallery</Text>
+                <Feather name="chevron-right" size={16} color="#9CA3AF" />
               </TouchableOpacity>
               {/* Web only: connecting Gmail from the phone app needs a native
-                  auth session, not built yet (see gmail-import.tsx). */}
+                  auth session, not built yet (see gmail-import.tsx).
+                  ★: part of Family Plus, the paid plan. It works for everyone
+                  until the plan exists. */}
               {Platform.OS === 'web' && (
-                <TouchableOpacity style={styles.secondaryBtn} onPress={() => router.push('/gmail-import' as any)}>
-                  <Feather name="mail" size={18} color={color.primary} />
-                  <Text style={styles.secondaryBtnText}>From Gmail</Text>
+                <TouchableOpacity
+                  style={[styles.sourceRow, styles.sourceRowBorder]}
+                  onPress={() => router.push('/gmail-import' as any)}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel="From Gmail, part of Family Plus"
+                >
+                  <View style={styles.sourceIcon}>
+                    <Feather name="mail" size={16} color={color.primary} />
+                  </View>
+                  <Text style={styles.sourceLabel}>From Gmail</Text>
+                  <PlusTag />
                 </TouchableOpacity>
               )}
             </View>
@@ -511,22 +532,29 @@ const styles = StyleSheet.create({
     backgroundColor: color.surface,
   },
   primaryBtnOutlineText: { ...type.button, color: color.primary },
-  secondaryActions: { flexDirection: 'row', gap: space.md, marginBottom: space.md },
-  secondaryBtn: {
-    flex: 1,
-    flexDirection: 'row',
+  moreSources: {
     backgroundColor: color.surface,
-    borderWidth: 1,
-    borderColor: color.border,
-    borderRadius: radius.control,
-    paddingHorizontal: space.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: space.sm,
-    minHeight: 48,
+    borderRadius: radius.card,
+    marginBottom: space.md,
     ...shadow.card,
   },
-  secondaryBtnText: type.label,
+  sourceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    minHeight: size.row,
+    paddingHorizontal: space.lg,
+  },
+  sourceRowBorder: { borderTopWidth: 1, borderTopColor: color.divider },
+  sourceIcon: {
+    width: size.iconBox,
+    height: size.iconBox,
+    borderRadius: 8,
+    backgroundColor: color.tint,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sourceLabel: { ...type.label, flex: 1 },
   hintCard: {
     flexDirection: 'row',
     alignItems: 'center',

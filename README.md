@@ -20,7 +20,7 @@ FamilyVault brings all your family's important documents into one secure, shared
 - **Document Viewer** — View document details with metadata, category, and owner info
 - **Search Interface** — Category-based browsing and keyword search across documents
 - **Upload Flow** — Multi-step upload with source selection, metadata tagging, and owner assignment
-- **Import from Gmail** (web) — Connect your own Gmail; FamilyVault lists the attachments that look like documents, and imports the ones you tick. Only you see what it finds; disconnecting makes it forget
+- **Import from Gmail** ★ (web) — Connect your own Gmail; FamilyVault lists the attachments that look like documents, and imports the ones you tick. Only you see what it finds; disconnecting makes it forget
 - **Menu Drawer** — Slides in from the left from the name button on Home: Home, Manage Family, Reminders ★ and Settings, with Sign Out
 - **Reminders** ★ — Every document with an expiry date, soonest first. ★ Family Plus marks what the coming paid plan will add (reminders 90, 30 and 7 days ahead)
 - **Settings** — Profile (name and phone), Security (password, sign out everywhere), Notifications on/off, Storage (space used by you and each family), Privacy, Help & FAQ with feedback, and About (version and release date)

@@ -373,7 +373,7 @@ src/
       profile.tsx  security.tsx  notifications.tsx  privacy.tsx
       storage.tsx  help.tsx  feedback.tsx  about.tsx
     document/[id].tsx        # document viewer
-    gmail-import.tsx         # connect Gmail, review what it found, import (web only)
+    gmail-import.tsx         # connect Gmail, review what it found, import (web only, ★ Family Plus)
     +html.tsx                # custom HTML shell, web only
     (tabs)/
       _layout.tsx            # custom tab bar (CustomTabBar)
@@ -970,7 +970,10 @@ rule again once pinned chunks are mixed in.
   menu button with no menu. Add the control when its screen exists.
 - **★ Family Plus marks what the paid plan will include** (`<PlusTag />`).
   The plan does not exist yet, so nothing is locked behind it: a starred
-  feature works for everyone and says the paid version is coming.
+  feature works for everyone and says the paid version is coming. Today that
+  is Reminders (in the drawer) and Import from Gmail (on Upload): each shows
+  the tag where you find it and in its screen's top bar, and Help's FAQ
+  names both.
 - **Never give a web panel `flex` for its width.** On react-native-web
   `flex: 1` fills the row and `flex: 0` collapses it, whatever `width` says.
   The old profile drawer filled the whole page that way, which is why it

@@ -28,7 +28,7 @@ import {
   gmailStartConnect, gmailStatus, GmailApiError, type GmailImportResult, type GmailItem, type GmailStatus,
 } from '../lib/api';
 import type { Database } from '../lib/database.types';
-import { ScreenHeader } from '../components/screen-header';
+import { ScreenHeader, PlusTag } from '../components/screen-header';
 import { color, radius, shadow, size, space, type } from '../constants/design';
 
 type DocumentCategory = Database['public']['Tables']['document_categories']['Row'];
@@ -412,7 +412,9 @@ export default function GmailImportScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScreenHeader title="Import from Gmail" fallback="/upload" />
+      {/* ★: part of Family Plus, the paid plan. It works for everyone until
+          the plan exists, and says so. */}
+      <ScreenHeader title="Import from Gmail" fallback="/upload" right={<PlusTag />} />
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
         {notice && (
@@ -461,6 +463,12 @@ export default function GmailImportScreen() {
                   </View>
                 ))}
               </View>
+            )}
+            {!status?.expired && (
+              <Text style={styles.plusNote}>
+                <Text style={styles.plusNoteTag}>★ Family Plus</Text>
+                {'  '}Part of the paid plan, coming soon. Free for everyone until then.
+              </Text>
             )}
             <TouchableOpacity onPress={connect} disabled={connecting} activeOpacity={0.85} style={styles.fullWidth}>
               <LinearGradient colors={['#2A3D66', '#4A6491']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.primaryBtn}>
@@ -677,6 +685,8 @@ const styles = StyleSheet.create({
   promises: { alignSelf: 'stretch', gap: space.sm, marginVertical: space.xs },
   promiseRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   promiseText: { ...type.caption, flex: 1, color: color.textBody },
+  plusNote: { ...type.caption, color: color.textBody, textAlign: 'center' },
+  plusNoteTag: { fontWeight: '600', color: color.accent },
   fullWidth: { alignSelf: 'stretch' },
   primaryBtn: {
     borderRadius: radius.control,

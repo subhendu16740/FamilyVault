@@ -34,7 +34,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'What does ★ Family Plus mean?',
-    a: 'Family Plus is the paid plan, coming soon. Things marked with ★, like reminders before a document runs out, will be part of it.',
+    a: 'Family Plus is the paid plan, coming soon. Things marked with ★, like reminders before a document runs out and bringing documents in from Gmail, will be part of it. Until then they work for everyone.',
   },
   {
     q: 'Why can\'t FamilyVault find something that is in a document?',
