@@ -412,6 +412,7 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `drawer-context.tsx` | Profile drawer open/close state |
 | `api.ts` | **All** Supabase queries — documents, search, upload, RAG, notifications, adding and leaving families, Gmail import, and the Settings screens (profile, password, storage use, expiry dates, feedback) |
 | `dates.ts` | `parseDocumentDate()`: expiry dates exactly as ingest stores them (DD/MM/YYYY and kin, YYYY-MM-DD, "19 October 2026") |
+| `file-types.ts` | What a picked file is (`detectFileType()`: MIME type, then name, never a web `blob:` uri) and whether the vault can keep it (PDF, JPG, PNG) |
 | `app-info.ts` | Version, release date and commit (stamped into `extra` by `app.config.ts` at build time), and the support contact Help shows |
 | `ocr.ts` | Platform-split OCR with progress callback; reads the person's chosen languages |
 | `ocr-languages.ts` | The document-language picker list, and `resolveOcrLanguages()` which always appends English |
@@ -450,6 +451,16 @@ Plus 8 `Platform.OS === 'web'` branches across `src/`. The important ones:
   Devanagari and the rest are separate ML Kit artifacts needing a native
   build — so the upload screen warns via `ocrLanguageGapOnThisDevice()`
   rather than silently returning garbage.
+- **Pickers return different uris.** On native a picked file's uri ends in a
+  real file name (`…/ImagePicker/abc.jpeg`); on the web it is
+  `blob:https://host/<id>`, with no name in it at all. Upload used to take
+  the text after the uri's last "." as the file type, so every Gallery and
+  Scan photo on the web became `app/<id>`: OCR was skipped, the preview said
+  PDF, and the database refused the row (`file_type` is 20 characters) after
+  the file was already in Storage. A file's type comes from its MIME type or
+  name, through `detectFileType()` in `src/lib/file-types.ts`, never from a
+  uri; `uploadDocument` refuses anything the `documents` bucket would, before
+  uploading, and removes the stored file if the row is refused.
 - **`src/lib/supabase.ts`** only `require`s AsyncStorage on native; importing
   it unconditionally breaks the web build with "window is not defined".
   `src/lib/storage.ts` follows the same pattern.

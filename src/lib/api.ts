@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { parseDocumentDate } from './dates';
+import { isSaveable, mimeTypeFor, unsupportedFileMessage } from './file-types';
 import type {
   FamilyWithMembership,
   FamilyMemberWithUser,
@@ -594,9 +595,13 @@ export async function uploadDocument(params: UploadDocumentParams): Promise<stri
     fileType, fileBlob, fileSizeBytes, categoryId, belongsToMemberId, ocrText,
   } = params;
 
+  // Refused before anything is stored. The bucket takes only these types, and
+  // a type the database cannot hold used to fail AFTER the file was uploaded.
+  if (!isSaveable(fileType)) throw new Error(unsupportedFileMessage(fileType));
+
   // 1. Upload to Supabase Storage
   const storagePath = `${storageNamespace}/${Date.now()}_${fileName}`;
-  const mimeType = fileType === 'pdf' ? 'application/pdf' : `image/${fileType}`;
+  const mimeType = mimeTypeFor(fileType);
 
   const { error: storageErr } = await supabase.storage
     .from('documents')
@@ -616,7 +621,12 @@ export async function uploadDocument(params: UploadDocumentParams): Promise<stri
     p_belongs_to_member: belongsToMemberId ?? undefined,
   });
 
-  if (insertErr) throw new Error(`Document insert failed: ${insertErr.message}`);
+  if (insertErr) {
+    // The file is in Storage already. With no document pointing at it, nobody
+    // would ever see it, count it or delete it, so take it back out.
+    await supabase.storage.from('documents').remove([storagePath]).catch(() => undefined);
+    throw new Error(`Document insert failed: ${insertErr.message}`);
+  }
 
   const docId = data as string;
 
