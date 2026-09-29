@@ -8,6 +8,7 @@ import { sendFeedback, isMissingMigration, type FeedbackTopic } from '../../lib/
 import { appVersion } from '../../lib/app-info';
 import { ScreenHeader } from '../../components/screen-header';
 import { Card, CardTitle, Body, Field, PrimaryButton, SecondaryButton, Status, screenStyles } from '../../components/settings-ui';
+import { color, radius, space } from '../../constants/design';
 
 const TOPICS: { id: FeedbackTopic; label: string }[] = [
   { id: 'problem', label: "Something isn't working" },
@@ -89,17 +90,17 @@ export default function FeedbackScreen() {
 }
 
 const styles = StyleSheet.create({
-  topics: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  topics: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   topic: {
-    minHeight: 48,
-    paddingHorizontal: 16,
-    borderRadius: 999,
-    borderWidth: 2,
-    borderColor: '#D1D5DB',
-    backgroundColor: '#FFFFFF',
+    minHeight: 40,
+    paddingHorizontal: 14,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: color.inputBorder,
+    backgroundColor: color.surface,
     justifyContent: 'center',
   },
-  topicSelected: { borderColor: '#2A3D66', backgroundColor: '#2A3D66' },
-  topicText: { fontSize: 16, fontWeight: '600', color: '#1F2937' },
+  topicSelected: { borderColor: color.primary, backgroundColor: color.primary },
+  topicText: { fontSize: 14, lineHeight: 20, fontWeight: '500', color: color.text },
   topicTextSelected: { color: '#FFFFFF' },
 });

@@ -181,6 +181,8 @@ cannot disagree with reality.
 
 `<EnvBadge />` is mounted once in `src/app/_layout.tsx`, after the `Stack`, so
 it draws over every screen and a new screen cannot be added without it. It
+hangs from the top edge, in the part of the 56px top bar that no title
+reaches — a badge in the middle of the bar hid the screen's title. It
 renders **nothing** in production, and production requires an exact match on
 the PROD project ref — DEV, a preview, an unrecognised project and a missing
 URL all show the badge. The direction is deliberate: a build that cannot
@@ -377,6 +379,7 @@ src/
       _layout.tsx            # custom tab bar (CustomTabBar)
       home.tsx  search.tsx  upload.tsx
   components/                # shared UI, incl. ProfileDrawer
+  constants/design.ts        # the one type/size/spacing scale every screen uses
   constants/theme.ts         # create-expo-app scaffold, largely unused
   hooks/                     # use-color-scheme, use-theme
   lib/                       # see below
@@ -921,13 +924,26 @@ rule again once pinned chunks are mixed in.
 ## Conventions
 
 - **Styling: React Native `StyleSheet` only.** No NativeWind, no Tailwind.
-- **Design tokens are not centralised.** The palette below is hardcoded as
-  hex literals across 14 screen files. `src/constants/theme.ts` is the
-  untouched `create-expo-app` scaffold (generic `Colors`/`Fonts`/`Spacing`)
-  and the FamilyVault screens do **not** read from it — don't assume editing
-  it changes anything. Match the surrounding file's literals:
-  primary `#2A3D66`, secondary `#4A6491`, accent `#D4807B`,
+- **Sizes come from `src/constants/design.ts`: one compact scale.** People
+  said the screens looked inconsistent and too big — 17-18px text and 52px
+  fields on Settings, 13px beside them elsewhere — so every screen now takes
+  its type, control heights, spacing and radii from one file. Use its
+  tokens, not new numbers:
+  - **Text, one size per job:** screen title 17/600, heading 16/600, body
+    and row labels 15, secondary lines 13, badges, tags and section labels
+    (`overline`, uppercase) 12. Nothing in the app is smaller than 12.
+  - **Controls:** buttons and text fields 44 tall (Apple's smallest touch
+    target), list rows 56, selection chips 40, icon boxes 32, icons 24 in a
+    bar and 16 in a row.
+  - **Spacing** 4/8/12/16/24, screen gutter 16; **radius** 12 for controls
+    and list rows, 16 for cards.
+
+  Colours are hex literals in older files; `color` in `design.ts` holds the
+  same values: primary `#2A3D66`, secondary `#4A6491`, accent `#D4807B`,
   background `#F8F9FC`, dark bg `#0D1117`, dark card `#161B22`.
+  `src/constants/theme.ts` is the untouched `create-expo-app` scaffold
+  (generic `Colors`/`Fonts`/`Spacing`) and the FamilyVault screens do **not**
+  read from it — don't assume editing it changes anything.
 - **Shadows: use `boxShadow`, never `shadow*`.** RN 0.84 / SDK 55 deprecate
   `shadowColor`/`shadowOffset`/`shadowOpacity`/`shadowRadius` on web and warn
   loudly. Keep `elevation` for Android.
@@ -935,15 +951,20 @@ rule again once pinned chunks are mixed in.
 - **Icons:** `@expo/vector-icons`, Feather set. Feather has no fingerprint
   glyph — biometric UI uses `"aperture"`.
 - Screens use `SafeAreaView` with `edges={['top']}`.
-- **Every screen but Home opens with `<BackButton />`**
-  (`src/components/back-button.tsx`), the Ask and Upload tabs included, as in
-  the v4 design: the word "Back", not a bare arrow, outlined in navy, on its
-  own row above the title, and shown while the screen loads too. New screens
-  use `<ScreenHeader title fallback />`, which is that row plus the title. It goes
-  Home (or the screen's `fallback`) when there is no history — `router.back()`
-  alone does nothing after a web refresh or on a screen opened from a link,
-  which is how Settings came to have no way back at all and Notifications
-  and the document viewer a button that did nothing.
+- **Every screen but Home opens with `<ScreenHeader title fallback right />`**
+  (`src/components/screen-header.tsx`), the Ask and Upload tabs included,
+  and shows it while the screen loads too. It is the platforms' own top bar:
+  56 tall, a plain back arrow at the left (`<BackButton />`: 24px drawn, 44px
+  to touch, heard as "Go back"), the title beside it, and at most one action
+  on the right: `HeaderIconButton` (an icon, like the arrow) or
+  `HeaderButton` (a small labelled button, like Manage Family's Add).
+  Creating a second vault, which has its own centred title, shows the arrow
+  alone in the same place. An earlier outlined "Back" button on its own row
+  above the title was tried and rejected as heavy. The arrow goes Home (or
+  the screen's `fallback`) when there is no history — `router.back()` alone
+  does nothing after a web refresh or on a screen opened from a link, which
+  is how Settings came to have no way back at all and Notifications and the
+  document viewer a button that did nothing.
 - **A row or button that opens nothing is not shown.** Settings once listed
   six rows with an arrow that went nowhere, and the document viewer had a
   menu button with no menu. Add the control when its screen exists.

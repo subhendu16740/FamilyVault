@@ -15,7 +15,8 @@ import {
 } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
 import type { FamilyDocumentDetailRow } from '../../lib/database.types';
-import { BackButton } from '../../components/back-button';
+import { ScreenHeader } from '../../components/screen-header';
+import { color, radius, shadow, size, space, type } from '../../constants/design';
 
 const actions = [
   { icon: 'share-2', label: 'Share', bg: '#EFF6FF', color: '#2563EB' },
@@ -211,11 +212,9 @@ export default function DocumentViewerScreen() {
     // and a spinner with no way out is a dead end.
     return (
       <SafeAreaView style={styles.safe} edges={['top']}>
-        <View style={styles.topBar}>
-          <BackButton />
-        </View>
+        <ScreenHeader title="Document" />
         <View style={styles.loaderWrap}>
-          <ActivityIndicator size="large" color="#2A3D66" />
+          <ActivityIndicator color={color.primary} />
         </View>
       </SafeAreaView>
     );
@@ -224,12 +223,9 @@ export default function DocumentViewerScreen() {
   if (!doc) {
     return (
       <SafeAreaView style={styles.safe} edges={['top']}>
-        <View style={styles.topBar}>
-          <BackButton />
-          <Text style={styles.topBarTitle}>Document</Text>
-        </View>
+        <ScreenHeader title="Document" />
         <View style={styles.loaderWrap}>
-          <Feather name="file-minus" size={48} color="#D1D5DB" />
+          <Feather name="file-minus" size={32} color="#D1D5DB" />
           <Text style={styles.notFoundText}>Document not found</Text>
         </View>
       </SafeAreaView>
@@ -246,11 +242,7 @@ export default function DocumentViewerScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      {/* Top Bar */}
-      <View style={styles.topBar}>
-        <BackButton />
-        <Text style={styles.topBarTitle} numberOfLines={2}>{doc.file_name}</Text>
-      </View>
+      <ScreenHeader title={doc.file_name} titleLines={2} />
 
       {/* Tags */}
       <View style={styles.tagsRow}>
@@ -282,13 +274,13 @@ export default function DocumentViewerScreen() {
         <View style={styles.previewCard}>
           {previewLoading ? (
             <View style={styles.previewBody}>
-              <ActivityIndicator size="large" color="#2A3D66" />
+              <ActivityIndicator color={color.primary} />
               <Text style={styles.previewSub}>Loading preview…</Text>
             </View>
           ) : previewError || !previewUrl ? (
             <View style={styles.previewBody}>
               <View style={styles.previewIconWrap}>
-                <Feather name="file-text" size={48} color="#9CA3AF" />
+                <Feather name="file-text" size={32} color="#9CA3AF" />
               </View>
               <Text style={styles.previewTitle}>Preview unavailable</Text>
               <Text style={styles.previewSub}>{doc.file_name}</Text>
@@ -302,7 +294,7 @@ export default function DocumentViewerScreen() {
           ) : doc.file_type === 'pdf' ? (
             <View style={styles.previewBody}>
               <View style={styles.previewIconWrap}>
-                <Feather name="file-text" size={48} color="#DC2626" />
+                <Feather name="file-text" size={32} color="#DC2626" />
               </View>
               <Text style={styles.previewTitle}>PDF Document</Text>
               <Text style={styles.previewSub}>{doc.file_name}</Text>
@@ -324,7 +316,7 @@ export default function DocumentViewerScreen() {
           ) : (
             <View style={styles.previewBody}>
               <View style={styles.previewIconWrap}>
-                <Feather name="file" size={48} color="#9CA3AF" />
+                <Feather name="file" size={32} color="#9CA3AF" />
               </View>
               <Text style={styles.previewTitle}>Document Preview</Text>
               <Text style={styles.previewSub}>{doc.file_name}</Text>
@@ -360,7 +352,7 @@ export default function DocumentViewerScreen() {
           {/* Extracted metadata */}
           {doc.metadata && doc.metadata.length > 0 && (
             <>
-              <Text style={[styles.cardTitle, { marginTop: 16 }]}>Extracted Data</Text>
+              <Text style={[styles.cardTitle, styles.cardTitleLater]}>Extracted Data</Text>
               {doc.metadata.map((m, idx) => (
                 <View key={idx} style={[styles.infoRow, idx > 0 && styles.infoRowBorder]}>
                   <Text style={styles.infoLabel}>{m.key.replace(/_/g, ' ')}</Text>
@@ -382,7 +374,7 @@ export default function DocumentViewerScreen() {
             disabled={actionLoading}
           >
             <View style={[styles.actionIconWrap, { backgroundColor: action.bg }]}>
-              <Feather name={action.icon} size={20} color={action.color} />
+              <Feather name={action.icon} size={18} color={action.color} />
             </View>
             <Text style={styles.actionLabel}>{action.label}</Text>
           </TouchableOpacity>
@@ -479,104 +471,98 @@ export default function DocumentViewerScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F8F9FC' },
+  safe: { flex: 1, backgroundColor: color.background },
   loaderWrap: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 12,
+    gap: space.md,
   },
-  notFoundText: { fontSize: 16, fontWeight: '600', color: '#6B7280' },
-  topBar: {
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 24,
-    paddingTop: 8,
-    paddingBottom: 16,
-    gap: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  topBarTitle: { fontSize: 20, fontWeight: '700', color: '#2A3D66' },
+  notFoundText: { ...type.heading, color: color.textMuted },
   tagsRow: {
     flexDirection: 'row',
-    gap: 8,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    backgroundColor: '#FFFFFF',
+    flexWrap: 'wrap',
+    gap: space.sm,
+    paddingHorizontal: space.lg,
+    paddingVertical: 10,
+    backgroundColor: color.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: color.border,
   },
-  tag: { borderRadius: 999, paddingHorizontal: 12, paddingVertical: 4 },
-  tagText: { fontSize: 13 },
+  tag: { borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 3 },
+  tagText: { fontSize: 13, lineHeight: 18 },
   tagBlue: { backgroundColor: '#DBEAFE' },
   tagTextBlue: { color: '#1D4ED8' },
   tagPurple: { backgroundColor: '#EDE9FE' },
   tagTextPurple: { color: '#7C3AED' },
-  tagGray: { backgroundColor: '#F3F4F6' },
-  tagTextGray: { color: '#374151' },
+  tagGray: { backgroundColor: color.divider },
+  tagTextGray: { color: color.textBody },
   scroll: { flex: 1 },
-  scrollContent: { padding: 20, gap: 16 },
+  scrollContent: { padding: space.lg, gap: space.md },
   previewCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
+    backgroundColor: color.surface,
+    borderRadius: radius.card,
     overflow: 'hidden',
-    boxShadow: '0px 4px 12px rgba(0, 0, 0, 0.08)',
-    elevation: 4,
+    ...shadow.card,
   },
+  // Sized to what it holds. The 3:4 frame is for a real preview; around a
+  // spinner or a "Preview unavailable" icon it was half a screen of grey.
   previewBody: {
-    aspectRatio: 3 / 4,
-    backgroundColor: '#F3F4F6',
+    minHeight: 200,
+    backgroundColor: color.divider,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: space.lg,
+    paddingVertical: space.xl,
   },
   previewIconWrap: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    backgroundColor: '#FFFFFF',
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: color.surface,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
-    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.08)',
-    elevation: 3,
+    marginBottom: space.md,
+    ...shadow.card,
   },
   previewImage: {
     width: '100%',
     aspectRatio: 3 / 4,
-    borderRadius: 24,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: color.divider,
   },
   viewPdfBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#2A3D66',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 12,
-    marginTop: 16,
+    gap: space.sm,
+    backgroundColor: color.primary,
+    paddingHorizontal: space.lg,
+    minHeight: size.control,
+    borderRadius: radius.control,
+    marginTop: space.lg,
   },
-  viewPdfBtnText: { fontSize: 14, fontWeight: '600', color: '#FFFFFF' },
-  previewTitle: { fontSize: 17, fontWeight: '600', color: '#374151', marginBottom: 4 },
-  previewSub: { fontSize: 13, color: '#9CA3AF' },
+  viewPdfBtnText: { ...type.button, color: '#FFFFFF' },
+  previewTitle: { ...type.heading, color: color.textBody, marginBottom: 2 },
+  previewSub: { ...type.caption, textAlign: 'center' },
   infoCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 20,
-    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.06)',
-    elevation: 3,
+    backgroundColor: color.surface,
+    borderRadius: radius.card,
+    padding: space.lg,
+    ...shadow.card,
   },
-  cardTitle: { fontSize: 15, fontWeight: '600', color: '#1F2937', marginBottom: 16 },
+  cardTitle: { ...type.heading, marginBottom: space.xs },
+  cardTitleLater: { marginTop: space.lg },
   infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 12,
+    gap: space.md,
+    minHeight: 44,
+    paddingVertical: 10,
   },
-  infoRowBorder: { borderTopWidth: 1, borderTopColor: '#F3F4F6' },
-  infoLabel: { fontSize: 13, color: '#6B7280', textTransform: 'capitalize' },
-  infoValue: { fontSize: 13, fontWeight: '500', color: '#1F2937' },
-  ownerWrap: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  infoRowBorder: { borderTopWidth: 1, borderTopColor: color.divider },
+  infoLabel: { ...type.body, color: color.textMuted, textTransform: 'capitalize' },
+  infoValue: { ...type.label, flexShrink: 1, textAlign: 'right' },
+  ownerWrap: { flexDirection: 'row', alignItems: 'center', gap: space.sm, flexShrink: 1 },
   ownerAvatar: {
     width: 24,
     height: 24,
@@ -584,24 +570,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  ownerInitial: { fontSize: 12, fontWeight: '700', color: '#FFFFFF' },
+  ownerInitial: { fontSize: 12, fontWeight: '600', color: '#FFFFFF' },
   actionBar: {
     flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: color.surface,
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    borderTopColor: color.border,
+    paddingHorizontal: space.lg,
+    paddingVertical: space.sm,
   },
-  actionItem: { flex: 1, alignItems: 'center', gap: 6 },
+  actionItem: { flex: 1, alignItems: 'center', gap: space.xs, minHeight: size.control },
   actionIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  actionLabel: { fontSize: 11, color: '#374151' },
+  actionLabel: { fontSize: 12, lineHeight: 16, color: color.textBody },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.4)',
@@ -615,73 +601,73 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalSheet: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
+    backgroundColor: color.surface,
+    borderTopLeftRadius: radius.card,
+    borderTopRightRadius: radius.card,
+    padding: space.lg,
+    paddingBottom: space.xl,
     maxHeight: '80%',
   },
   modalHandle: {
-    width: 40,
+    width: 36,
     height: 4,
     borderRadius: 2,
-    backgroundColor: '#D1D5DB',
+    backgroundColor: color.inputBorder,
     alignSelf: 'center',
-    marginBottom: 16,
+    marginBottom: space.md,
   },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1F2937',
-    marginBottom: 20,
-  },
+  modalTitle: { ...type.title, color: color.text, marginBottom: space.xs },
   fieldLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#6B7280',
-    marginBottom: 8,
-    marginTop: 16,
+    ...type.caption,
+    fontWeight: '500',
+    color: color.textBody,
+    marginBottom: 6,
+    marginTop: space.md,
   },
   textInput: {
+    minHeight: size.control,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 12,
-    padding: 12,
-    fontSize: 15,
-    color: '#1F2937',
-    backgroundColor: '#F9FAFB',
+    borderColor: color.inputBorder,
+    borderRadius: 10,
+    paddingHorizontal: space.md,
+    fontSize: type.body.fontSize,
+    color: color.text,
+    backgroundColor: color.surface,
   },
-  chipScroll: { flexGrow: 0, marginBottom: 4 },
+  chipScroll: { flexGrow: 0, marginBottom: space.xs },
   chip: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#F3F4F6',
-    marginRight: 8,
+    minHeight: 40,
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    borderRadius: radius.pill,
+    backgroundColor: color.divider,
+    marginRight: space.sm,
   },
-  chipActive: { backgroundColor: '#2A3D66' },
-  chipText: { fontSize: 13, color: '#374151' },
+  chipActive: { backgroundColor: color.primary },
+  chipText: { fontSize: 14, lineHeight: 20, color: color.textBody },
   chipTextActive: { color: '#FFFFFF', fontWeight: '600' },
   modalActions: {
     flexDirection: 'row',
-    gap: 12,
-    marginTop: 24,
+    gap: space.md,
+    marginTop: space.xl,
   },
   cancelBtn: {
     flex: 1,
-    paddingVertical: 14,
-    borderRadius: 12,
+    minHeight: size.control,
+    justifyContent: 'center',
+    borderRadius: radius.control,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: color.inputBorder,
     alignItems: 'center',
   },
-  cancelBtnText: { fontSize: 15, fontWeight: '600', color: '#6B7280' },
+  cancelBtnText: { ...type.button, color: color.textBody },
   saveBtn: {
     flex: 1,
-    paddingVertical: 14,
-    borderRadius: 12,
-    backgroundColor: '#2A3D66',
+    minHeight: size.control,
+    justifyContent: 'center',
+    borderRadius: radius.control,
+    backgroundColor: color.primary,
     alignItems: 'center',
   },
-  saveBtnText: { fontSize: 15, fontWeight: '600', color: '#FFFFFF' },
+  saveBtnText: { ...type.button, color: '#FFFFFF' },
 });

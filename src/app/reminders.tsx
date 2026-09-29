@@ -12,6 +12,7 @@ import { useFamily } from '../lib/family-context';
 import { fetchExpiringDocuments, type ExpiringDocument } from '../lib/api';
 import { expiryPhrase, longDate } from '../lib/dates';
 import { ScreenHeader, PlusTag } from '../components/screen-header';
+import { color, radius, shadow, size, space, type } from '../constants/design';
 
 export default function RemindersScreen() {
   const { currentFamily } = useFamily();
@@ -49,7 +50,7 @@ export default function RemindersScreen() {
 
         {items === null ? (
           <View style={styles.center}>
-            <ActivityIndicator size="large" color="#2A3D66" />
+            <ActivityIndicator color={color.primary} />
             <Text style={styles.muted}>Looking through your documents…</Text>
           </View>
         ) : error ? (
@@ -59,7 +60,7 @@ export default function RemindersScreen() {
           </View>
         ) : items.length === 0 ? (
           <View style={styles.emptyCard}>
-            <Feather name="calendar" size={32} color="#9CA3AF" />
+            <Feather name="calendar" size={24} color="#9CA3AF" />
             <Text style={styles.emptyTitle}>No expiry dates found yet</Text>
             <Text style={styles.muted}>
               When a passport, licence or policy with an expiry date is added, it shows here.
@@ -75,6 +76,7 @@ export default function RemindersScreen() {
                 activeOpacity={0.7}
                 onPress={() => router.push(`/document/${item.id}` as any)}
                 accessibilityRole="button"
+                accessibilityHint="Opens the document"
               >
                 <View style={styles.rowText}>
                   <Text style={styles.rowTitle} numberOfLines={2}>{item.fileName}</Text>
@@ -83,7 +85,7 @@ export default function RemindersScreen() {
                     {expiryPhrase(item.daysLeft)} · {longDate(item.expiry)}
                   </Text>
                 </View>
-                <Text style={styles.open}>Open</Text>
+                <Feather name="chevron-right" size={16} color="#9CA3AF" />
               </TouchableOpacity>
             );
           })
@@ -94,49 +96,45 @@ export default function RemindersScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F8F9FC' },
-  body: { padding: 20, gap: 12, paddingBottom: 40 },
+  safe: { flex: 1, backgroundColor: color.background },
+  body: { padding: space.lg, gap: space.md, paddingBottom: 40 },
   plusCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 18,
-    gap: 8,
-    borderWidth: 2,
+    backgroundColor: color.surface,
+    borderRadius: radius.card,
+    padding: space.lg,
+    gap: space.xs,
+    borderWidth: 1,
     borderColor: '#F3D3CF',
-    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.06)',
-    elevation: 3,
+    ...shadow.card,
   },
-  plusCardTag: { fontSize: 15, fontWeight: '700', color: '#D4807B' },
-  plusCardText: { fontSize: 17, lineHeight: 25, color: '#1F2937' },
-  plusCardNote: { fontSize: 15, lineHeight: 22, color: '#4B5563' },
-  sectionTitle: { fontSize: 18, fontWeight: '700', color: '#1F2937', marginTop: 8 },
-  center: { alignItems: 'center', gap: 10, paddingVertical: 32 },
-  muted: { fontSize: 15, color: '#6B7280', lineHeight: 21 },
+  plusCardTag: { fontSize: 13, lineHeight: 18, fontWeight: '600', color: color.accent },
+  plusCardText: type.body,
+  plusCardNote: type.caption,
+  sectionTitle: { ...type.overline, marginTop: space.sm, marginLeft: space.xs },
+  center: { alignItems: 'center', gap: space.sm, paddingVertical: 32 },
+  muted: type.caption,
   emptyCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 20,
-    gap: 8,
+    backgroundColor: color.surface,
+    borderRadius: radius.card,
+    padding: space.lg,
+    gap: space.xs,
     alignItems: 'center',
-    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.06)',
-    elevation: 3,
+    ...shadow.card,
   },
-  emptyTitle: { fontSize: 17, fontWeight: '700', color: '#1F2937', textAlign: 'center' },
+  emptyTitle: { ...type.heading, textAlign: 'center' },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    minHeight: 76,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.06)',
-    elevation: 3,
+    gap: space.md,
+    minHeight: size.row,
+    paddingHorizontal: space.lg,
+    paddingVertical: 10,
+    backgroundColor: color.surface,
+    borderRadius: radius.control,
+    ...shadow.card,
   },
-  rowText: { flex: 1, gap: 2 },
-  rowTitle: { fontSize: 17, fontWeight: '700', color: '#1F2937' },
-  rowWhen: { fontSize: 15, fontWeight: '600', color: '#4B5563' },
-  rowWhenUrgent: { color: '#DC2626' },
-  open: { fontSize: 16, fontWeight: '700', color: '#2A3D66' },
+  rowText: { flex: 1, minWidth: 0, gap: 2 },
+  rowTitle: type.label,
+  rowWhen: { ...type.caption, fontWeight: '500', color: color.textBody },
+  rowWhenUrgent: { color: color.danger },
 });

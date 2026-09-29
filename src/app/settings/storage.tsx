@@ -10,6 +10,7 @@ import { useFamily } from '../../lib/family-context';
 import { fetchStorageUsage, type FamilyStorage } from '../../lib/api';
 import { ScreenHeader } from '../../components/screen-header';
 import { Card, CardTitle, Muted, Status, screenStyles } from '../../components/settings-ui';
+import { color, space, type } from '../../constants/design';
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -46,7 +47,7 @@ export default function StorageScreen() {
       <ScrollView contentContainerStyle={screenStyles.body}>
         {usage === null ? (
           <View style={styles.center}>
-            <ActivityIndicator size="large" color="#2A3D66" />
+            <ActivityIndicator color={color.primary} />
             <Muted>Adding up your documents…</Muted>
           </View>
         ) : (
@@ -92,12 +93,12 @@ export default function StorageScreen() {
 }
 
 const styles = StyleSheet.create({
-  center: { alignItems: 'center', gap: 10, paddingVertical: 40 },
-  big: { fontSize: 30, fontWeight: '700', color: '#2A3D66' },
-  sectionTitle: { fontSize: 18, fontWeight: '700', color: '#1F2937', marginTop: 6 },
-  familyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  familyName: { flex: 1, fontSize: 18, fontWeight: '700', color: '#1F2937' },
-  familyBytes: { fontSize: 18, fontWeight: '700', color: '#2A3D66' },
-  bar: { height: 12, borderRadius: 6, backgroundColor: '#EEF2F8', overflow: 'hidden' },
-  barFill: { height: '100%', borderRadius: 6, backgroundColor: '#4A6491' },
+  center: { alignItems: 'center', gap: space.sm, paddingVertical: 40 },
+  big: { fontSize: 22, lineHeight: 28, fontWeight: '600', color: color.primary },
+  sectionTitle: { ...type.overline, marginTop: space.sm, marginLeft: space.xs },
+  familyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.md },
+  familyName: { ...type.heading, flex: 1 },
+  familyBytes: { ...type.heading, color: color.primary },
+  bar: { height: 8, borderRadius: 4, backgroundColor: '#EEF2F8', overflow: 'hidden' },
+  barFill: { height: '100%', borderRadius: 4, backgroundColor: color.secondary },
 });

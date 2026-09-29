@@ -10,7 +10,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../lib/auth';
 import { useFamily } from '../lib/family-context';
 import { addFamilyMember, leaveFamily, removeFamilyMember, updateMemberRole } from '../lib/api';
-import { BackButton } from '../components/back-button';
+import { ScreenHeader, HeaderButton } from '../components/screen-header';
+import { color, radius, shadow, size, space, type } from '../constants/design';
 
 const relations = ['Father', 'Mother', 'Spouse', 'Son', 'Daughter', 'Brother', 'Sister', 'Other'];
 
@@ -140,12 +141,9 @@ export default function FamilyScreen() {
   if (!currentFamily) {
     return (
       <SafeAreaView style={styles.safe} edges={['top']}>
-        <View style={styles.header}>
-          <BackButton />
-          <Text style={styles.title}>Manage Family</Text>
-        </View>
+        <ScreenHeader title="Manage Family" />
         <View style={styles.noFamilyWrap}>
-          <Feather name="users" size={48} color="#D1D5DB" />
+          <Feather name="users" size={32} color="#D1D5DB" />
           <Text style={styles.noFamilyTitle}>No Family Yet</Text>
           <Text style={styles.noFamilySub}>
             Create a family to share and manage documents together — or ask your family's admin to add you, using the email you sign in with.
@@ -160,7 +158,7 @@ export default function FamilyScreen() {
               end={{ x: 1, y: 0 }}
               style={styles.createFamilyBtn}
             >
-              <Text style={styles.addBtnText}>Create Family</Text>
+              <Text style={styles.createFamilyText}>Create Family</Text>
             </LinearGradient>
           </TouchableOpacity>
         </View>
@@ -170,31 +168,13 @@ export default function FamilyScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      {/* Header */}
-      <View style={styles.header}>
-        <BackButton />
-        <View style={styles.headerRow}>
-          <View style={styles.headerTitles}>
-            <Text style={styles.title}>{currentFamily.name}</Text>
-            <Text style={styles.subtitle}>{members.length} member{members.length !== 1 ? 's' : ''}</Text>
-          </View>
-          {isAdmin && (
-            <TouchableOpacity
-              onPress={() => setShowAddMember(true)}
-              activeOpacity={0.85}
-            >
-              <LinearGradient
-                colors={['#2A3D66', '#4A6491']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.addBtn}
-              >
-                <Text style={styles.addBtnText}>+ Add Member</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
+      <ScreenHeader
+        title={currentFamily.name}
+        subtitle={`${members.length} member${members.length !== 1 ? 's' : ''}`}
+        right={isAdmin
+          ? <HeaderButton icon="user-plus" label="Add" onPress={() => setShowAddMember(true)} />
+          : undefined}
+      />
 
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
         {notice && (
@@ -219,12 +199,12 @@ export default function FamilyScreen() {
                     style={[styles.familyRow, isCurrent && styles.familyRowCurrent]}
                     activeOpacity={0.8}
                   >
-                    <Feather name="home" size={18} color={isCurrent ? '#FFFFFF' : '#2A3D66'} />
+                    <Feather name="home" size={16} color={isCurrent ? '#FFFFFF' : color.primary} />
                     <View style={styles.memberInfo}>
                       <Text style={[styles.familyRowName, isCurrent && styles.familyRowNameCurrent]}>{f.families.name}</Text>
                       <Text style={[styles.familyRowRole, isCurrent && styles.familyRowRoleCurrent]}>{f.role}</Text>
                     </View>
-                    {isCurrent && <Feather name="check" size={18} color="#FFFFFF" />}
+                    {isCurrent && <Feather name="check" size={16} color="#FFFFFF" />}
                   </TouchableOpacity>
                 );
               })}
@@ -276,15 +256,21 @@ export default function FamilyScreen() {
                           <TouchableOpacity
                             onPress={() => handleMakeAdmin(m.id, name)}
                             style={styles.actionBtn}
+                            hitSlop={4}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Make ${name} an admin`}
                           >
-                            <Feather name="shield" size={14} color="#2A3D66" />
+                            <Feather name="shield" size={16} color={color.primary} />
                           </TouchableOpacity>
                         )}
                         <TouchableOpacity
                           onPress={() => handleRemoveMember(m.id, name)}
                           style={styles.actionBtnDanger}
+                          hitSlop={4}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Remove ${name}`}
                         >
-                          <Feather name="user-minus" size={14} color="#EF4444" />
+                          <Feather name="user-minus" size={16} color="#EF4444" />
                         </TouchableOpacity>
                       </View>
                     )}
@@ -298,7 +284,7 @@ export default function FamilyScreen() {
         {/* Empty state */}
         {members.length === 0 && (
           <View style={styles.emptyState}>
-            <Feather name="users" size={40} color="#D1D5DB" />
+            <Feather name="users" size={32} color="#D1D5DB" />
             <Text style={styles.emptyTitle}>No members yet</Text>
             <Text style={styles.emptySubtitle}>Add your family members to get started</Text>
           </View>
@@ -326,8 +312,10 @@ export default function FamilyScreen() {
               <TouchableOpacity
                 onPress={closeAddMember}
                 style={styles.closeBtn}
+                accessibilityRole="button"
+                accessibilityLabel="Close"
               >
-                <Feather name="x" size={20} color="#4B5563" />
+                <Feather name="x" size={size.icon} color={color.textMuted} />
               </TouchableOpacity>
             </View>
 
@@ -407,7 +395,7 @@ export default function FamilyScreen() {
                 style={[styles.addMemberBtn, adding && { opacity: 0.7 }]}
               >
                 {adding ? (
-                  <ActivityIndicator color="#FFFFFF" />
+                  <ActivityIndicator size="small" color="#FFFFFF" />
                 ) : (
                   <Text style={styles.addMemberBtnText}>Add Member</Text>
                 )}
@@ -456,89 +444,69 @@ export default function FamilyScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F8F9FC' },
-  header: {
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 24,
-    paddingTop: 8,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-    gap: 8,
-  },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
-  headerTitles: { flex: 1 },
-  title: { fontSize: 22, fontWeight: '700', color: '#2A3D66' },
-  subtitle: { fontSize: 13, color: '#6B7280', marginTop: 2 },
-  addBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 12,
-    minHeight: 44,
-    justifyContent: 'center',
-  },
-  addBtnText: { color: '#FFFFFF', fontSize: 13, fontWeight: '500' },
+  safe: { flex: 1, backgroundColor: color.background },
   scroll: { flex: 1 },
-  section: { paddingHorizontal: 24, paddingTop: 24 },
-  sectionLabel: { fontSize: 14, fontWeight: '600', color: '#6B7280', marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 },
+  section: { paddingHorizontal: space.lg, paddingTop: space.lg },
+  sectionLabel: { ...type.overline, marginBottom: space.sm, marginLeft: space.xs },
   emptyState: {
     alignItems: 'center',
-    paddingVertical: 60,
-    gap: 8,
+    paddingVertical: 48,
+    paddingHorizontal: space.xl,
+    gap: space.sm,
   },
-  emptyTitle: { fontSize: 16, fontWeight: '600', color: '#6B7280' },
-  emptySubtitle: { fontSize: 13, color: '#9CA3AF' },
-  memberList: { gap: 12 },
+  emptyTitle: { ...type.heading, color: color.textMuted },
+  emptySubtitle: { ...type.caption, textAlign: 'center' },
+  memberList: { gap: space.sm },
   memberCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 16,
+    backgroundColor: color.surface,
+    borderRadius: radius.control,
+    paddingVertical: 10,
+    paddingHorizontal: space.lg,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
-    minHeight: 80,
-    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.06)',
-    elevation: 3,
+    gap: space.md,
+    minHeight: size.row,
+    ...shadow.card,
   },
   memberAvatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  memberInitial: { fontSize: 22, fontWeight: '700', color: '#FFFFFF' },
-  memberInfo: { flex: 1 },
-  memberNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  memberName: { fontSize: 15, fontWeight: '600', color: '#1F2937' },
+  memberInitial: { fontSize: 16, fontWeight: '600', color: '#FFFFFF' },
+  memberInfo: { flex: 1, minWidth: 0 },
+  memberNameRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
+  memberName: type.label,
   youBadge: {
-    backgroundColor: '#EFF6FF',
-    borderRadius: 999,
+    backgroundColor: color.tint,
+    borderRadius: radius.pill,
     paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingVertical: 1,
   },
-  youBadgeText: { fontSize: 10, fontWeight: '600', color: '#2A3D66' },
-  memberRelation: { fontSize: 13, color: '#9CA3AF', marginTop: 2, textTransform: 'capitalize' },
+  youBadgeText: { fontSize: 12, lineHeight: 16, fontWeight: '600', color: color.primary },
+  memberRelation: { ...type.caption, textTransform: 'capitalize' },
   adminBadge: {
     backgroundColor: '#EDE9FE',
-    borderRadius: 999,
+    borderRadius: radius.pill,
     paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingVertical: 1,
   },
-  adminBadgeText: { fontSize: 10, fontWeight: '600', color: '#7C3AED' },
-  actionRow: { flexDirection: 'row', gap: 6 },
+  adminBadgeText: { fontSize: 12, lineHeight: 16, fontWeight: '600', color: '#7C3AED' },
+  actionRow: { flexDirection: 'row', gap: space.sm },
   actionBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#EFF6FF',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: color.tint,
     alignItems: 'center',
     justifyContent: 'center',
   },
   actionBtnDanger: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: '#FEF2F2',
     alignItems: 'center',
     justifyContent: 'center',
@@ -547,46 +515,46 @@ const styles = StyleSheet.create({
   notice: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    marginHorizontal: 24,
-    marginTop: 16,
-    padding: 14,
-    borderRadius: 14,
-    backgroundColor: '#EFF6FF',
+    gap: space.sm,
+    marginHorizontal: space.lg,
+    marginTop: space.lg,
+    paddingVertical: 10,
+    paddingHorizontal: space.md,
+    borderRadius: 10,
+    backgroundColor: color.tint,
   },
-  noticeText: { flex: 1, fontSize: 13, color: '#2A3D66', lineHeight: 18 },
+  noticeText: { flex: 1, fontSize: 14, lineHeight: 20, color: color.primary },
   // Family switcher
   familyRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    minHeight: 56,
-    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.06)',
-    elevation: 2,
+    gap: space.md,
+    backgroundColor: color.surface,
+    borderRadius: radius.control,
+    paddingHorizontal: space.lg,
+    paddingVertical: 10,
+    minHeight: size.row,
+    ...shadow.card,
   },
-  familyRowCurrent: { backgroundColor: '#2A3D66' },
-  familyRowName: { fontSize: 15, fontWeight: '600', color: '#1F2937' },
+  familyRowCurrent: { backgroundColor: color.primary },
+  familyRowName: type.label,
   familyRowNameCurrent: { color: '#FFFFFF' },
-  familyRowRole: { fontSize: 12, color: '#9CA3AF', marginTop: 2, textTransform: 'capitalize' },
-  familyRowRoleCurrent: { color: 'rgba(255,255,255,0.75)' },
+  familyRowRole: { ...type.caption, textTransform: 'capitalize' },
+  familyRowRoleCurrent: { color: 'rgba(255,255,255,0.8)' },
   leaveBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    marginHorizontal: 24,
-    marginTop: 32,
-    paddingVertical: 14,
-    borderRadius: 14,
+    gap: space.sm,
+    marginHorizontal: space.lg,
+    marginTop: space.xl,
+    borderRadius: radius.control,
     borderWidth: 1,
     borderColor: '#FECACA',
-    minHeight: 48,
+    backgroundColor: '#FEF2F2',
+    minHeight: size.control,
   },
-  leaveBtnText: { fontSize: 14, fontWeight: '600', color: '#EF4444' },
+  leaveBtnText: { ...type.button, color: color.danger },
   // Modal
   modalOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -597,137 +565,139 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
+    backgroundColor: color.surface,
+    borderTopLeftRadius: radius.card,
+    borderTopRightRadius: radius.card,
+    paddingHorizontal: space.lg,
+    paddingTop: space.sm,
     maxHeight: '85%',
     boxShadow: '0px -4px 16px rgba(0, 0, 0, 0.15)',
     elevation: 20,
   },
   sheetHandle: {
-    width: 48,
+    width: 36,
     height: 4,
-    backgroundColor: '#D1D5DB',
+    backgroundColor: color.inputBorder,
     borderRadius: 2,
     alignSelf: 'center',
-    marginBottom: 16,
+    marginBottom: space.xs,
   },
   sheetHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 24,
+    marginRight: -10,
   },
-  sheetTitle: { fontSize: 19, fontWeight: '700', color: '#2A3D66' },
-  sheetIntro: { fontSize: 13, color: '#6B7280', lineHeight: 19, marginTop: -12, marginBottom: 20 },
+  sheetTitle: type.title,
+  sheetIntro: { ...type.caption, marginBottom: space.lg },
   closeBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#F3F4F6',
+    width: size.control,
+    height: size.control,
+    borderRadius: size.control / 2,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  field: { marginBottom: 16 },
-  fieldLabel: { fontSize: 14, fontWeight: '600', color: '#374151', marginBottom: 8 },
+  field: { marginBottom: space.lg },
+  fieldLabel: { ...type.caption, fontWeight: '500', color: color.textBody, marginBottom: 6 },
   fieldLabelOptional: { fontWeight: '400', color: '#9CA3AF' },
   fieldInput: {
-    backgroundColor: '#F8F9FC',
+    backgroundColor: color.surface,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 15,
-    color: '#1F2937',
-    minHeight: 56,
+    borderColor: color.inputBorder,
+    borderRadius: 10,
+    paddingHorizontal: space.md,
+    fontSize: type.body.fontSize,
+    color: color.text,
+    minHeight: size.control,
     outlineStyle: 'none',
   } as any,
-  fieldHint: { fontSize: 11, color: '#9CA3AF', marginTop: 6 },
-  addError: { fontSize: 13, color: '#DC2626', lineHeight: 18, marginBottom: 8 },
+  fieldHint: { ...type.caption, marginTop: 6 },
+  addError: { fontSize: 14, lineHeight: 20, color: color.danger, marginBottom: space.sm },
   relationGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: space.sm,
   },
   relationChip: {
     width: '47%',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 14,
-    backgroundColor: '#F8F9FC',
+    paddingHorizontal: space.md,
+    borderRadius: 10,
+    backgroundColor: color.surface,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: color.inputBorder,
     alignItems: 'center',
-    minHeight: 48,
+    minHeight: 40,
     justifyContent: 'center',
   },
-  relationChipSelected: { backgroundColor: '#2A3D66', borderColor: '#2A3D66' },
-  relationChipText: { fontSize: 14, fontWeight: '500', color: '#374151' },
+  relationChipSelected: { backgroundColor: color.primary, borderColor: color.primary },
+  relationChipText: { fontSize: 14, lineHeight: 20, fontWeight: '500', color: color.textBody },
   relationChipTextSelected: { color: '#FFFFFF' },
   addMemberBtn: {
-    borderRadius: 14,
+    borderRadius: radius.control,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 56,
-    marginTop: 8,
-    marginBottom: 24,
+    minHeight: size.control,
+    marginTop: space.xs,
+    marginBottom: space.xl,
   },
-  addMemberBtnText: { color: '#FFFFFF', fontSize: 17, fontWeight: '600' },
+  addMemberBtnText: { ...type.button, color: '#FFFFFF' },
   noFamilyWrap: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 32,
-    gap: 12,
+    paddingHorizontal: space.xl,
+    gap: space.sm,
   },
-  noFamilyTitle: { fontSize: 20, fontWeight: '700', color: '#374151' },
-  noFamilySub: { fontSize: 14, color: '#9CA3AF', textAlign: 'center', lineHeight: 20, maxWidth: 280 },
+  noFamilyTitle: { ...type.heading, color: color.textBody },
+  noFamilySub: { ...type.caption, textAlign: 'center', maxWidth: 300 },
   createFamilyBtn: {
-    borderRadius: 14,
-    paddingHorizontal: 28,
-    paddingVertical: 14,
-    marginTop: 8,
+    borderRadius: radius.control,
+    paddingHorizontal: space.xl,
+    minHeight: size.control,
+    justifyContent: 'center',
+    marginTop: space.sm,
   },
+  createFamilyText: { ...type.button, color: '#FFFFFF' },
   // Confirmation dialog
   dialogOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 32,
+    padding: space.xl,
   },
   dialogBox: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 24,
+    backgroundColor: color.surface,
+    borderRadius: radius.card,
+    padding: space.lg + 4,
     width: '100%',
-    maxWidth: 380,
+    maxWidth: 360,
     boxShadow: '0px 8px 24px rgba(0, 0, 0, 0.15)',
     elevation: 10,
   },
-  dialogTitle: { fontSize: 18, fontWeight: '700', color: '#1F2937', marginBottom: 8 },
-  dialogMessage: { fontSize: 14, color: '#6B7280', lineHeight: 20, marginBottom: 24 },
-  dialogActions: { flexDirection: 'row', gap: 12 },
+  dialogTitle: { ...type.title, color: color.text, marginBottom: space.sm },
+  dialogMessage: { ...type.body, color: color.textMuted, marginBottom: space.xl },
+  dialogActions: { flexDirection: 'row', gap: space.md },
   dialogCancelBtn: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
-    backgroundColor: '#F3F4F6',
+    minHeight: size.control,
+    justifyContent: 'center',
+    borderRadius: radius.control,
+    backgroundColor: color.divider,
     alignItems: 'center',
   },
-  dialogCancelText: { fontSize: 15, fontWeight: '600', color: '#4B5563' },
+  dialogCancelText: { ...type.button, color: '#4B5563' },
   dialogConfirmBtn: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
-    backgroundColor: '#2A3D66',
+    minHeight: size.control,
+    justifyContent: 'center',
+    borderRadius: radius.control,
+    backgroundColor: color.primary,
     alignItems: 'center',
   },
   dialogConfirmBtnDestructive: {
     backgroundColor: '#EF4444',
   },
-  dialogConfirmText: { fontSize: 15, fontWeight: '600', color: '#FFFFFF' },
+  dialogConfirmText: { ...type.button, color: '#FFFFFF' },
   dialogConfirmTextDestructive: { color: '#FFFFFF' },
 });

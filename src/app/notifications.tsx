@@ -8,7 +8,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../lib/auth';
 import { useFamily } from '../lib/family-context';
 import { fetchNotifications, markNotificationRead, type NotificationRow } from '../lib/api';
-import { BackButton } from '../components/back-button';
+import { ScreenHeader } from '../components/screen-header';
+import { color, radius, shadow, size, space, type } from '../constants/design';
 import { usePreferences } from '../lib/preferences';
 
 const typeConfig: Record<string, { icon: string; bg: string; color: string }> = {
@@ -87,7 +88,7 @@ export default function NotificationsScreen() {
         activeOpacity={0.7}
       >
         <View style={[styles.iconWrap, { backgroundColor: cfg.bg }]}>
-          <Feather name={cfg.icon as any} size={20} color={cfg.color} />
+          <Feather name={cfg.icon as any} size={16} color={cfg.color} />
         </View>
         <View style={styles.content}>
           <Text style={[styles.title, !item.is_read && styles.titleUnread]} numberOfLines={1}>
@@ -103,14 +104,11 @@ export default function NotificationsScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={styles.header}>
-        <BackButton />
-        <Text style={styles.headerTitle}>Notifications</Text>
-      </View>
+      <ScreenHeader title="Notifications" />
 
       {!notificationsEnabled ? (
         <View style={styles.center}>
-          <Feather name="bell-off" size={48} color="#D1D5DB" />
+          <Feather name="bell-off" size={32} color="#D1D5DB" />
           <Text style={styles.emptyTitle}>Notifications are off</Text>
           <Text style={styles.emptySubtitle}>Nothing has been deleted. Turn them on to see your alerts.</Text>
           <TouchableOpacity
@@ -124,11 +122,11 @@ export default function NotificationsScreen() {
         </View>
       ) : loading ? (
         <View style={styles.center}>
-          <ActivityIndicator size="large" color="#2A3D66" />
+          <ActivityIndicator color={color.primary} />
         </View>
       ) : notifications.length === 0 ? (
         <View style={styles.center}>
-          <Feather name="bell-off" size={48} color="#D1D5DB" />
+          <Feather name="bell-off" size={32} color="#D1D5DB" />
           <Text style={styles.emptyTitle}>No notifications</Text>
           <Text style={styles.emptySubtitle}>You're all caught up!</Text>
         </View>
@@ -146,62 +144,52 @@ export default function NotificationsScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F8F9FC' },
-  header: {
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 24,
-    paddingTop: 8,
-    paddingBottom: 16,
-    gap: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  headerTitle: { fontSize: 22, fontWeight: '700', color: '#2A3D66' },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
-  emptyTitle: { fontSize: 16, fontWeight: '600', color: '#6B7280' },
-  emptySubtitle: { fontSize: 13, color: '#9CA3AF', textAlign: 'center', paddingHorizontal: 32 },
+  safe: { flex: 1, backgroundColor: color.background },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: space.sm, paddingHorizontal: space.xl },
+  emptyTitle: { ...type.heading, color: color.textMuted },
+  emptySubtitle: { ...type.caption, textAlign: 'center' },
   turnOnBtn: {
-    marginTop: 12,
-    minHeight: 52,
-    paddingHorizontal: 22,
-    borderRadius: 14,
-    backgroundColor: '#2A3D66',
+    marginTop: space.sm,
+    minHeight: size.control,
+    paddingHorizontal: space.lg,
+    borderRadius: radius.control,
+    backgroundColor: color.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  turnOnText: { fontSize: 17, fontWeight: '700', color: '#FFFFFF' },
-  list: { padding: 16, gap: 10 },
+  turnOnText: { ...type.button, color: '#FFFFFF' },
+  list: { padding: space.lg, gap: space.sm },
   card: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    gap: 12,
-    boxShadow: '0px 1px 4px rgba(0, 0, 0, 0.06)',
-    elevation: 2,
+    backgroundColor: color.surface,
+    borderRadius: radius.control,
+    paddingVertical: space.md,
+    paddingHorizontal: space.lg,
+    gap: space.md,
+    ...shadow.card,
   },
   cardUnread: {
     backgroundColor: '#F0F5FF',
     borderLeftWidth: 3,
-    borderLeftColor: '#2A3D66',
+    borderLeftColor: color.primary,
   },
   iconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: size.iconBox,
+    height: size.iconBox,
+    borderRadius: size.iconBox / 2,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  content: { flex: 1 },
-  title: { fontSize: 14, fontWeight: '500', color: '#374151', marginBottom: 2 },
-  titleUnread: { fontWeight: '700', color: '#1F2937' },
-  message: { fontSize: 13, color: '#6B7280', lineHeight: 18, marginBottom: 4 },
-  time: { fontSize: 11, color: '#9CA3AF' },
+  content: { flex: 1, minWidth: 0 },
+  title: { ...type.label, color: color.textBody, marginBottom: 2 },
+  titleUnread: { fontWeight: '600', color: color.text },
+  message: { ...type.caption, marginBottom: 2 },
+  time: { fontSize: 12, lineHeight: 16, color: '#9CA3AF' },
   dot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#2A3D66',
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: color.primary,
   },
 });

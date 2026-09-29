@@ -1,22 +1,19 @@
 // ─── The way back, on every screen but Home ─────────────────────
 //
-// A word, not a bare arrow, and big enough to hit: many of the people using
-// FamilyVault are elderly, and a small grey arrow in a corner is easy to miss
-// or to take for decoration. Outlined, as in the v4 design, in the app's own
-// navy.
+// A plain arrow at the left of the top bar, as on every phone: the drawn
+// icon is 24px, the touch area around it 44px, so it is easy to hit without
+// looking heavy. Screen readers hear "Go back".
 //
 // It also works when there is nothing to go back to. After a refresh on the
 // web, or on a screen opened from a link, `router.back()` does nothing at
 // all — the button is there and dead — so this goes to `fallback` instead:
 // Home, unless the screen names a better parent.
-//
-// Sits on its own row above the screen's title, so a long title never
-// squeezes it.
 // ────────────────────────────────────────────────────────────────
 
-import { Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { TouchableOpacity, StyleSheet } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import { color, size } from '../constants/design';
 
 export function BackButton({ fallback = '/home' }: { fallback?: string }) {
   const goBack = () => {
@@ -28,30 +25,21 @@ export function BackButton({ fallback = '/home' }: { fallback?: string }) {
     <TouchableOpacity
       onPress={goBack}
       style={styles.button}
-      activeOpacity={0.7}
-      hitSlop={8}
+      activeOpacity={0.6}
       accessibilityRole="button"
       accessibilityLabel="Go back"
     >
-      <Feather name="arrow-left" size={22} color="#2A3D66" />
-      <Text style={styles.label}>Back</Text>
+      <Feather name="arrow-left" size={size.icon} color={color.primary} />
     </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
   button: {
-    flexDirection: 'row',
+    width: size.control,
+    height: size.control,
+    borderRadius: size.control / 2,
     alignItems: 'center',
-    alignSelf: 'flex-start',
-    gap: 6,
-    minHeight: 48,
-    paddingLeft: 10,
-    paddingRight: 16,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#2A3D66',
-    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
   },
-  label: { fontSize: 17, fontWeight: '700', color: '#2A3D66' },
 });

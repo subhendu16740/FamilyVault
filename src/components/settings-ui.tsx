@@ -1,6 +1,7 @@
-// The pieces the Settings screens are built from: cards, big buttons, text
-// fields, an On/Off control and a status line. Sized for older eyes and
-// hands — 17px text, 52px buttons — in the app's palette.
+// The pieces the Settings screens are built from: cards, buttons, text
+// fields, an On/Off control and a status line. Every size comes from
+// src/constants/design.ts, so a card here matches a card anywhere else:
+// 15px text, 44px controls, 16px padding.
 
 import type { ReactNode } from 'react';
 import {
@@ -8,6 +9,7 @@ import {
   type TextInputProps, type StyleProp, type ViewStyle,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { color, radius, shadow, size, space, type } from '../constants/design';
 
 export function Card({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
   return <View style={[styles.card, style]}>{children}</View>;
@@ -18,7 +20,7 @@ export function CardTitle({ icon, children }: { icon?: string; children: ReactNo
     <View style={styles.cardTitleRow}>
       {!!icon && (
         <View style={styles.iconWrap}>
-          <Feather name={icon as any} size={18} color="#2A3D66" />
+          <Feather name={icon as any} size={16} color={color.primary} />
         </View>
       )}
       <Text style={styles.cardTitle} accessibilityRole="header">{children}</Text>
@@ -47,9 +49,9 @@ export function PrimaryButton({ label, onPress, disabled, busy, icon }: ButtonPr
       accessibilityRole="button"
       accessibilityState={{ disabled: !!off, busy: !!busy }}
     >
-      {busy ? <ActivityIndicator color="#FFFFFF" /> : (
+      {busy ? <ActivityIndicator size="small" color="#FFFFFF" /> : (
         <>
-          {!!icon && <Feather name={icon as any} size={18} color="#FFFFFF" />}
+          {!!icon && <Feather name={icon as any} size={16} color="#FFFFFF" />}
           <Text style={styles.primaryText}>{label}</Text>
         </>
       )}
@@ -66,7 +68,7 @@ export function SecondaryButton({ label, onPress, disabled, icon }: ButtonProps)
       activeOpacity={0.8}
       accessibilityRole="button"
     >
-      {!!icon && <Feather name={icon as any} size={18} color="#2A3D66" />}
+      {!!icon && <Feather name={icon as any} size={16} color={color.primary} />}
       <Text style={styles.secondaryText}>{label}</Text>
     </TouchableOpacity>
   );
@@ -82,9 +84,9 @@ export function DangerButton({ label, onPress, disabled, busy, icon }: ButtonPro
       activeOpacity={0.8}
       accessibilityRole="button"
     >
-      {busy ? <ActivityIndicator color="#DC2626" /> : (
+      {busy ? <ActivityIndicator size="small" color={color.danger} /> : (
         <>
-          {!!icon && <Feather name={icon as any} size={18} color="#DC2626" />}
+          {!!icon && <Feather name={icon as any} size={16} color={color.danger} />}
           <Text style={styles.dangerText}>{label}</Text>
         </>
       )}
@@ -107,7 +109,7 @@ export function Field({ label, hint, ...input }: TextInputProps & { label: strin
   );
 }
 
-/** Two big buttons that say what they do. Clearer than a small switch. */
+/** Two buttons that say what they do. Clearer than a small switch. */
 export function OnOff({ value, onChange, label }: { value: boolean; onChange: (on: boolean) => void; label: string }) {
   return (
     <View style={styles.segment} accessibilityRole="radiogroup" accessibilityLabel={label}>
@@ -135,87 +137,88 @@ export function Status({ kind, children }: { kind: 'ok' | 'error'; children: Rea
   const ok = kind === 'ok';
   return (
     <View style={[styles.status, ok ? styles.statusOk : styles.statusError]} accessibilityLiveRegion="polite">
-      <Feather name={ok ? 'check-circle' : 'alert-circle'} size={18} color={ok ? '#166534' : '#B91C1C'} />
+      <Feather name={ok ? 'check-circle' : 'alert-circle'} size={16} color={ok ? '#166534' : '#B91C1C'} style={styles.statusIcon} />
       <Text style={[styles.statusText, { color: ok ? '#166534' : '#B91C1C' }]}>{children}</Text>
     </View>
   );
 }
 
 export const screenStyles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F8F9FC' },
-  body: { padding: 20, gap: 14, paddingBottom: 48 },
+  safe: { flex: 1, backgroundColor: color.background },
+  body: { padding: space.lg, gap: space.md, paddingBottom: 40 },
 });
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 18,
-    gap: 12,
-    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.06)',
-    elevation: 3,
+    backgroundColor: color.surface,
+    borderRadius: radius.card,
+    padding: space.lg,
+    gap: space.md,
+    ...shadow.card,
   },
-  cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   iconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: '#EFF6FF',
+    width: size.iconBox,
+    height: size.iconBox,
+    borderRadius: 8,
+    backgroundColor: color.tint,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  cardTitle: { flex: 1, fontSize: 18, fontWeight: '700', color: '#1F2937' },
-  body: { fontSize: 16, lineHeight: 24, color: '#374151' },
-  muted: { fontSize: 14, lineHeight: 20, color: '#6B7280' },
+  cardTitle: { ...type.heading, flex: 1 },
+  body: type.body,
+  muted: type.caption,
   button: {
-    minHeight: 52,
-    borderRadius: 14,
-    paddingHorizontal: 18,
+    minHeight: size.control,
+    borderRadius: radius.control,
+    paddingHorizontal: space.lg,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: space.sm,
   },
-  primary: { backgroundColor: '#2A3D66' },
-  primaryText: { fontSize: 17, fontWeight: '700', color: '#FFFFFF' },
-  secondary: { backgroundColor: '#FFFFFF', borderWidth: 2, borderColor: '#2A3D66' },
-  secondaryText: { fontSize: 17, fontWeight: '700', color: '#2A3D66' },
+  primary: { backgroundColor: color.primary },
+  primaryText: { ...type.button, color: '#FFFFFF' },
+  secondary: { backgroundColor: color.surface, borderWidth: 1, borderColor: color.primary },
+  secondaryText: { ...type.button, color: color.primary },
   danger: { backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FECACA' },
-  dangerText: { fontSize: 17, fontWeight: '700', color: '#DC2626' },
+  dangerText: { ...type.button, color: color.danger },
   disabled: { opacity: 0.5 },
   field: { gap: 6 },
-  fieldLabel: { fontSize: 16, fontWeight: '700', color: '#1F2937' },
+  fieldLabel: { ...type.caption, fontWeight: '500', color: color.textBody },
   input: {
-    minHeight: 52,
-    borderWidth: 2,
-    borderColor: '#D1D5DB',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    fontSize: 17,
-    color: '#1F2937',
-    backgroundColor: '#FFFFFF',
+    minHeight: size.control,
+    borderWidth: 1,
+    borderColor: color.inputBorder,
+    borderRadius: 10,
+    paddingHorizontal: space.md,
+    fontSize: type.body.fontSize,
+    color: color.text,
+    backgroundColor: color.surface,
   },
-  inputMultiline: { minHeight: 150, paddingTop: 12, textAlignVertical: 'top' },
-  inputReadOnly: { backgroundColor: '#F3F4F6', color: '#4B5563' },
+  inputMultiline: { minHeight: 120, paddingTop: 10, textAlignVertical: 'top' },
+  inputReadOnly: { backgroundColor: color.divider, color: '#4B5563' },
   segment: {
     flexDirection: 'row',
     gap: 4,
-    padding: 4,
-    borderRadius: 14,
+    padding: 3,
+    borderRadius: radius.control,
     backgroundColor: '#EEF2F8',
   },
-  segmentOption: { flex: 1, minHeight: 48, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
-  segmentSelected: { backgroundColor: '#2A3D66' },
-  segmentText: { fontSize: 17, fontWeight: '700', color: '#4A6491' },
+  segmentOption: { flex: 1, minHeight: 38, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
+  segmentSelected: { backgroundColor: color.primary },
+  segmentText: { ...type.button, color: color.secondary },
   segmentTextSelected: { color: '#FFFFFF' },
   status: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 8,
-    padding: 12,
-    borderRadius: 12,
+    gap: space.sm,
+    paddingVertical: 10,
+    paddingHorizontal: space.md,
+    borderRadius: 10,
   },
+  statusIcon: { marginTop: 1 },
   statusOk: { backgroundColor: '#F0FDF4' },
   statusError: { backgroundColor: '#FEF2F2' },
-  statusText: { flex: 1, fontSize: 15, lineHeight: 21, fontWeight: '600' },
+  statusText: { flex: 1, fontSize: 14, lineHeight: 20, fontWeight: '500' },
 });

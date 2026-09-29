@@ -9,6 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { SUPPORT_EMAIL, SUPPORT_PHONE } from '../../lib/app-info';
 import { ScreenHeader } from '../../components/screen-header';
 import { Card, CardTitle, Body, PrimaryButton, screenStyles } from '../../components/settings-ui';
+import { color, radius, shadow, space, type } from '../../constants/design';
 
 const FAQ: { q: string; a: string }[] = [
   {
@@ -62,7 +63,7 @@ export default function HelpScreen() {
                   accessibilityState={{ expanded }}
                 >
                   <Text style={styles.faqQ}>{item.q}</Text>
-                  <Feather name={expanded ? 'chevron-up' : 'chevron-down'} size={20} color="#4A6491" />
+                  <Feather name={expanded ? 'chevron-up' : 'chevron-down'} size={18} color={color.secondary} />
                 </TouchableOpacity>
                 {expanded && <Text style={styles.faqA}>{item.a}</Text>}
               </View>
@@ -84,7 +85,7 @@ export default function HelpScreen() {
               onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`)}
               accessibilityRole="link"
             >
-              <Feather name="mail" size={20} color="#2A3D66" />
+              <Feather name="mail" size={16} color={color.primary} />
               <Text style={styles.contactText}>{SUPPORT_EMAIL}</Text>
             </TouchableOpacity>
           )}
@@ -94,7 +95,7 @@ export default function HelpScreen() {
               onPress={() => Linking.openURL(`tel:${SUPPORT_PHONE.replace(/[^\d+]/g, '')}`)}
               accessibilityRole="link"
             >
-              <Feather name="phone" size={20} color="#2A3D66" />
+              <Feather name="phone" size={16} color={color.primary} />
               <Text style={styles.contactText}>{SUPPORT_PHONE}</Text>
             </TouchableOpacity>
           )}
@@ -108,18 +109,17 @@ export default function HelpScreen() {
 }
 
 const styles = StyleSheet.create({
-  sectionTitle: { fontSize: 18, fontWeight: '700', color: '#1F2937' },
+  sectionTitle: { ...type.overline, marginLeft: space.xs },
   faqCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.06)',
-    elevation: 3,
+    backgroundColor: color.surface,
+    borderRadius: radius.card,
+    ...shadow.card,
   },
-  faqItem: { paddingHorizontal: 16 },
-  faqBorder: { borderTopWidth: 1, borderTopColor: '#F3F4F6' },
-  faqQuestion: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 60, paddingVertical: 12 },
-  faqQ: { flex: 1, fontSize: 17, fontWeight: '600', color: '#1F2937' },
-  faqA: { fontSize: 16, lineHeight: 24, color: '#374151', paddingBottom: 16 },
-  contactRow: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 48 },
-  contactText: { fontSize: 17, fontWeight: '600', color: '#2A3D66' },
+  faqItem: { paddingHorizontal: space.lg },
+  faqBorder: { borderTopWidth: 1, borderTopColor: color.divider },
+  faqQuestion: { flexDirection: 'row', alignItems: 'center', gap: space.md, minHeight: 52, paddingVertical: 10 },
+  faqQ: { ...type.label, flex: 1 },
+  faqA: { ...type.body, paddingBottom: space.lg },
+  contactRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, minHeight: 44 },
+  contactText: { ...type.label, color: color.primary },
 });
