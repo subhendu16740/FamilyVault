@@ -1,8 +1,9 @@
-// ─── The way back, on every screen that is not a tab ────────────
+// ─── The way back, on every screen but Home ─────────────────────
 //
 // A word, not a bare arrow, and big enough to hit: many of the people using
 // FamilyVault are elderly, and a small grey arrow in a corner is easy to miss
-// or to take for decoration.
+// or to take for decoration. Outlined, as in the v4 design, in the app's own
+// navy.
 //
 // It also works when there is nothing to go back to. After a refresh on the
 // web, or on a screen opened from a link, `router.back()` does nothing at
@@ -45,10 +46,12 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     gap: 6,
     minHeight: 48,
-    paddingLeft: 12,
-    paddingRight: 18,
-    borderRadius: 24,
-    backgroundColor: '#EEF2F8',
+    paddingLeft: 10,
+    paddingRight: 16,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#2A3D66',
+    backgroundColor: '#FFFFFF',
   },
-  label: { fontSize: 17, fontWeight: '600', color: '#2A3D66' },
+  label: { fontSize: 17, fontWeight: '700', color: '#2A3D66' },
 });

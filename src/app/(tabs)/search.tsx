@@ -19,6 +19,7 @@ import {
   recognitionSupported, listen, stopListening, speak, stopSpeaking, type SpeechErrorCode,
 } from '../../lib/speech';
 import { toSpeech } from '../../lib/speech-text';
+import { BackButton } from '../../components/back-button';
 
 type DocumentCategory = Database['public']['Tables']['document_categories']['Row'];
 
@@ -261,18 +262,18 @@ export default function SearchScreen() {
       >
         {/* Header */}
         <View style={styles.header}>
+          {/* Back leaves Ask, as on every screen but Home; + starts a new
+              question, which is what the old arrow here used to do. */}
+          <BackButton />
           <View style={styles.headerRow}>
+            <Text style={styles.title}>Ask FamilyVault</Text>
             {hasMessages && (
               <TouchableOpacity
                 onPress={() => { stopVoice(); setMessages([]); }}
-                style={styles.backBtn}
+                style={styles.newChatBtn}
+                accessibilityRole="button"
+                accessibilityLabel="New question"
               >
-                <Feather name="arrow-left" size={24} color="#4B5563" />
-              </TouchableOpacity>
-            )}
-            <Text style={styles.title}>Ask FamilyVault</Text>
-            {hasMessages && (
-              <TouchableOpacity onPress={() => { stopVoice(); setMessages([]); }} style={styles.newChatBtn}>
                 <Feather name="plus" size={18} color="#2A3D66" />
               </TouchableOpacity>
             )}
@@ -540,6 +541,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 8,
     paddingBottom: 12,
+    gap: 8,
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
   },
@@ -548,7 +550,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
-  backBtn: { padding: 4 },
   title: { flex: 1, fontSize: 20, fontWeight: '700', color: '#2A3D66' },
   newChatBtn: {
     width: 36,

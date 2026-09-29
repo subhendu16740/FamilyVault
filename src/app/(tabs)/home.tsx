@@ -11,6 +11,7 @@ import { useAuth } from '../../lib/auth';
 import { useFamily } from '../../lib/family-context';
 import { useDrawer } from '../../lib/drawer-context';
 import { fetchRecentDocuments, fetchFamilyStats, fetchUnreadNotificationCount, checkExpiryNotifications } from '../../lib/api';
+import { usePreferences } from '../../lib/preferences';
 import type { FamilyDocumentRow } from '../../lib/database.types';
 
 
@@ -55,6 +56,8 @@ export default function HomeScreen() {
   const { user } = useAuth();
   const { currentFamily, refreshFamilies } = useFamily();
   const { openDrawer } = useDrawer();
+  // Settings › Notifications off: the bell stays, its count does not.
+  const { notificationsEnabled } = usePreferences();
 
   const [recentDocs, setRecentDocs] = useState<FamilyDocumentRow[]>([]);
   const [stats, setStats] = useState({ doc_count: 0, member_count: 0, category_count: 0 });
@@ -123,7 +126,7 @@ export default function HomeScreen() {
                 onPress={() => router.push('/notifications' as any)}
               >
                 <Feather name="bell" size={20} color="#FFFFFF" />
-                {unreadCount > 0 && (
+                {notificationsEnabled && unreadCount > 0 && (
                   <View style={styles.bellBadge}>
                     <Text style={styles.bellBadgeText}>
                       {unreadCount > 9 ? '9+' : unreadCount}

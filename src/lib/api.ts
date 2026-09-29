@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { parseDocumentDate } from './dates';
 import type {
   FamilyWithMembership,
   FamilyMemberWithUser,
@@ -743,4 +744,182 @@ export async function checkExpiryNotifications(familyId: string): Promise<number
 
   if (error) throw error;
   return (data ?? 0) as number;
+}
+
+// ─── Settings: profile, security, storage, reminders, feedback ───
+
+export interface Profile {
+  displayName: string;
+  phone: string;
+}
+
+/**
+ * Your name and phone. public.users is what the family sees (member lists,
+ * "uploaded by"), and clients may write those two columns since 027; the
+ * sign-in account's metadata keeps a copy, which is what this app reads for
+ * your own name — so the change shows everywhere for you even where 027 is
+ * not applied yet.
+ */
+export async function fetchProfile(userId: string, fallback: Partial<Profile> = {}): Promise<Profile> {
+  const { data } = await supabase
+    .from('users')
+    .select('display_name, phone')
+    .eq('id', userId)
+    .maybeSingle();
+  return {
+    displayName: data?.display_name || fallback.displayName || '',
+    phone: data?.phone || fallback.phone || '',
+  };
+}
+
+export async function updateProfile(userId: string, profile: Profile): Promise<{ familySees: boolean }> {
+  const displayName = profile.displayName.trim();
+  const phone = profile.phone.trim();
+  const { error: authError } = await supabase.auth.updateUser({ data: { display_name: displayName, phone } });
+  if (authError) throw authError;
+
+  // Not in the generated types' writable set until they are regenerated after 027.
+  const { error } = await (supabase.from('users') as any)
+    .update({ display_name: displayName, phone: phone || null })
+    .eq('id', userId);
+  if (error) {
+    console.warn('[profile] not saved where the family sees it (is 027 applied?):', error.message);
+    return { familySees: false };
+  }
+  return { familySees: true };
+}
+
+export async function changePassword(newPassword: string): Promise<void> {
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  if (error) throw error;
+}
+
+/** Ends every session this account has, on every device, this one included. */
+export async function signOutEverywhere(): Promise<void> {
+  const { error } = await supabase.auth.signOut({ scope: 'global' });
+  if (error) throw error;
+}
+
+/** Every document in a family, a page at a time. */
+async function fetchAllDocuments(familyId: string): Promise<FamilyDocumentRow[]> {
+  const PAGE = 200;
+  const all: FamilyDocumentRow[] = [];
+  for (let offset = 0; offset < PAGE * 50; offset += PAGE) {
+    const page = await fetchRecentDocuments(familyId, PAGE, offset);
+    all.push(...page);
+    if (page.length < PAGE) break;
+  }
+  return all;
+}
+
+/** Run `fn` over `items`, at most `limit` at once, keeping order. */
+async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
+}
+
+export interface FamilyStorage {
+  familyId: string;
+  name: string;
+  bytes: number;
+  documents: number;
+  /** The part of it this person added. */
+  yourBytes: number;
+  yourDocuments: number;
+}
+
+/**
+ * How much each of your families stores, and how much of that you added:
+ * the sizes of the files as uploaded. There is no storage limit yet, so this
+ * reports use and nothing else.
+ */
+export async function fetchStorageUsage(
+  families: { id: string; name: string }[],
+  userId: string,
+): Promise<FamilyStorage[]> {
+  return Promise.all(families.map(async (family) => {
+    const docs = await fetchAllDocuments(family.id);
+    const size = (d: FamilyDocumentRow) => d.file_size_bytes ?? 0;
+    const yours = docs.filter((d) => d.uploaded_by === userId);
+    return {
+      familyId: family.id,
+      name: family.name,
+      bytes: docs.reduce((sum, d) => sum + size(d), 0),
+      documents: docs.length,
+      yourBytes: yours.reduce((sum, d) => sum + size(d), 0),
+      yourDocuments: yours.length,
+    };
+  }));
+}
+
+export interface ExpiringDocument {
+  id: string;
+  fileName: string;
+  memberName: string | null;
+  expiry: Date;
+  /** Whole days from today; negative once it has run out. */
+  daysLeft: number;
+}
+
+/**
+ * Every document in the family with an expiry date on it, soonest first.
+ * The date lives in each document's extracted details, which the list does
+ * not carry, so this reads each document's details — fine for a family's
+ * papers; a vault of thousands would want one query for it.
+ */
+export async function fetchExpiringDocuments(familyId: string): Promise<ExpiringDocument[]> {
+  const docs = await fetchAllDocuments(familyId);
+  const details = await mapLimit(docs, 6, (d) => fetchDocumentById(familyId, d.id).catch(() => null));
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const found: ExpiringDocument[] = [];
+  for (const doc of details) {
+    if (!doc) continue;
+    const expiry = (doc.metadata ?? [])
+      .filter((m) => m.key === 'expiry_date')
+      .map((m) => parseDocumentDate(m.value))
+      .find((d): d is Date => d !== null);
+    if (!expiry) continue;
+    found.push({
+      id: doc.id,
+      fileName: doc.file_name,
+      memberName: doc.member_name,
+      expiry,
+      daysLeft: Math.round((expiry.getTime() - today.getTime()) / 86_400_000),
+    });
+  }
+  return found.sort((a, b) => a.expiry.getTime() - b.expiry.getTime());
+}
+
+export type FeedbackTopic = 'problem' | 'idea' | 'question' | 'other';
+
+/**
+ * A message from Help & FAQ. public.feedback (027) takes the sender from the
+ * session and lets nobody read it back, so this never asks for the row.
+ */
+export async function sendFeedback(message: string, topic: FeedbackTopic | null, appVersion: string, platform: string): Promise<void> {
+  // Not in the generated types until they are regenerated after 027.
+  const { error } = await (supabase as any).from('feedback').insert({
+    topic,
+    message: message.trim(),
+    app_version: appVersion.slice(0, 40),
+    platform: platform.slice(0, 20),
+  });
+  if (error) throw error;
+}
+
+/** A missing table or column: the migration a feature needs is not applied here. */
+export function isMissingMigration(error: unknown): boolean {
+  const e = error as { code?: string; message?: string } | null;
+  return !!e && (e.code === '42P01' || e.code === 'PGRST205' || e.code === 'PGRST204'
+    || /does not exist|could not find the table|schema cache/i.test(e.message ?? ''));
 }

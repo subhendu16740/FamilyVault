@@ -39,7 +39,9 @@ Four things will mislead you if you assume otherwise:
    every profile), and a family admin could rewrite `storage_namespace`.
    Migration 025 revokes table-wide INSERT and UPDATE on `users`, `families`,
    `family_members`, `notifications` and `invitations` and grants back only
-   the columns the app changes (listed in 025's header). **A new writable
+   the columns the app changes (listed in 025's header; 027 adds your own
+   `display_name`, `phone` and `notifications_enabled`, and a write-only
+   `feedback` table). **A new writable
    column needs its own `GRANT` in a migration.** Membership has no
    invitations and no requests: only an admin adds a person, through the
    `add-member` Edge Function, and clients cannot insert a membership row at
@@ -86,7 +88,7 @@ errors**) and `npm run build` are the local gates.
 at 03:10 IST, and on pushes that change `qa/`. It uploads synthetic SPECIMEN
 documents to its own vault (QA Vault A, account A), asks questions about
 them, and checks the answers on facts and sources, never wording. It also
-runs the 023 sweep and the 024 DEV/PROD fingerprint, 45 access probes (a
+runs the 023 sweep and the 024 DEV/PROD fingerprint, 49 access probes (a
 logged-out visitor and a second account must be refused everywhere, Gmail
 import's endpoints included), the
 membership model (the second account, added as a viewer, must not be able to
@@ -363,7 +365,11 @@ src/
     setup-family.tsx         # first-time vault creation
     notifications.tsx        # expiry alerts, uploads, invites
     family.tsx               # family tree + members    (NOT a tab)
-    settings.tsx             # profile + sign out       (NOT a tab)
+    reminders.tsx            # expiry dates, soonest first (★ Family Plus, in the drawer)
+    settings/                # (NOT a tab) its own Stack, so Back returns to Settings
+      index.tsx              # the list; every row opens a screen
+      profile.tsx  security.tsx  notifications.tsx  privacy.tsx
+      storage.tsx  help.tsx  feedback.tsx  about.tsx
     document/[id].tsx        # document viewer
     gmail-import.tsx         # connect Gmail, review what it found, import (web only)
     +html.tsx                # custom HTML shell, web only
@@ -401,7 +407,9 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `auth.tsx` | `AuthProvider`: session, signIn, signUp, signInWithGoogle, signOut |
 | `family-context.tsx` | `FamilyProvider`: currentFamily, members, membership, needsFamily |
 | `drawer-context.tsx` | Profile drawer open/close state |
-| `api.ts` | **All** Supabase queries — documents, search, upload, RAG, notifications, adding and leaving families, Gmail import |
+| `api.ts` | **All** Supabase queries — documents, search, upload, RAG, notifications, adding and leaving families, Gmail import, and the Settings screens (profile, password, storage use, expiry dates, feedback) |
+| `dates.ts` | `parseDocumentDate()`: expiry dates exactly as ingest stores them (DD/MM/YYYY and kin, YYYY-MM-DD, "19 October 2026") |
+| `app-info.ts` | Version, release date and commit (stamped into `extra` by `app.config.ts` at build time), and the support contact Help shows |
 | `ocr.ts` | Platform-split OCR with progress callback; reads the person's chosen languages |
 | `ocr-languages.ts` | The document-language picker list, and `resolveOcrLanguages()` which always appends English |
 | `preferences.tsx` | `PreferencesProvider`: voice toggle + language, document languages. Cached locally, stored on `public.users`; reads and writes fall back to the older column set so an unapplied migration degrades one setting rather than all of them |
@@ -459,7 +467,8 @@ Be explicit when a change touches a native-only path.
 Supabase, cloud-hosted. Three layers:
 
 - **Layer 1 (common)** — `public` schema: users, families, family_members,
-  invitations, document_categories, notifications, audit_logs. RLS enabled.
+  invitations, document_categories, notifications, audit_logs, feedback. RLS
+  enabled.
 - **Layer 2 (private)** — one isolated schema per family (`family_<short_uuid>`)
   holding documents, document_metadata, document_chunks, expiry_alerts,
   family_relationships. Created by the `public.create_family()` PG function.
@@ -545,6 +554,28 @@ applied to a database belongs in a migration file, in the same change.
 **Still true:** the `documents` storage bucket is created by hand in the
 dashboard (no CLI, no migration), and `db dump` excludes the `storage` schema,
 so storage policies live only in `019`.
+
+### Settings writes — your own name, a switch, feedback (027)
+
+- **Profile** writes `display_name` and `phone` on your own `users` row
+  (`users_update_own` keeps it to one row) and a copy in the sign-in
+  account's metadata, which is what the app reads for your own name — so the
+  name changes for you even where 027 is not applied; the family sees it
+  once it is.
+- **Notifications** is `users.notifications_enabled`, read only by the app:
+  off hides the bell's count and the list. Expiry alerts are still written
+  for every member, so switching back on shows them. Before 027 it is kept on
+  the device (`preferences.tsx`'s fallback).
+- **Feedback** goes to `public.feedback`: INSERT on four columns for
+  `authenticated`, the sender defaulted from `auth.uid()` and checked by the
+  policy, and no SELECT for any client — the team reads it in the dashboard.
+  Before 027 the app says feedback is not switched on yet.
+- **Storage** adds up `file_size_bytes` from `get_family_documents`, per
+  family and for what you uploaded. **Reminders** reads each document's
+  details for its `expiry_date` — one call per document, fine for a family's
+  papers; a large vault would want one query for it.
+- **About**'s release date is stamped by `app.config.ts` when the bundle is
+  built, so for a web deploy it is the day of that deploy.
 
 ### Membership — an admin adds, nobody requests (025)
 
@@ -904,16 +935,25 @@ rule again once pinned chunks are mixed in.
 - **Icons:** `@expo/vector-icons`, Feather set. Feather has no fingerprint
   glyph — biometric UI uses `"aperture"`.
 - Screens use `SafeAreaView` with `edges={['top']}`.
-- **Every screen that is not a tab opens with `<BackButton />`**
-  (`src/components/back-button.tsx`): the word "Back", not a bare arrow, on
-  its own row above the title, and shown while the screen loads too. It goes
+- **Every screen but Home opens with `<BackButton />`**
+  (`src/components/back-button.tsx`), the Ask and Upload tabs included, as in
+  the v4 design: the word "Back", not a bare arrow, outlined in navy, on its
+  own row above the title, and shown while the screen loads too. New screens
+  use `<ScreenHeader title fallback />`, which is that row plus the title. It goes
   Home (or the screen's `fallback`) when there is no history — `router.back()`
   alone does nothing after a web refresh or on a screen opened from a link,
   which is how Settings came to have no way back at all and Notifications
   and the document viewer a button that did nothing.
-- **A row or button that opens nothing is not shown.** Settings listed six
-  rows with an arrow that went nowhere, and the document viewer had a menu
-  button with no menu. Add the control when its screen exists.
+- **A row or button that opens nothing is not shown.** Settings once listed
+  six rows with an arrow that went nowhere, and the document viewer had a
+  menu button with no menu. Add the control when its screen exists.
+- **★ Family Plus marks what the paid plan will include** (`<PlusTag />`).
+  The plan does not exist yet, so nothing is locked behind it: a starred
+  feature works for everyone and says the paid version is coming.
+- **Never give a web panel `flex` for its width.** On react-native-web
+  `flex: 1` fills the row and `flex: 0` collapses it, whatever `width` says.
+  The old profile drawer filled the whole page that way, which is why it
+  looked like a screen rather than a drawer. A width alone is what native does.
 - Use `as any` on `router.push`/`replace` for routes typed routes don't cover
   (e.g. `router.replace('/home' as any)`).
 - Re-fetch on focus with `useFocusEffect`, not `useEffect` — plain `useEffect`
