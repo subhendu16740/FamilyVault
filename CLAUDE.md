@@ -412,6 +412,7 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `drawer-context.tsx` | Profile drawer open/close state |
 | `api.ts` | **All** Supabase queries — documents, search, upload, RAG, notifications, adding and leaving families, Gmail import, and the Settings screens (profile, password, storage use, expiry dates, feedback) |
 | `dates.ts` | `parseDocumentDate()`: expiry dates exactly as ingest stores them (DD/MM/YYYY and kin, YYYY-MM-DD, "19 October 2026") |
+| `plans.ts` | What the free plan includes: `FREE_STORAGE_GB` per family (shown on Settings › Storage, not enforced) and `storageLevel()` |
 | `file-types.ts` | What a picked file is (`detectFileType()`: MIME type, then name, never a web `blob:` uri) and whether the vault can keep it (PDF, JPG, PNG) |
 | `app-info.ts` | Version, release date and commit (stamped into `extra` by `app.config.ts` at build time), and the support contact Help shows |
 | `ocr.ts` | Platform-split OCR with progress callback; reads the person's chosen languages |
@@ -585,7 +586,16 @@ so storage policies live only in `019`.
   policy, and no SELECT for any client — the team reads it in the dashboard.
   Before 027 the app says feedback is not switched on yet.
 - **Storage** adds up `file_size_bytes` from `get_family_documents`, per
-  family and for what you uploaded. **Reminders** reads each document's
+  family and for what you uploaded, and shows each family's total against
+  its free space: `FREE_STORAGE_GB` in `src/lib/plans.ts` (1 GB), amber from
+  80%, red past it. More space is ★ Family Plus, which does not exist yet,
+  so **nothing enforces the limit** — a family past it can still upload.
+  Enforcing it needs a server-side check (a file lands in Storage before any
+  app code could refuse it) and a way to pay. Mind the platform underneath:
+  the Supabase organisation is on the **Free plan, which holds 1 GB of files
+  per project in total**, all families together — PROD needs Pro (100 GB
+  included, then about $0.02/GB a month) before 1 GB a family can hold for
+  more than one family. **Reminders** reads each document's
   details for its `expiry_date` — one call per document, fine for a family's
   papers; a large vault would want one query for it.
 - **About**'s release date is stamped by `app.config.ts` when the bundle is
@@ -982,9 +992,9 @@ rule again once pinned chunks are mixed in.
 - **★ Family Plus marks what the paid plan will include** (`<PlusTag />`).
   The plan does not exist yet, so nothing is locked behind it: a starred
   feature works for everyone and says the paid version is coming. Today that
-  is Reminders (in the drawer) and Import from Gmail (on Upload): each shows
-  the tag where you find it and in its screen's top bar, and Help's FAQ
-  names both.
+  is Reminders (in the drawer), Import from Gmail (on Upload), and space
+  beyond each family's free allotment (Settings › Storage): each shows the
+  tag where you find it, and Help's FAQ names all three.
 - **Never give a web panel `flex` for its width.** On react-native-web
   `flex: 1` fills the row and `flex: 0` collapses it, whatever `width` says.
   The old profile drawer filled the whole page that way, which is why it

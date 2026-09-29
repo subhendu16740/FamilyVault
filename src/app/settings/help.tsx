@@ -7,6 +7,7 @@ import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SUPPORT_EMAIL, SUPPORT_PHONE } from '../../lib/app-info';
+import { FREE_STORAGE_LABEL } from '../../lib/plans';
 import { ScreenHeader } from '../../components/screen-header';
 import { Card, CardTitle, Body, PrimaryButton, screenStyles } from '../../components/settings-ui';
 import { color, radius, shadow, space, type } from '../../constants/design';
@@ -33,8 +34,12 @@ const FAQ: { q: string; a: string }[] = [
     a: 'If you are an admin, open Manage Family and choose Add Member, then type the email they use for FamilyVault. They need to have signed up first.',
   },
   {
+    q: 'How much space does my family get?',
+    a: `Every family gets ${FREE_STORAGE_LABEL} free for its documents. Settings › Storage shows how much is used. More space will come with ★ Family Plus, the paid plan. Until then you can keep adding documents.`,
+  },
+  {
     q: 'What does ★ Family Plus mean?',
-    a: 'Family Plus is the paid plan, coming soon. Things marked with ★, like reminders before a document runs out and bringing documents in from Gmail, will be part of it. Until then they work for everyone.',
+    a: 'Family Plus is the paid plan, coming soon. Things marked with ★, like reminders before a document runs out, bringing documents in from Gmail and more storage space, will be part of it. Until then they work for everyone.',
   },
   {
     q: 'Why can\'t FamilyVault find something that is in a document?',

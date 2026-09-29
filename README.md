@@ -23,7 +23,7 @@ FamilyVault brings all your family's important documents into one secure, shared
 - **Import from Gmail** ★ (web) — Connect your own Gmail; FamilyVault lists the attachments that look like documents, and imports the ones you tick. Only you see what it finds; disconnecting makes it forget
 - **Menu Drawer** — Slides in from the left from the name button on Home: Home, Manage Family, Reminders ★ and Settings, with Sign Out
 - **Reminders** ★ — Every document with an expiry date, soonest first. ★ Family Plus marks what the coming paid plan will add (reminders 90, 30 and 7 days ahead)
-- **Settings** — Profile (name and phone), Security (password, sign out everywhere), Notifications on/off, Storage (space used by you and each family), Privacy, Help & FAQ with feedback, and About (version and release date)
+- **Settings** — Profile (name and phone), Security (password, sign out everywhere), Notifications on/off, Storage (each family's use of its free 1 GB, and what you added; more space ★), Privacy, Help & FAQ with feedback, and About (version and release date)
 - **One Top Bar Everywhere** — A back arrow at the top left of every screen, with the title beside it, that works even after a refresh; one compact type and size scale (`src/constants/design.ts`) across the app
 - **23 Document Categories** — Pre-configured categories including Passport, Driving License, Health Insurance, Property Deed, Tax Return, Birth Certificate, and more
 - **In-App Confirmation Dialogs** — Custom modal dialogs for destructive actions
