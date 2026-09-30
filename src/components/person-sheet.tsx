@@ -14,7 +14,7 @@ import {
   addFamilyPerson, linkFamilyPeople, updateFamilyPerson,
   type FamilyTree, type RelativeKind,
 } from '../lib/api';
-import { parseDocumentDate } from '../lib/dates';
+import { formatDateInput, parseDocumentDate } from '../lib/dates';
 import { spousesOf, type Gender, type KinGraph } from '../../supabase/functions/_shared/kinship';
 import { Field, PrimaryButton, Status } from './settings-ui';
 import { color, radius, size, space, type } from '../constants/design';
@@ -50,12 +50,15 @@ const GENDERS: Array<{ value: Gender; label: string }> = [
 const first = (name: string) => name.trim().split(/\s+/)[0] ?? name;
 
 /** "14/03/1977" → "1977-03-14". A four-digit year, and not in the future. */
-function toIsoDate(text: string): string | null | 'invalid' {
-  const t = text.trim();
+function toIsoDate(text: string): string | null | 'invalid' | 'future' {
+  // Shaped again here, so digits alone ("26081962") are accepted however
+  // they arrived — pasted, autofilled or typed.
+  const t = formatDateInput(text.trim());
   if (!t) return null;
-  if (!/\d{4}\s*$/.test(t)) return 'invalid';
+  if (!/^\d{2}\/\d{2}\/\d{4}$/.test(t)) return 'invalid';
   const d = parseDocumentDate(t);
-  if (!d || d.getTime() > Date.now()) return 'invalid';
+  if (!d) return 'invalid';
+  if (d.getTime() > Date.now()) return 'future';
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
@@ -124,7 +127,8 @@ export function PersonSheet({ state, familyId, tree, graph, meId, onClose, onSav
       if (!details.name) { setProblem('Type their name.'); return; }
       if (details.name.length > 80) { setProblem('That name is too long.'); return; }
       const iso = toIsoDate(birth);
-      if (iso === 'invalid') { setProblem('Write the date of birth as DD/MM/YYYY, with the full year.'); return; }
+      if (iso === 'invalid') { setProblem('That date of birth doesn\'t look right. Type the day, month and full year, like 26081962.'); return; }
+      if (iso === 'future') { setProblem('That date of birth is in the future.'); return; }
       details.birthDate = iso;
     }
     if (asksRelation && relatives.length > 0 && (!relation || !relativeId)) {
@@ -225,9 +229,10 @@ export function PersonSheet({ state, familyId, tree, graph, meId, onClose, onSav
               <Field
                 label="Date of birth (optional)"
                 value={birth}
-                onChangeText={setBirth}
+                onChangeText={(text) => setBirth(formatDateInput(text))}
                 placeholder="DD/MM/YYYY"
-                keyboardType="numbers-and-punctuation"
+                keyboardType="number-pad"
+                maxLength={10}
                 hint="Tells elder from younger: Tau or Chacha, Didi or Behen."
               />
             </>
