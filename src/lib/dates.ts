@@ -45,3 +45,36 @@ export function expiryPhrase(daysLeft: number): string {
   if (daysLeft > 1) return daysLeft <= 60 ? `Runs out in ${daysLeft} days` : `Runs out in about ${Math.round(daysLeft / 30)} months`;
   return daysLeft === -1 ? 'Ran out yesterday' : `Ran out ${-daysLeft} days ago`;
 }
+
+/**
+ * A date as it is typed, shaped into DD/MM/YYYY: "26081962" becomes
+ * "26/08/1962" digit by digit, so nobody has to find the slash key — a phone's
+ * number pad has none. A slash (or - . space) typed by hand closes its field
+ * and pads a single digit: "2/8/1962" becomes "02/08/1962". A pasted
+ * year-first date ("1962-08-26") is turned round. Anything else is ignored.
+ */
+export function formatDateInput(raw: string): string {
+  const yearFirst = raw.trim().match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+  if (yearFirst) return `${yearFirst[3].padStart(2, '0')}/${yearFirst[2].padStart(2, '0')}/${yearFirst[1]}`;
+
+  const widths = [2, 2, 4];              // day, month, year
+  let out = '';
+  let field = 0;
+  let run = '';
+  for (const ch of raw) {
+    if (ch >= '0' && ch <= '9') {
+      if (run.length === widths[field]) {
+        if (field === 2) break;          // the year is full
+        out += `${run}/`;
+        field += 1;
+        run = '';
+      }
+      run += ch;
+    } else if (/[/.\-\s]/.test(ch) && run && field < 2) {
+      out += `${run.padStart(2, '0')}/`;
+      field += 1;
+      run = '';
+    }
+  }
+  return out + run;
+}

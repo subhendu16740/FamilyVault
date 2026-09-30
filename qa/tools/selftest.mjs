@@ -23,7 +23,7 @@ import {
 import {
   importTokenKey, sealToken, openToken, pkceChallenge, sha256Hex, base64url, fromBase64,
 } from '../../supabase/functions/_shared/gmail-crypto.ts';
-import { buildGraph, relationTo, relationLabel, relativesForPrompt, relativesNamedIn, buildForest } from '../../supabase/functions/_shared/kinship.ts';
+import { buildGraph, relationTo, relationLabel, relativesForPrompt, relativesNamedIn, buildForest, shortName, siblingsSharingParents } from '../../supabase/functions/_shared/kinship.ts';
 import { mentionsDate, mentionsAmount, mentionsPhone, mentionsText, refuses, devanagariShare, scriptShare, hasMarkdown } from '../lib/match.mjs';
 import { judgeAnswer } from '../lib/checks/ask.mjs';
 import { vehicleInsurance } from '../lib/tiny-pdf.mjs';
@@ -388,6 +388,32 @@ await test('kinship: the tree starts from each pair of ancestors, the viewer\'s 
   const loop = buildGraph([{ id: 'x', name: 'X', gender: null }, { id: 'y', name: 'Y', gender: null }],
     [{ from: 'x', to: 'y', kind: 'parent' }, { from: 'y', to: 'x', kind: 'parent' }]);
   assert.ok(buildForest(loop, 'x'));
+});
+
+await test('kinship: a sister added before Papa is drawn beside her brother, under Papa', () => {
+  // As a family really builds it: "Shatabdi is Subhendu's sister" first, then
+  // "K C Das Mohapatra is Subhendu's father". Nobody said she is his daughter.
+  const P = (id, name, gender) => ({ id, name, gender });
+  const g = buildGraph(
+    [P('papa', 'K C Das Mohapatra', 'male'), P('me', 'Subhendu', 'male'), P('sis', 'Shatabdi', 'female')],
+    [{ from: 'sis', to: 'me', kind: 'sibling' }, { from: 'papa', to: 'me', kind: 'parent' }],
+  );
+  const forest = buildForest(g, 'me');
+  assert.deepEqual(forest.branches.map((b) => b.title), ['K C Das Mohapatra'], 'one branch, named in full: "K" says nothing');
+  assert.deepEqual(forest.branches[0].roots[0].children.map((c) => c.person.name).sort(), ['Shatabdi', 'Subhendu']);
+  assert.deepEqual(forest.loose, []);
+  assert.equal(relationLabel(relationTo(g, 'me', 'sis')), 'Sister (Behen)');
+  // Adding Maa now reaches her too, with the Papa she was missing.
+  assert.deepEqual(siblingsSharingParents(g, 'me'), [{ id: 'sis', missing: ['papa'] }]);
+  // A half-brother with a different mother recorded is left alone.
+  const half = buildGraph(
+    [P('papa', 'Papa', 'male'), P('me', 'Me', null), P('bro', 'Bro', 'male'), P('other', 'Other Mother', 'female')],
+    [{ from: 'bro', to: 'me', kind: 'sibling' }, { from: 'papa', to: 'me', kind: 'parent' }, { from: 'other', to: 'bro', kind: 'parent' }],
+  );
+  assert.deepEqual(siblingsSharingParents(half, 'me'), []);
+  assert.equal(shortName('K C Das Mohapatra'), 'K C Das Mohapatra');
+  assert.equal(shortName('Dr. Meena Rao'), 'Meena');
+  assert.equal(shortName('Ramesh Verma'), 'Ramesh');
 });
 
 await test('questions.yaml is consistent with the fixtures', () => {

@@ -738,6 +738,22 @@ so storage policies live only in `019`.
   ends in the link's family (a composite foreign key). Someone with an
   account is never removed from the tree directly: they leave through Manage
   Family. Removing a person unmarks their documents; the documents stay.
+- **Brothers and sisters share parents; a sibling link is the fallback.**
+  "Brother or sister of Subhendu", when Subhendu's parents are in the tree,
+  is recorded as those parents' child (`person-sheet.tsx`'s plan, which says
+  so before saving). A sibling link is stored only when nobody's parents are
+  known. A parent added later reaches everyone sibling-linked to the child
+  whose parents are a subset of the child's (`siblingsSharingParents()`), and
+  the drawing places a sibling with no parents of their own beside their
+  brother or sister, under that sibling's parents — so a sister added before
+  Papa is never left in a branch of her own. Branch titles use the full name
+  when the first word is only an initial ("K C Das Mohapatra", not "K").
+- **One picture for everyone, always open.** Who sits where is computed from
+  the whole family, never from the viewer. The screen draws every branch
+  (one per pair of eldest ancestors: Papa's side, Maa's side), one below the
+  other, in the same order for everyone — no tabs, nothing hidden. Only the
+  viewer's own card (coral, "You") and the relation words under each name
+  follow who is looking.
 - **Document names come from the tree**, and only from the document's own
   family. Before 031, `get_family_documents` and `get_document_detail` looked
   a member up by id without checking the family, so a document marked with

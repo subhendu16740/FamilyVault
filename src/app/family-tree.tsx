@@ -6,8 +6,11 @@
 // the same rules rag-search uses to answer "Nani's pension papers". A person
 // with a document running out within three months carries a badge.
 //
-// Admins add and connect people; everyone sees the tree. Below the drawing
-// the same people are listed plainly, for screen readers and large text.
+// Admins add and connect people; everyone sees the same tree. Every branch
+// is drawn, one below the other, in the same order for everyone — nothing
+// hides behind a tab — and the viewer's own card is highlighted wherever it
+// appears. Below the drawing the same people are listed plainly, for screen
+// readers and large text.
 
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet } from 'react-native';
@@ -21,7 +24,7 @@ import {
   type FamilyTree, type ExpiringDocument,
 } from '../lib/api';
 import {
-  buildGraph, buildForest, relationTo, relationLabel, type KinPerson,
+  buildGraph, buildForest, relationTo, relationLabel, type KinPerson, type FamilyBranch, type TreeUnit,
 } from '../../supabase/functions/_shared/kinship';
 import { ScreenHeader, HeaderButton } from '../components/screen-header';
 import { FamilyTreeView, Avatar } from '../components/family-tree-view';
@@ -37,14 +40,7 @@ export default function FamilyTreeScreen() {
   const [tree, setTree] = useState<FamilyTree | null>(null);
   const [expiring, setExpiring] = useState<ExpiringDocument[]>([]);
   const [problem, setProblem] = useState<{ unavailable: boolean; text: string } | null>(null);
-  const [branchIndex, setBranchIndex] = useState<number | null>(null);
   const [sheet, setSheet] = useState<PersonSheetState | null>(null);
-  // The drawing is usually wider than a phone: open each branch scrolled to
-  // the viewer's own card, or to the middle when they are not in it.
-  const canvasRef = useRef<ScrollView>(null);
-  const drawingRef = useRef<View>(null);
-  const viewport = useRef(0);
-  const scrolledFor = useRef<string | null>(null);
 
   const load = useCallback(() => {
     if (!currentFamily) return () => {};
@@ -71,18 +67,6 @@ export default function FamilyTreeScreen() {
   const graph = useMemo(() => (tree ? buildGraph(tree.people, tree.links) : null), [tree]);
   const me = tree?.people.find((p) => p.userId === user?.id) ?? null;
   const forest = useMemo(() => (graph ? buildForest(graph, me?.id ?? null) : null), [graph, me?.id]);
-  const shown = forest && forest.branches.length
-    ? forest.branches[Math.min(branchIndex ?? forest.first, forest.branches.length - 1)]
-    : null;
-
-  const meInShown = !!(shown && me && shown.roots.some(function has(u): boolean {
-    return u.person.id === me.id || u.spouses.some((s) => s.id === me.id) || u.children.some(has);
-  }));
-  const scrollOnce = (x: number) => {
-    if (!shown || scrolledFor.current === shown.key) return;
-    scrolledFor.current = shown.key;
-    canvasRef.current?.scrollTo({ x: Math.max(0, x), animated: false });
-  };
 
   const labelFor = (id: string) => (graph && me ? relationLabel(relationTo(graph, me.id, id)) : null);
   const badgeFor = (id: string) => badgeFromExpiries(expiring, id);
@@ -110,7 +94,7 @@ export default function FamilyTreeScreen() {
           <Status kind="error">{problem.text}</Status>
         ) : (
           <>
-            {!shown && (
+            {forest && forest.branches.length === 0 && (
               <Card>
                 <CardTitle icon="git-branch">Start your family tree</CardTitle>
                 <Body>
@@ -123,48 +107,17 @@ export default function FamilyTreeScreen() {
               </Card>
             )}
 
-            {forest && forest.branches.length > 1 && (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.branchChips}>
-                {forest.branches.map((b, i) => {
-                  const on = b === shown;
-                  return (
-                    <TouchableOpacity
-                      key={b.key}
-                      style={[styles.branchChip, on && styles.branchChipOn]}
-                      onPress={() => setBranchIndex(i)}
-                      accessibilityRole="tab"
-                      accessibilityState={{ selected: on }}
-                    >
-                      <Text style={[styles.branchText, on && styles.branchTextOn]}>{b.title}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            )}
-
-            {shown && (
-              <View style={styles.canvas} onLayout={(e) => { viewport.current = e.nativeEvent.layout.width; }}>
-                <ScrollView
-                  ref={canvasRef}
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.canvasInner}
-                  onContentSizeChange={(w) => { if (!meInShown) scrollOnce((w - viewport.current) / 2); }}
-                >
-                  <View ref={drawingRef} collapsable={false}>
-                    <FamilyTreeView
-                      branch={shown}
-                      meId={me?.id ?? null}
-                      labelFor={labelFor}
-                      badgeFor={badgeFor}
-                      onPressPerson={open}
-                      measureIn={drawingRef}
-                      onMeLayout={(cx) => scrollOnce(space.md + cx - viewport.current / 2)}
-                    />
-                  </View>
-                </ScrollView>
-              </View>
-            )}
+            {forest?.branches.map((b) => (
+              <BranchCanvas
+                key={b.key}
+                branch={b}
+                title={forest.branches.length > 1 ? b.title : null}
+                meId={me?.id ?? null}
+                labelFor={labelFor}
+                badgeFor={badgeFor}
+                onPressPerson={open}
+              />
+            ))}
 
             {forest && forest.loose.length > 0 && (
               <>
@@ -245,23 +198,66 @@ export default function FamilyTreeScreen() {
   );
 }
 
+const branchHas = (branch: FamilyBranch, id: string) => branch.roots.some(function has(u: TreeUnit): boolean {
+  return u.person.id === id || u.spouses.some((s) => s.id === id) || u.children.some(has);
+});
+
+/**
+ * One branch's drawing. It is usually wider than a phone, so it opens
+ * scrolled to the viewer's own card, or to its middle when they are not in it.
+ */
+function BranchCanvas({ branch, title, meId, labelFor, badgeFor, onPressPerson }: {
+  branch: FamilyBranch;
+  title: string | null;
+  meId: string | null;
+  labelFor: (id: string) => string | null;
+  badgeFor: (id: string) => ReturnType<typeof badgeFromExpiries>;
+  onPressPerson: (p: KinPerson) => void;
+}) {
+  const canvasRef = useRef<ScrollView>(null);
+  const drawingRef = useRef<View>(null);
+  const viewport = useRef(0);
+  const scrolled = useRef(false);
+  const meHere = !!meId && branchHas(branch, meId);
+  const scrollOnce = (x: number) => {
+    if (scrolled.current) return;
+    scrolled.current = true;
+    canvasRef.current?.scrollTo({ x: Math.max(0, x), animated: false });
+  };
+  return (
+    <View style={styles.branch}>
+      {!!title && <Text style={styles.branchTitle}>{title}</Text>}
+      <View style={styles.canvas} onLayout={(e) => { viewport.current = e.nativeEvent.layout.width; }}>
+        <ScrollView
+          ref={canvasRef}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.canvasInner}
+          onContentSizeChange={(w) => { if (!meHere) scrollOnce((w - viewport.current) / 2); }}
+        >
+          <View ref={drawingRef} collapsable={false}>
+            <FamilyTreeView
+              branch={branch}
+              meId={meId}
+              labelFor={labelFor}
+              badgeFor={badgeFor}
+              onPressPerson={onPressPerson}
+              measureIn={drawingRef}
+              onMeLayout={(cx) => scrollOnce(space.md + cx - viewport.current / 2)}
+            />
+          </View>
+        </ScrollView>
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   body: { padding: space.lg, gap: space.md, paddingBottom: 40 },
   center: { alignItems: 'center', paddingVertical: 40 },
   muted: type.caption,
-  branchChips: { gap: space.sm },
-  branchChip: {
-    minHeight: 40,
-    paddingHorizontal: space.md,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: color.inputBorder,
-    backgroundColor: color.surface,
-    justifyContent: 'center',
-  },
-  branchChipOn: { backgroundColor: color.primary, borderColor: color.primary },
-  branchText: { ...type.caption, color: color.text, fontWeight: '500' },
-  branchTextOn: { color: '#FFFFFF', fontWeight: '600' },
+  branch: { gap: space.xs },
+  branchTitle: { ...type.caption, color: color.text, fontWeight: '600', marginLeft: space.xs },
   canvas: {
     backgroundColor: '#F1F4F9',
     borderRadius: radius.card,
