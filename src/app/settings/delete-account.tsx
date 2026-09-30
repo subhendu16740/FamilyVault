@@ -12,6 +12,8 @@ import { useCallback, useState } from 'react';
 import { ScrollView, View, Text, ActivityIndicator, StyleSheet } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useAuth } from '../../lib/auth';
+import { forgetAccount } from '../../lib/storage';
 import {
   previewAccountDeletion, deleteAccount, signOutThisDevice,
   AccountDeletionError, type AccountDeletionFamily,
@@ -26,6 +28,7 @@ const documents = (n: number) => `${n} ${n === 1 ? 'document' : 'documents'}`;
 const people = (n: number) => (n === 1 ? '1 other member loses it' : `${n} other members lose it`);
 
 export default function DeleteAccountScreen() {
+  const { user } = useAuth();
   const [plan, setPlan] = useState<AccountDeletionFamily[] | null>(null);
   const [problem, setProblem] = useState<{ unavailable: boolean; text: string } | null>(null);
   const [typed, setTyped] = useState('');
@@ -63,6 +66,8 @@ export default function DeleteAccountScreen() {
     setFailed(null);
     try {
       await deleteAccount();
+      // Now, not at Done: closing the tab instead must not leave them behind.
+      if (user) forgetAccount(user.id).catch(() => undefined);
       setDone(true);
     } catch (err: any) {
       setFailed(err?.message || 'Your account could not be deleted. Please try again.');

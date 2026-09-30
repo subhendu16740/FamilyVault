@@ -161,7 +161,7 @@ export default function DocumentViewerScreen() {
     setEditCategoryId(doc.category_id);
     setEditMemberId(doc.belongs_to_member);
 
-    // Everyone in the family tree can own a document; the members, before 030.
+    // Everyone in the family tree can own a document; the members, before 031.
     setMembers(owners.map((o) => ({ id: o.id, name: o.isMe ? `${o.name} (me)` : o.name })));
     try {
       const cats = await fetchCategories();

@@ -874,7 +874,7 @@ export async function fetchStorageUsage(
 export interface ExpiringDocument {
   id: string;
   fileName: string;
-  /** Whose document it is: a person in the family tree (a member id before 030). */
+  /** Whose document it is: a person in the family tree (a member id before 031). */
   memberId: string | null;
   memberName: string | null;
   expiry: Date;
@@ -1115,7 +1115,7 @@ export async function signOutThisDevice(): Promise<void> {
   await supabase.auth.signOut({ scope: 'local' });
 }
 
-// ─── Family tree (030) ───────────────────────────────────────────
+// ─── Family tree (031) ───────────────────────────────────────────
 //
 // Everyone in a family, with or without a FamilyVault account: a grandparent
 // who will never sign in, a child too young to. public.family_people holds
@@ -1127,7 +1127,7 @@ export async function signOutThisDevice(): Promise<void> {
 //
 // Reads go through RLS (members of the family); writes go through RPCs that
 // check the caller is an admin (or, for their own details, that person).
-// Before 030 every call fails with a missing table or function: callers
+// Before 031 every call fails with a missing table or function: callers
 // check isMissingMigration() and say the tree is not switched on yet.
 
 export interface FamilyPerson extends KinPerson {
@@ -1149,7 +1149,7 @@ export interface PersonDetails {
   birthDate: string | null;
 }
 
-// Not in the generated types until they are regenerated after 030.
+// Not in the generated types until they are regenerated after 031.
 const tree = (table: 'family_people' | 'family_links') => (supabase as any).from(table);
 
 export async function fetchFamilyTree(familyId: string): Promise<FamilyTree> {

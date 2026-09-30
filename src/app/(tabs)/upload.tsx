@@ -38,7 +38,7 @@ interface PickedFile {
 export default function UploadScreen() {
   const { user } = useAuth();
   const { currentFamily } = useFamily();
-  // Everyone in the family tree (you first); the members, before migration 030.
+  // Everyone in the family tree (you first); the members, before migration 031.
   const owners = useDocumentOwners();
   // From a person's page: "Add a document for Nani".
   const { person } = useLocalSearchParams<{ person?: string }>();

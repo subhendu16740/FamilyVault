@@ -1,8 +1,8 @@
 // Everyone a document can belong to, for "Whose document is this?" on
 // Upload and in the document viewer: the family tree's people once migration
-// 030 is applied — a grandparent without an account included — and, until
+// 031 is applied — a grandparent without an account included — and, until
 // then, the family's members, as before. Member ids are person ids for
-// members (030 creates each member's person with their member id), so a
+// members (031 creates each member's person with their member id), so a
 // document marked either way points at the same person.
 
 import { useCallback, useState } from 'react';
@@ -39,7 +39,7 @@ export function useDocumentOwners(): Owner[] {
         });
         setOwners([...list.filter((o) => o.isMe), ...list.filter((o) => !o.isMe)]);
       })
-      .catch(() => undefined);           // before 030: the members below
+      .catch(() => undefined);           // before 031: the members below
     return () => { cancelled = true; };
   }, [currentFamily?.id, user?.id]));
 

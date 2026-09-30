@@ -427,7 +427,7 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `speech-text.ts` | `toSpeech()`: strips markdown and spells out ID numbers before they are read aloud |
 | `voice-languages.ts` | The language picker list and the few phrases the app itself says, per language |
 | `storage.ts` | Key-value cache: localStorage on web, AsyncStorage on native |
-| `database.types.ts` | Generated Supabase types, current to 029. Regenerate after every migration and re-append the hand-written block at the bottom (see the typecheck note) |
+| `database.types.ts` | Generated Supabase types, current to 030 (which changed nothing in them). Regenerate after every migration and re-append the hand-written block at the bottom (see the typecheck note) |
 
 ---
 
@@ -629,7 +629,7 @@ so storage policies live only in `019`.
   newest 100 turns, 6,000 characters each, and each source's id and name
   only. Before 028 the app says saving is not switched on yet.
 
-### Deleting your account — at once, nothing kept (029)
+### Deleting your account — at once, nothing kept (029, 030)
 
 - **Both stores require it in the app** (Apple 5.1.1(v); Google Play's
   account-deletion policy, which also wants a web link — the web app's
@@ -655,6 +655,29 @@ so storage policies live only in `019`.
   sign-in (`auth.admin.deleteUser`, which cascades Gmail, feedback and saved
   chats). Calling again after a partial failure finds nothing and finishes.
   A Gmail permission is revoked at Google on the way, best effort.
+  The device forgets what it kept for the account too (`forgetAccount()` in
+  `src/lib/storage.ts`, which names every per-account key).
+- **Never delete a person from the Supabase dashboard.** Before 030 that
+  removed only the sign-in. The profile (email, name, phone), memberships,
+  families, documents and files all stayed, and the stranded profile kept
+  its email, so signing up again with it failed (`users_email_key`). DEV
+  had two such profiles from March 2026. Since 030 (`users.id` references
+  `auth.users` ON DELETE CASCADE), the dashboard either deletes cleanly
+  (someone who created nothing) or refuses with "Database error deleting
+  user" (anyone who created a family or has history 029 deletes itself).
+  **Someone who cannot sign in** asks by email; delete them by hand, in
+  this order:
+  1. `select * from account_deletion_plan('<user id>')` — tells you which
+     families go.
+  2. In Storage › documents, delete each doomed family's folder
+     (`storage_namespace`).
+  3. `select delete_account_data('<user id>')`.
+  4. Delete the sign-in: Authentication › Users.
+- **Nothing left behind** is checkable: no `family_*` schema without a
+  `families` row, no file in a folder without one, no `public.users` row
+  without an `auth.users` row, no membership, saved chat or Gmail row for
+  a missing account. All read zero on DEV after the first real deletion
+  (30 September 2026), apart from the two March profiles 030 removes.
 
 ### Membership — an admin adds, nobody requests (025)
 
