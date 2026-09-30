@@ -8,6 +8,7 @@ import type {
   FamilyDocumentDetailRow,
   FamilySearchResultRow,
   Database,
+  Json,
 } from './database.types';
 
 type DocumentCategory = Database['public']['Tables']['document_categories']['Row'];
@@ -788,8 +789,7 @@ export async function updateProfile(userId: string, profile: Profile): Promise<{
   const { error: authError } = await supabase.auth.updateUser({ data: { display_name: displayName, phone } });
   if (authError) throw authError;
 
-  // Not in the generated types' writable set until they are regenerated after 027.
-  const { error } = await (supabase.from('users') as any)
+  const { error } = await supabase.from('users')
     .update({ display_name: displayName, phone: phone || null })
     .eq('id', userId);
   if (error) {
@@ -917,8 +917,7 @@ export type FeedbackTopic = 'problem' | 'idea' | 'question' | 'other';
  * session and lets nobody read it back, so this never asks for the row.
  */
 export async function sendFeedback(message: string, topic: FeedbackTopic | null, appVersion: string, platform: string): Promise<void> {
-  // Not in the generated types until they are regenerated after 027.
-  const { error } = await (supabase as any).from('feedback').insert({
+  const { error } = await supabase.from('feedback').insert({
     topic,
     message: message.trim(),
     app_version: appVersion.slice(0, 40),
@@ -937,10 +936,9 @@ export function isMissingMigration(error: unknown): boolean {
 // ─── Saved chats (028) ───────────────────────────────────────────
 //
 // Ask › Save chat keeps a conversation in public.saved_chats. Only its owner
-// can read it, and it is deleted with their membership of the family. Not in
-// the generated types until they are regenerated after 028. Before 028 every
-// call fails with a missing table: callers check isMissingMigration() and say
-// saving is not switched on yet.
+// can read it, and it is deleted with their membership of the family. Before
+// 028 every call fails with a missing table: callers check
+// isMissingMigration() and say saving is not switched on yet.
 
 export interface SavedChatMessage {
   role: 'user' | 'ai';
@@ -981,7 +979,7 @@ function chatForStorage(messages: SavedChatMessage[]): SavedChatMessage[] {
     }));
 }
 
-const savedChats = () => (supabase as any).from('saved_chats');
+const savedChats = () => supabase.from('saved_chats');
 
 /** This person's saved chats about one family, most recently used first. */
 export async function listSavedChats(familyId: string): Promise<SavedChatSummary[]> {
@@ -991,9 +989,7 @@ export async function listSavedChats(familyId: string): Promise<SavedChatSummary
     .order('updated_at', { ascending: false })
     .limit(200);
   if (error) throw error;
-  return (data ?? []).map((r: { id: string; title: string; updated_at: string }) => ({
-    id: r.id, title: r.title, updatedAt: r.updated_at,
-  }));
+  return (data ?? []).map((r) => ({ id: r.id, title: r.title, updatedAt: r.updated_at }));
 }
 
 export async function getSavedChat(id: string): Promise<SavedChat | null> {
@@ -1004,7 +1000,8 @@ export async function getSavedChat(id: string): Promise<SavedChat | null> {
     id: data.id,
     title: data.title,
     updatedAt: data.updated_at,
-    messages: Array.isArray(data.messages) ? data.messages : [],
+    // Written only by saveChat below, in this shape.
+    messages: Array.isArray(data.messages) ? (data.messages as unknown as SavedChatMessage[]) : [],
   };
 }
 
@@ -1016,17 +1013,18 @@ export async function getSavedChat(id: string): Promise<SavedChat | null> {
 export async function saveChat(familyId: string, messages: SavedChatMessage[], id?: string | null): Promise<string> {
   const stored = chatForStorage(messages);
   const title = savedChatTitle(stored);
+  const asJson = stored as unknown as Json;
   if (id) {
     const { data, error } = await savedChats()
-      .update({ title, messages: stored, updated_at: new Date().toISOString() })
+      .update({ title, messages: asJson, updated_at: new Date().toISOString() })
       .eq('id', id)
       .select('id');
     if (error) throw error;
     if (data?.length) return id;
   }
-  const { data, error } = await savedChats().insert({ family_id: familyId, title, messages: stored }).select('id').single();
+  const { data, error } = await savedChats().insert({ family_id: familyId, title, messages: asJson }).select('id').single();
   if (error) throw error;
-  return data.id as string;
+  return data.id;
 }
 
 export async function deleteSavedChat(id: string): Promise<void> {

@@ -52,9 +52,9 @@ const PreferencesContext = createContext<PreferencesContextType>({
 
 const cacheKey = (userId: string) => `fv:prefs:${userId}`;
 
-// database.types.ts predates these columns, so the typed client rejects
-// them. Same reason `npm run typecheck` already reports 19 errors in api.ts;
-// this keeps the count from growing until the types are regenerated.
+// Untyped on purpose: the reads and writes below retry with older column
+// sets where a migration is not applied, and the generated types only know
+// the newest one.
 const users = () => (supabase.from('users') as any);
 
 export function PreferencesProvider({ children }: { children: ReactNode }) {
