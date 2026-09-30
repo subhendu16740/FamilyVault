@@ -1,5 +1,5 @@
-// Settings › Security — how you sign in, your password, and signing out of
-// every device at once.
+// Settings › Security — how you sign in, your password, signing out of
+// every device at once, and deleting your account.
 
 import { useState } from 'react';
 import { ScrollView, View, Text, StyleSheet } from 'react-native';
@@ -120,6 +120,19 @@ export default function SecurityScreen() {
           ) : (
             <DangerButton label="Sign out everywhere" onPress={() => setConfirmAll(true)} icon="log-out" />
           )}
+        </Card>
+
+        <Card>
+          <CardTitle icon="user-x">Delete your account</CardTitle>
+          <Body>
+            Deletes your account straight away and for good, with your saved chats and any family nobody else looks
+            after. The next screen shows exactly what goes before anything happens.
+          </Body>
+          <DangerButton
+            label="Delete account"
+            icon="trash-2"
+            onPress={() => router.push('/settings/delete-account' as any)}
+          />
         </Card>
       </ScrollView>
     </SafeAreaView>
