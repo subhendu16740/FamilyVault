@@ -19,7 +19,7 @@ import {
 import type { FamilyDocumentRow } from '../../lib/database.types';
 import { longDate, expiryPhrase } from '../../lib/dates';
 import {
-  buildGraph, relationTo, relationLabel, parentsOf, childrenOf, spousesOf, siblingsOf,
+  buildGraph, relationTo, relationLabel, parentsOf, childrenOf, spousesOf, siblingsOf, shortName,
 } from '../../../supabase/functions/_shared/kinship';
 import { ScreenHeader, HeaderIconButton } from '../../components/screen-header';
 import { Avatar } from '../../components/family-tree-view';
@@ -27,7 +27,8 @@ import { PersonSheet, type PersonSheetState } from '../../components/person-shee
 import { Card, CardTitle, Muted, SecondaryButton, DangerButton, Status, screenStyles } from '../../components/settings-ui';
 import { color, radius, size, space, type } from '../../constants/design';
 
-const first = (name: string) => name.trim().split(/\s+/)[0] ?? name;
+// "K C Das Mohapatra" is not "K": an initial alone says nothing.
+const first = shortName;
 
 function age(birthDate: string): number {
   const b = new Date(`${birthDate}T00:00:00`);
@@ -221,6 +222,11 @@ export default function PersonScreen() {
                   label={`Add a relative of ${isMe ? 'yours' : first(person.name)}`}
                   icon="user-plus"
                   onPress={() => setSheet({ mode: 'add', relativeId: person.id })}
+                />
+                <SecondaryButton
+                  label={`Connect ${isMe ? 'yourself' : first(person.name)} to someone`}
+                  icon="link"
+                  onPress={() => setSheet({ mode: 'connect', personId: person.id })}
                 />
                 {!person.userId && (
                   <DangerButton label="Take out of the tree" icon="user-minus" onPress={() => setConfirmRemove(true)} />

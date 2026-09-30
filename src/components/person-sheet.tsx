@@ -15,7 +15,7 @@ import {
   type FamilyTree, type RelativeKind,
 } from '../lib/api';
 import { formatDateInput, parseDocumentDate } from '../lib/dates';
-import { spousesOf, type Gender, type KinGraph } from '../../supabase/functions/_shared/kinship';
+import { parentsOf, shortName, siblingsSharingParents, spousesOf, type Gender, type KinGraph } from '../../supabase/functions/_shared/kinship';
 import { Field, PrimaryButton, Status } from './settings-ui';
 import { color, radius, size, space, type } from '../constants/design';
 
@@ -47,7 +47,8 @@ const GENDERS: Array<{ value: Gender; label: string }> = [
   { value: null, label: 'Not saying' },
 ];
 
-const first = (name: string) => name.trim().split(/\s+/)[0] ?? name;
+// "K C Das Mohapatra" is not "K": an initial alone says nothing.
+const first = shortName;
 
 /** "14/03/1977" → "1977-03-14". A four-digit year, and not in the future. */
 function toIsoDate(text: string): string | null | 'invalid' | 'future' {
@@ -114,6 +115,28 @@ export function PersonSheet({ state, familyId, tree, graph, meId, onClose, onSav
     return spouse ? tree.people.find((p) => p.id === spouse) ?? null : null;
   }, [relation, relativeId, graph, tree, subject]);
 
+  // What is actually recorded. A brother or sister of someone whose parents
+  // are in the tree is those parents' child: record that, and the tree, every
+  // relation and "Papa's daughter" follow. A sibling link is only for when
+  // nobody's parents are known. And a parent added to someone is their
+  // sibling-linked brothers' and sisters' parent too.
+  const plan = useMemo(() => {
+    if (!state || state.mode === 'edit' || !relation || !relativeId) return null;
+    const subjectId = state.mode === 'connect' ? state.personId : null;
+    const theirs = parentsOf(graph, relativeId);
+    const mine = subjectId ? parentsOf(graph, subjectId) : [];
+    if (relation === 'sibling' && theirs.length > 0 && mine.length === 0) {
+      return { kind: 'child' as RelativeKind, of: theirs[0], also: theirs[1] ?? null, adopt: null as string | null, alsoChildOf: theirs, alsoParentOf: [] as Array<{ id: string; missing: string[] }> };
+    }
+    if (relation === 'sibling' && subjectId && mine.length > 0 && theirs.length === 0) {
+      // The other way round: the relative joins the subject's parents.
+      return { kind: 'sibling' as RelativeKind, of: relativeId, also: null, adopt: relativeId, alsoChildOf: mine, alsoParentOf: [] as Array<{ id: string; missing: string[] }> };
+    }
+    const alsoParentOf = relation === 'parent' ? siblingsSharingParents(graph, relativeId).filter((c) => c.id !== subjectId) : [];
+    return { kind: relation, of: relativeId, also: null as string | null, adopt: null as string | null, alsoChildOf: [] as string[], alsoParentOf };
+  }, [state, relation, relativeId, graph]);
+  const nameOf = (id: string) => first(tree.people.find((p) => p.id === id)?.name ?? '');
+
   if (!state) return null;
   const mode = state.mode;
   const asksDetails = mode !== 'connect';
@@ -137,12 +160,23 @@ export function PersonSheet({ state, familyId, tree, graph, meId, onClose, onSav
     }
     setSaving(true);
     try {
-      const other = relation === 'child' && bothParents ? otherParent?.id ?? null : null;
+      const other = relation === 'child' && bothParents ? otherParent?.id ?? null : plan?.also ?? null;
+      let personId = state.mode === 'connect' ? state.personId : null;
       if (mode === 'add') {
-        await addFamilyPerson(familyId, details, relation && relativeId ? { kind: relation, relativeId, otherParentId: other } : undefined);
+        personId = await addFamilyPerson(familyId, details, plan ? { kind: plan.kind, relativeId: plan.of, otherParentId: other } : undefined);
       } else if (mode === 'connect') {
-        await linkFamilyPeople(familyId, state.personId, relation!, relativeId!, other);
-      } else {
+        await linkFamilyPeople(familyId, state.personId, plan!.kind, plan!.of, other);
+      }
+      if (plan && personId && mode !== 'edit') {
+        // Best effort: the link asked for is saved; these only complete the picture.
+        if (plan.adopt) {
+          await linkFamilyPeople(familyId, plan.adopt, 'child', plan.alsoChildOf[0], plan.alsoChildOf[1] ?? null).catch(() => undefined);
+        }
+        for (const sibling of plan.alsoParentOf) {
+          await linkFamilyPeople(familyId, sibling.id, 'child', personId, sibling.missing[0] ?? null).catch(() => undefined);
+        }
+      }
+      if (mode === 'edit') {
         await updateFamilyPerson(state.personId, details);
       }
       onSaved();
@@ -203,6 +237,19 @@ export function PersonSheet({ state, familyId, tree, graph, meId, onClose, onSav
                   </TouchableOpacity>
                 )}
               </View>
+              {!!plan && plan.alsoChildOf.length > 0 && !plan.adopt && (
+                <Text style={styles.hint}>
+                  {`${who === 'They' ? 'They' : who} will be ${plan.alsoChildOf.map(nameOf).join(' and ')}'s child too.`}
+                </Text>
+              )}
+              {!!plan && !!plan.adopt && (
+                <Text style={styles.hint}>{`${nameOf(plan.adopt)} will be ${plan.alsoChildOf.map(nameOf).join(' and ')}'s child too.`}</Text>
+              )}
+              {!!plan && plan.alsoParentOf.length > 0 && (
+                <Text style={styles.hint}>
+                  {`${who === 'They' ? 'They' : who} will be ${plan.alsoParentOf.map((c) => nameOf(c.id)).join(' and ')}'s parent too.`}
+                </Text>
+              )}
               {otherParent && (
                 <TouchableOpacity
                   style={styles.toggle}

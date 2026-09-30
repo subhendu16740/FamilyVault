@@ -91,6 +91,39 @@ export const parentsOf = (g: KinGraph, id: string) => setOf(g.parents, id);
 export const childrenOf = (g: KinGraph, id: string) => setOf(g.children, id);
 export const spousesOf = (g: KinGraph, id: string) => setOf(g.spouses, id);
 
+/**
+ * Everyone reached through sibling links alone, from `id` (not including it):
+ * three children linked pairwise, with no parents recorded, are one set.
+ */
+export function linkedSiblingsOf(g: KinGraph, id: string): string[] {
+  const seen = new Set([id]);
+  const queue = [id];
+  while (queue.length) {
+    for (const s of setOf(g.siblingLinks, queue.shift()!)) {
+      if (!seen.has(s)) { seen.add(s); queue.push(s); }
+    }
+  }
+  seen.delete(id);
+  return [...seen];
+}
+
+/**
+ * When `childId` gets a parent: the brothers and sisters, by sibling link, who
+ * get that parent too — the ones whose recorded parents are some of the
+ * child's (usually none) — with the child's other parents they were missing.
+ * Added as "Subhendu's sister" before anyone added Papa, she gets Papa and
+ * Maa when Maa is added. A half-brother with a different parent recorded is
+ * left alone.
+ */
+export function siblingsSharingParents(g: KinGraph, childId: string): Array<{ id: string; missing: string[] }> {
+  const mine = parentsOf(g, childId);
+  return linkedSiblingsOf(g, childId).flatMap((s) => {
+    const theirs = parentsOf(g, s);
+    if (!theirs.every((p) => mine.includes(p))) return [];
+    return [{ id: s, missing: mine.filter((p) => !theirs.includes(p)) }];
+  });
+}
+
 /** Brothers and sisters: a sibling link, or at least one parent in common. */
 export function siblingsOf(g: KinGraph, id: string): string[] {
   const out = new Set(setOf(g.siblingLinks, id));
@@ -447,6 +480,18 @@ export interface Forest {
   first: number;
 }
 
+/**
+ * The name a branch chip shows: the first name, unless that is only an
+ * initial ("K C Das Mohapatra") or a title (Dr, Shri), which say nothing
+ * on their own.
+ */
+export function shortName(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  while (words.length > 1 && /^(dr|mr|mrs|ms|shri|smt|sri|late)\.?$/i.test(words[0])) words.shift();
+  const first = words[0] ?? name.trim();
+  return first.replace(/\./g, '').length > 1 ? first : words.join(' ');
+}
+
 const byAge = (g: KinGraph) => (a: string, b: string) => {
   const pa = g.people.get(a)!;
   const pb = g.people.get(b)!;
@@ -460,6 +505,12 @@ function unitFor(g: KinGraph, id: string, above: Set<string>): TreeUnit {
   const inUnit = new Set([...above, id, ...spouses]);
   // Children of either partner: a child linked to only one parent still belongs here.
   const kids = new Set([...childrenOf(g, id), ...spouses.flatMap((s) => childrenOf(g, s))]);
+  // So does a brother or sister of theirs known only by a sibling link, with no
+  // parents of their own: added as "Subhendu's sister" before anyone added
+  // Papa, she is still Papa's child as far as anyone can tell.
+  for (const k of [...kids]) {
+    for (const s of linkedSiblingsOf(g, k)) if (parentsOf(g, s).length === 0) kids.add(s);
+  }
   const children = [...kids]
     .filter((k) => !inUnit.has(k))       // a malformed loop never recurses forever
     .sort(byAge(g))
@@ -491,8 +542,11 @@ export function buildForest(g: KinGraph, meId: string | null): Forest {
   // A branch starts from someone with no parents in the tree whose spouses
   // have none either. Someone whose spouse HAS parents married into that
   // branch and is drawn there, beside them.
+  // Nor does someone whose sibling-linked brother or sister has parents: they
+  // are drawn beside that sibling, under those parents (see unitFor).
   const isRoot = (id: string) =>
-    linked(id) && parentsOf(g, id).length === 0 && spousesOf(g, id).every((s) => parentsOf(g, s).length === 0);
+    linked(id) && parentsOf(g, id).length === 0 && spousesOf(g, id).every((s) => parentsOf(g, s).length === 0)
+    && linkedSiblingsOf(g, id).every((s) => parentsOf(g, s).length === 0);
 
   const used = new Set<string>();
   const branches: FamilyBranch[] = [];
@@ -511,8 +565,8 @@ export function buildForest(g: KinGraph, meId: string | null): Forest {
     }
     const first = roots[0];
     const title = roots.length > 1
-      ? `${first.person.name.split(' ')[0]} and siblings`
-      : [first.person, ...first.spouses].map((p) => p.name.split(' ')[0]).join(' & ');
+      ? `${shortName(first.person.name)} and siblings`
+      : [first.person, ...first.spouses].map((p) => shortName(p.name)).join(' & ');
     branches.push({ key: roots.map((r) => r.person.id).join('+'), title, roots });
   }
 
