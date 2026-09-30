@@ -453,10 +453,12 @@ export function relativesNamedIn(g: KinGraph, meId: string | null, ...texts: str
 // ─── Laying the tree out ────────────────────────────────────────
 //
 // A family is not a tree: Aarav descends from his father's parents AND his
-// mother's. So the screen shows one branch at a time, each grown downwards
-// from a pair of ancestors — "Ramesh & Kamala", "Suresh & Meena" — and a
-// person who married in appears beside their spouse. The branch the viewer
-// descends from comes first.
+// mother's. So the tree is drawn as branches, each grown downwards from a pair
+// of ancestors — "Ramesh & Kamala", "Suresh & Meena" — and a person who
+// married in appears beside their spouse. The screen draws every branch, one
+// below the other, eldest ancestors first: the same picture for everyone,
+// with only the viewer's own card highlighted. `first` says which branch the
+// viewer descends from.
 
 export interface TreeUnit {
   person: KinPerson;
@@ -481,7 +483,7 @@ export interface Forest {
 }
 
 /**
- * The name a branch chip shows: the first name, unless that is only an
+ * The name a branch's title shows: the first name, unless that is only an
  * initial ("K C Das Mohapatra") or a title (Dr, Shri), which say nothing
  * on their own.
  */
