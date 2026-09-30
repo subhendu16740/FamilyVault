@@ -41,7 +41,8 @@ Four things will mislead you if you assume otherwise:
    `family_members`, `notifications` and `invitations` and grants back only
    the columns the app changes (listed in 025's header; 027 adds your own
    `display_name`, `phone` and `notifications_enabled`, and a write-only
-   `feedback` table). **A new writable
+   `feedback` table; 028 adds `saved_chats`, which only its owner reads).
+   **A new writable
    column needs its own `GRANT` in a migration.** Membership has no
    invitations and no requests: only an admin adds a person, through the
    `add-member` Edge Function, and clients cannot insert a membership row at
@@ -88,7 +89,7 @@ errors**) and `npm run build` are the local gates.
 at 03:10 IST, and on pushes that change `qa/`. It uploads synthetic SPECIMEN
 documents to its own vault (QA Vault A, account A), asks questions about
 them, and checks the answers on facts and sources, never wording. It also
-runs the 023 sweep and the 024 DEV/PROD fingerprint, 49 access probes (a
+runs the 023 sweep and the 024 DEV/PROD fingerprint, 56 access probes (a
 logged-out visitor and a second account must be refused everywhere, Gmail
 import's endpoints included), the
 membership model (the second account, added as a viewer, must not be able to
@@ -368,6 +369,7 @@ src/
     notifications.tsx        # expiry alerts, uploads, invites
     family.tsx               # family tree + members    (NOT a tab)
     reminders.tsx            # expiry dates, soonest first (★ Family Plus, in the drawer)
+    saved-chats.tsx          # behind the clock on Ask: chats kept with Save chat (028)
     settings/                # (NOT a tab) its own Stack, so Back returns to Settings
       index.tsx              # the list; every row opens a screen
       profile.tsx  security.tsx  notifications.tsx  privacy.tsx
@@ -410,7 +412,7 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `auth.tsx` | `AuthProvider`: session, signIn, signUp, signInWithGoogle, signOut |
 | `family-context.tsx` | `FamilyProvider`: currentFamily, members, membership, needsFamily |
 | `drawer-context.tsx` | Profile drawer open/close state |
-| `api.ts` | **All** Supabase queries — documents, search, upload, RAG, notifications, adding and leaving families, Gmail import, and the Settings screens (profile, password, storage use, expiry dates, feedback) |
+| `api.ts` | **All** Supabase queries — documents, search, upload, RAG, notifications, adding and leaving families, Gmail import, saved chats, and the Settings screens (profile, password, storage use, expiry dates, feedback) |
 | `dates.ts` | `parseDocumentDate()`: expiry dates exactly as ingest stores them (DD/MM/YYYY and kin, YYYY-MM-DD, "19 October 2026") |
 | `plans.ts` | What the free plan includes: `FREE_STORAGE_GB` per family (shown on Settings › Storage, not enforced) and `storageLevel()` |
 | `file-types.ts` | What a picked file is (`detectFileType()`: MIME type, then name, never a web `blob:` uri) and whether the vault can keep it (PDF, JPG, PNG) |
@@ -422,7 +424,7 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `speech-text.ts` | `toSpeech()`: strips markdown and spells out ID numbers before they are read aloud |
 | `voice-languages.ts` | The language picker list and the few phrases the app itself says, per language |
 | `storage.ts` | Key-value cache: localStorage on web, AsyncStorage on native |
-| `database.types.ts` | Generated Supabase types — **stale**, see typecheck note |
+| `database.types.ts` | Generated Supabase types, current to 028. Regenerate after every migration and re-append the hand-written block at the bottom (see the typecheck note) |
 
 ---
 
@@ -482,8 +484,8 @@ Be explicit when a change touches a native-only path.
 Supabase, cloud-hosted. Three layers:
 
 - **Layer 1 (common)** — `public` schema: users, families, family_members,
-  invitations, document_categories, notifications, audit_logs, feedback. RLS
-  enabled.
+  invitations, document_categories, notifications, audit_logs, feedback,
+  saved_chats. RLS enabled.
 - **Layer 2 (private)** — one isolated schema per family (`family_<short_uuid>`)
   holding documents, document_metadata, document_chunks, expiry_alerts,
   family_relationships. Created by the `public.create_family()` PG function.
@@ -600,6 +602,29 @@ so storage policies live only in `019`.
   papers; a large vault would want one query for it.
 - **About**'s release date is stamped by `app.config.ts` when the bundle is
   built, so for a web deploy it is the day of that deploy.
+
+### Saved chats — yours only, gone with your membership (028)
+
+- **Ask › Save chat** keeps a conversation; the clock at the top right of Ask
+  opens **Saved chats** (`src/app/saved-chats.tsx`), newest first, to carry
+  one on or delete it. Nothing is kept without the button; once saved, the
+  chat brings itself up to date after each answer until New question.
+- **Only its owner reads it** — not the family, not an admin. `saved_chats`
+  has RLS on its owner (`user_id = auth.uid()`, defaulted, never sent) and,
+  for reads, inserts and updates, membership through `get_my_family_ids()`.
+  Clients INSERT `family_id, title, messages` and UPDATE `title, messages,
+  updated_at`, nothing else, so a chat cannot be moved to another family or
+  given to another person.
+- **It belongs to the membership**: a foreign key on `(family_id, user_id)` to
+  `family_members` with `ON DELETE CASCADE`. Leaving a family, or being
+  removed, deletes your chats about it — no function or trigger, and the
+  cascade passes RLS by design. That is why deleting needed no separate
+  "after leaving" rule: a delete's WHERE clause is read under the SELECT
+  policy, which a former member no longer passes, so the rows go with the
+  membership instead.
+- **Bounded**: `messages` is a JSON array of at most 256 KB; the app keeps the
+  newest 100 turns, 6,000 characters each, and each source's id and name
+  only. Before 028 the app says saving is not switched on yet.
 
 ### Membership — an admin adds, nobody requests (025)
 
@@ -976,9 +1001,10 @@ rule again once pinned chunks are mixed in.
   (`src/components/screen-header.tsx`), the Ask and Upload tabs included,
   and shows it while the screen loads too. It is the platforms' own top bar:
   56 tall, a plain back arrow at the left (`<BackButton />`: 24px drawn, 44px
-  to touch, heard as "Go back"), the title beside it, and at most one action
-  on the right: `HeaderIconButton` (an icon, like the arrow) or
-  `HeaderButton` (a small labelled button, like Manage Family's Add).
+  to touch, heard as "Go back"), the title beside it, and on the right at
+  most one labelled `HeaderButton` (like Manage Family's Add) or up to two
+  `HeaderIconButton`s in `HeaderActions` (Ask: New question and the Saved
+  chats clock, which never moves).
   Creating a second vault, which has its own centred title, shows the arrow
   alone in the same place. An earlier outlined "Back" button on its own row
   above the title was tried and rejected as heavy. The arrow goes Home (or

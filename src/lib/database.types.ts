@@ -240,6 +240,191 @@ export type Database = {
           },
         ]
       }
+      feedback: {
+        Row: {
+          app_version: string | null
+          created_at: string
+          id: string
+          message: string
+          platform: string | null
+          topic: string | null
+          user_id: string
+        }
+        Insert: {
+          app_version?: string | null
+          created_at?: string
+          id?: string
+          message: string
+          platform?: string | null
+          topic?: string | null
+          user_id?: string
+        }
+        Update: {
+          app_version?: string | null
+          created_at?: string
+          id?: string
+          message?: string
+          platform?: string | null
+          topic?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      gmail_connections: {
+        Row: {
+          connected_at: string
+          expired_at: string | null
+          google_email: string
+          messages_scanned: number
+          refresh_token_enc: string
+          scan_finished_at: string | null
+          scan_lease_until: string | null
+          scan_page_token: string | null
+          scan_started_at: string | null
+          scopes: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          connected_at?: string
+          expired_at?: string | null
+          google_email: string
+          messages_scanned?: number
+          refresh_token_enc: string
+          scan_finished_at?: string | null
+          scan_lease_until?: string | null
+          scan_page_token?: string | null
+          scan_started_at?: string | null
+          scopes: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          connected_at?: string
+          expired_at?: string | null
+          google_email?: string
+          messages_scanned?: number
+          refresh_token_enc?: string
+          scan_finished_at?: string | null
+          scan_lease_until?: string | null
+          scan_page_token?: string | null
+          scan_started_at?: string | null
+          scopes?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      gmail_import_items: {
+        Row: {
+          category_guess: string | null
+          claimed_at: string | null
+          content_sha256: string | null
+          created_at: string
+          document_id: string | null
+          error: string | null
+          family_id: string | null
+          file_name: string
+          id: string
+          imported_at: string | null
+          message_id: string
+          mime_type: string
+          part_id: string
+          reason: string | null
+          sender: string | null
+          sent_at: string | null
+          size_bytes: number
+          status: string
+          subject: string | null
+          suggestion: string
+          user_id: string
+        }
+        Insert: {
+          category_guess?: string | null
+          claimed_at?: string | null
+          content_sha256?: string | null
+          created_at?: string
+          document_id?: string | null
+          error?: string | null
+          family_id?: string | null
+          file_name: string
+          id?: string
+          imported_at?: string | null
+          message_id: string
+          mime_type: string
+          part_id: string
+          reason?: string | null
+          sender?: string | null
+          sent_at?: string | null
+          size_bytes?: number
+          status?: string
+          subject?: string | null
+          suggestion: string
+          user_id: string
+        }
+        Update: {
+          category_guess?: string | null
+          claimed_at?: string | null
+          content_sha256?: string | null
+          created_at?: string
+          document_id?: string | null
+          error?: string | null
+          family_id?: string | null
+          file_name?: string
+          id?: string
+          imported_at?: string | null
+          message_id?: string
+          mime_type?: string
+          part_id?: string
+          reason?: string | null
+          sender?: string | null
+          sent_at?: string | null
+          size_bytes?: number
+          status?: string
+          subject?: string | null
+          suggestion?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gmail_import_items_family_id_fkey"
+            columns: ["family_id"]
+            isOneToOne: false
+            referencedRelation: "families"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      gmail_oauth_states: {
+        Row: {
+          code_verifier: string
+          created_at: string
+          expires_at: string
+          return_to: string
+          state: string
+          used_at: string | null
+          user_id: string
+        }
+        Insert: {
+          code_verifier: string
+          created_at?: string
+          expires_at?: string
+          return_to: string
+          state: string
+          used_at?: string | null
+          user_id: string
+        }
+        Update: {
+          code_verifier?: string
+          created_at?: string
+          expires_at?: string
+          return_to?: string
+          state?: string
+          used_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       invitations: {
         Row: {
           created_at: string | null
@@ -342,6 +527,44 @@ export type Database = {
           },
         ]
       }
+      saved_chats: {
+        Row: {
+          created_at: string
+          family_id: string
+          id: string
+          messages: Json
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          family_id: string
+          id?: string
+          messages: Json
+          title: string
+          updated_at?: string
+          user_id?: string
+        }
+        Update: {
+          created_at?: string
+          family_id?: string
+          id?: string
+          messages?: Json
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "saved_chats_membership_fkey"
+            columns: ["family_id", "user_id"]
+            isOneToOne: false
+            referencedRelation: "family_members"
+            referencedColumns: ["family_id", "user_id"]
+          },
+        ]
+      }
       users: {
         Row: {
           auth_provider: string
@@ -355,6 +578,7 @@ export type Database = {
           id: string
           is_superuser: boolean | null
           last_login: string | null
+          notifications_enabled: boolean
           phone: string | null
           voice_language: string
           voice_mode_enabled: boolean
@@ -371,6 +595,7 @@ export type Database = {
           id?: string
           is_superuser?: boolean | null
           last_login?: string | null
+          notifications_enabled?: boolean
           phone?: string | null
           voice_language?: string
           voice_mode_enabled?: boolean
@@ -387,6 +612,7 @@ export type Database = {
           id?: string
           is_superuser?: boolean | null
           last_login?: string | null
+          notifications_enabled?: boolean
           phone?: string | null
           voice_language?: string
           voice_mode_enabled?: boolean

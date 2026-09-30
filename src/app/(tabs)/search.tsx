@@ -4,13 +4,13 @@ import {
   ScrollView, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFamily } from '../../lib/family-context';
 import {
-  fetchCategories, ragSearch, indexStatus,
-  type RagSearchResult, type RagHistoryTurn, type IndexStatus,
+  fetchCategories, ragSearch, indexStatus, saveChat, getSavedChat, isMissingMigration,
+  type RagSearchResult, type RagHistoryTurn, type IndexStatus, type SavedChatMessage,
 } from '../../lib/api';
 import type { Database } from '../../lib/database.types';
 import { usePreferences } from '../../lib/preferences';
@@ -19,7 +19,7 @@ import {
   recognitionSupported, listen, stopListening, speak, stopSpeaking, type SpeechErrorCode,
 } from '../../lib/speech';
 import { toSpeech } from '../../lib/speech-text';
-import { ScreenHeader, HeaderIconButton } from '../../components/screen-header';
+import { ScreenHeader, HeaderIconButton, HeaderActions } from '../../components/screen-header';
 import { color, space, type } from '../../constants/design';
 
 type DocumentCategory = Database['public']['Tables']['document_categories']['Row'];
@@ -49,6 +49,93 @@ export default function SearchScreen() {
   const [categories, setCategories] = useState<DocumentCategory[]>([]);
   const [isAsking, setIsAsking] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
+
+  // ─── Saved chats (028) ──────────────────────────────────
+  // Nothing is kept unless Save chat is tapped. From then on the saved chat
+  // follows the conversation: each finished answer brings it up to date,
+  // until New question starts another. The clock at the top right lists them.
+  const [savedId, setSavedId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveNotice, setSaveNotice] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
+  const lastSaved = useRef<ChatMessage[] | null>(null);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { chat: chatToOpen } = useLocalSearchParams<{ chat?: string }>();
+
+  const toSaved = (list: ChatMessage[]): SavedChatMessage[] =>
+    list.filter((m) => !m.loading && m.text).map((m) => ({ role: m.role, text: m.text, sources: m.sources }));
+
+  const showSaveNotice = (tone: 'ok' | 'error', text: string, forMs = 5000) => {
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    setSaveNotice({ tone, text });
+    noticeTimer.current = setTimeout(() => setSaveNotice(null), forMs);
+  };
+  useEffect(() => () => { if (noticeTimer.current) clearTimeout(noticeTimer.current); }, []);
+
+  const saveFailed = (err: unknown) => showSaveNotice('error', isMissingMigration(err)
+    ? 'Saving chats is not switched on yet.'
+    : 'Could not save this chat. Please try again.', 7000);
+
+  const startNewChat = () => {
+    setMessages([]);
+    setSavedId(null);
+    setSaveNotice(null);
+    lastSaved.current = null;
+  };
+
+  // A chat belongs to one family: switching family starts afresh rather than
+  // carrying a conversation (and its saved copy) across.
+  const familyId = currentFamily?.id;
+  const shownFamily = useRef(familyId);
+  useEffect(() => {
+    // From one family to another only: the family arriving after a refresh
+    // must not wipe a chat that was just opened.
+    if (shownFamily.current && familyId && shownFamily.current !== familyId) startNewChat();
+    shownFamily.current = familyId;
+  }, [familyId]);
+
+  // Opened from Saved chats: /search?chat=<id>.
+  useEffect(() => {
+    if (!chatToOpen) return;
+    let cancelled = false;
+    getSavedChat(chatToOpen)
+      .then((saved) => {
+        if (cancelled || !saved) return;
+        const restored: ChatMessage[] = saved.messages.map((m, i) => ({
+          id: `s-${saved.id}-${i}`, role: m.role, text: m.text, sources: m.sources,
+        }));
+        lastSaved.current = restored;
+        setMessages(restored);
+        setSavedId(saved.id);
+        setSaveNotice(null);
+        setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 100);
+      })
+      .catch(saveFailed)
+      .finally(() => { if (!cancelled) router.setParams({ chat: undefined } as any); });
+    return () => { cancelled = true; };
+  }, [chatToOpen]);
+
+  // Keep a saved chat up to date once each answer has arrived.
+  useEffect(() => {
+    if (!savedId || !familyId || messages === lastSaved.current) return;
+    if (messages.some((m) => m.loading)) return;
+    lastSaved.current = messages;
+    saveChat(familyId, toSaved(messages), savedId).then(setSavedId).catch(saveFailed);
+  }, [messages, savedId, familyId]);
+
+  const handleSave = async () => {
+    if (!familyId || saving || savedId) return;
+    setSaving(true);
+    try {
+      const id = await saveChat(familyId, toSaved(messages));
+      lastSaved.current = messages;
+      setSavedId(id);
+      showSaveNotice('ok', 'Saved. Find it again with the clock at the top.');
+    } catch (err) {
+      saveFailed(err);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   // ─── Search index self-repair ───────────────────────────
   // A vault whose chunks are not embedded on the current model searches by
@@ -253,6 +340,7 @@ export default function SearchScreen() {
   const showMic = voiceMode && voiceSupported && (voiceState === 'listening' || !query.trim());
 
   const hasMessages = messages.length > 0;
+  const answered = messages.some((m) => m.role === 'ai' && !m.loading && !!m.text);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -261,13 +349,19 @@ export default function SearchScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={0}
       >
-        {/* Back leaves Ask, as on every screen but Home; + starts a new
-            question, which is what the old arrow here used to do. */}
+        {/* Back leaves Ask, as on every screen but Home. At the right: + starts
+            a new question (what the old arrow here used to do), and the clock
+            opens Saved chats. The clock never moves; + appears beside it. */}
         <ScreenHeader
           title="Ask FamilyVault"
-          right={hasMessages
-            ? <HeaderIconButton icon="plus" label="New question" onPress={() => { stopVoice(); setMessages([]); }} />
-            : undefined}
+          right={(
+            <HeaderActions>
+              {hasMessages && (
+                <HeaderIconButton icon="plus" label="New question" onPress={() => { stopVoice(); startNewChat(); }} />
+              )}
+              <HeaderIconButton icon="clock" label="Saved chats" onPress={() => router.push('/saved-chats' as any)} />
+            </HeaderActions>
+          )}
         />
 
         {/* Chat Area */}
@@ -451,6 +545,42 @@ export default function SearchScreen() {
           </View>
         )}
 
+        {/* Save chat: explicit, on the conversation itself. */}
+        {hasMessages && (
+          <View style={styles.saveBar}>
+            {savedId ? (
+              <View style={[styles.saveBtn, styles.saveBtnDone]} accessibilityLabel="This chat is saved">
+                <Feather name="check-circle" size={16} color="#2F7D5C" />
+                <Text style={[styles.saveBtnText, styles.saveBtnTextDone]}>Saved</Text>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={[styles.saveBtn, (!answered || isAsking || saving) && styles.saveBtnOff]}
+                onPress={handleSave}
+                disabled={!answered || isAsking || saving}
+                activeOpacity={0.7}
+                hitSlop={{ top: 4, bottom: 4 }}
+                accessibilityRole="button"
+                accessibilityLabel="Save chat"
+              >
+                {saving
+                  ? <ActivityIndicator size="small" color={color.primary} />
+                  : <Feather name="bookmark" size={16} color={color.primary} />}
+                <Text style={styles.saveBtnText}>Save chat</Text>
+              </TouchableOpacity>
+            )}
+            {!!saveNotice && (
+              <Text
+                style={[styles.saveNotice, saveNotice.tone === 'error' && styles.saveNoticeError]}
+                numberOfLines={2}
+                accessibilityLiveRegion="polite"
+              >
+                {saveNotice.text}
+              </Text>
+            )}
+          </View>
+        )}
+
         {/* Input Bar */}
         <View style={styles.inputBar}>
           <View style={styles.inputBox}>
@@ -623,6 +753,32 @@ const styles = StyleSheet.create({
   indexStripText: { flex: 1, fontSize: 13, lineHeight: 18, color: color.primary },
   indexStripError: { backgroundColor: '#FFF7E6', borderTopColor: '#F5D9A0' },
   indexStripErrorText: { color: '#7A5200' },
+  // ─── Save chat ────────────────────────────────────────
+  saveBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    paddingHorizontal: space.lg,
+    paddingVertical: space.sm,
+    backgroundColor: color.background,
+  },
+  saveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minHeight: 36,
+    paddingHorizontal: space.md,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: color.primary,
+    backgroundColor: color.surface,
+  },
+  saveBtnOff: { opacity: 0.45 },
+  saveBtnDone: { borderColor: 'transparent', backgroundColor: '#EAF5EF' },
+  saveBtnText: { fontSize: 14, lineHeight: 20, fontWeight: '600', color: color.primary },
+  saveBtnTextDone: { color: '#2F7D5C' },
+  saveNotice: { ...type.caption, flex: 1, color: color.textBody },
+  saveNoticeError: { color: '#B45309' },
   // ─── Input Bar ────────────────────────────────────────
   inputBar: {
     backgroundColor: '#FFFFFF',
