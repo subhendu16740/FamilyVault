@@ -9,9 +9,10 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as WebBrowser from 'expo-web-browser';
 import { useFamily } from '../../lib/family-context';
+import { useDocumentOwners } from '../../lib/family-people';
 import {
   fetchDocumentById, getDocumentSignedUrl, deleteDocument,
-  updateDocument, fetchCategories, fetchFamilyMembers,
+  updateDocument, fetchCategories,
 } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
 import type { FamilyDocumentDetailRow } from '../../lib/database.types';
@@ -46,6 +47,7 @@ function formatBytes(bytes: number | null): string {
 export default function DocumentViewerScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { currentFamily } = useFamily();
+  const owners = useDocumentOwners();
   const [doc, setDoc] = useState<FamilyDocumentDetailRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -159,21 +161,15 @@ export default function DocumentViewerScreen() {
     setEditCategoryId(doc.category_id);
     setEditMemberId(doc.belongs_to_member);
 
-    // Load categories and members for the pickers
+    // Everyone in the family tree can own a document; the members, before 030.
+    setMembers(owners.map((o) => ({ id: o.id, name: o.isMe ? `${o.name} (me)` : o.name })));
     try {
-      const [cats, mems] = await Promise.all([
-        fetchCategories(),
-        fetchFamilyMembers(currentFamily.id),
-      ]);
+      const cats = await fetchCategories();
       setCategories(cats.map((c) => ({ id: c.id, name: c.name })));
-      setMembers(mems.map((m) => ({
-        id: m.id,
-        name: m.alias || (m.users as any)?.display_name || (m.users as any)?.email || 'Member',
-      })));
-    } catch { /* use empty lists */ }
+    } catch { /* use an empty list */ }
 
     setEditVisible(true);
-  }, [doc, currentFamily]);
+  }, [doc, currentFamily, owners]);
 
   const handleEditSave = useCallback(async () => {
     if (!doc || !currentFamily) return;

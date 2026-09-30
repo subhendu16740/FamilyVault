@@ -185,6 +185,23 @@ export default function FamilyScreen() {
           </TouchableOpacity>
         )}
 
+        {/* The tree holds everyone, accounts or not; this screen is who can sign in. */}
+        <TouchableOpacity
+          style={styles.treeLink}
+          onPress={() => router.push('/family-tree' as any)}
+          activeOpacity={0.8}
+          accessibilityRole="button"
+        >
+          <View style={styles.treeIcon}>
+            <Feather name="git-branch" size={16} color={color.primary} />
+          </View>
+          <View style={styles.memberInfo}>
+            <Text style={styles.treeTitle}>Family tree</Text>
+            <Text style={styles.treeSub}>Everyone in the family, and whose documents are whose</Text>
+          </View>
+          <Feather name="chevron-right" size={16} color="#9CA3AF" />
+        </TouchableOpacity>
+
         {/* Every family this person is in — more than one once an admin adds them elsewhere */}
         {families.length > 1 && (
           <View style={styles.section}>
@@ -700,4 +717,19 @@ const styles = StyleSheet.create({
   },
   dialogConfirmText: { ...type.button, color: '#FFFFFF' },
   dialogConfirmTextDestructive: { color: '#FFFFFF' },
+  treeLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    marginHorizontal: space.lg,
+    marginTop: space.lg,
+    padding: space.md,
+    minHeight: size.row,
+    borderRadius: radius.card,
+    backgroundColor: color.surface,
+    ...shadow.card,
+  },
+  treeIcon: { width: size.iconBox, height: size.iconBox, borderRadius: 8, backgroundColor: color.tint, alignItems: 'center', justifyContent: 'center' },
+  treeTitle: type.label,
+  treeSub: type.caption,
 });

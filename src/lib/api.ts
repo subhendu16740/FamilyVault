@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import { parseDocumentDate } from './dates';
 import { isSaveable, mimeTypeFor, unsupportedFileMessage } from './file-types';
+import type { Gender, KinLink, KinPerson } from '../../supabase/functions/_shared/kinship';
 import type {
   FamilyWithMembership,
   FamilyMemberWithUser,
@@ -873,6 +874,8 @@ export async function fetchStorageUsage(
 export interface ExpiringDocument {
   id: string;
   fileName: string;
+  /** Whose document it is: a person in the family tree (a member id before 030). */
+  memberId: string | null;
   memberName: string | null;
   expiry: Date;
   /** Whole days from today; negative once it has run out. */
@@ -902,6 +905,7 @@ export async function fetchExpiringDocuments(familyId: string): Promise<Expiring
     found.push({
       id: doc.id,
       fileName: doc.file_name,
+      memberId: doc.belongs_to_member,
       memberName: doc.member_name,
       expiry,
       daysLeft: Math.round((expiry.getTime() - today.getTime()) / 86_400_000),
@@ -1109,4 +1113,131 @@ export async function deleteAccount(): Promise<{ familiesDeleted: number; filesD
  */
 export async function signOutThisDevice(): Promise<void> {
   await supabase.auth.signOut({ scope: 'local' });
+}
+
+// ─── Family tree (030) ───────────────────────────────────────────
+//
+// Everyone in a family, with or without a FamilyVault account: a grandparent
+// who will never sign in, a child too young to. public.family_people holds
+// the people and public.family_links how they are related (parent, spouse,
+// sibling) — never a label: "Mother" depends on who is looking, and is
+// worked out by supabase/functions/_shared/kinship.ts. A member's own node
+// is created with their membership and carries their member id, so
+// documents already tagged to a member stay tagged to that person.
+//
+// Reads go through RLS (members of the family); writes go through RPCs that
+// check the caller is an admin (or, for their own details, that person).
+// Before 030 every call fails with a missing table or function: callers
+// check isMissingMigration() and say the tree is not switched on yet.
+
+export interface FamilyPerson extends KinPerson {
+  /** The account this person signs in with, if any. */
+  userId: string | null;
+}
+
+export interface FamilyTree {
+  people: FamilyPerson[];
+  links: KinLink[];
+}
+
+export type RelativeKind = 'parent' | 'child' | 'spouse' | 'sibling';
+
+export interface PersonDetails {
+  name: string;
+  gender: Gender;
+  /** YYYY-MM-DD, or null. */
+  birthDate: string | null;
+}
+
+// Not in the generated types until they are regenerated after 030.
+const tree = (table: 'family_people' | 'family_links') => (supabase as any).from(table);
+
+export async function fetchFamilyTree(familyId: string): Promise<FamilyTree> {
+  const [people, links] = await Promise.all([
+    tree('family_people').select('id, display_name, gender, birth_date, user_id').eq('family_id', familyId).order('created_at'),
+    tree('family_links').select('from_person, to_person, kind').eq('family_id', familyId),
+  ]);
+  if (people.error) throw people.error;
+  if (links.error) throw links.error;
+  return {
+    people: (people.data ?? []).map((p: any) => ({
+      id: p.id,
+      name: p.display_name,
+      gender: p.gender === 'female' || p.gender === 'male' ? p.gender : null,
+      birthDate: p.birth_date ?? null,
+      userId: p.user_id ?? null,
+    })),
+    links: (links.data ?? []).map((l: any) => ({ from: l.from_person, to: l.to_person, kind: l.kind })),
+  };
+}
+
+/**
+ * Add someone to the tree, already connected: "the new person is the
+ * <relation> of <relative>". A child can have both parents at once
+ * (`otherParentId`). Admins only; the database checks.
+ */
+export async function addFamilyPerson(
+  familyId: string,
+  details: PersonDetails,
+  relation?: { kind: RelativeKind; relativeId: string; otherParentId?: string | null },
+): Promise<string> {
+  const { data, error } = await supabase.rpc('add_family_person' as any, {
+    p_family_id: familyId,
+    p_display_name: details.name.trim(),
+    p_gender: details.gender,
+    p_birth_date: details.birthDate,
+    p_relation: relation?.kind ?? null,
+    p_relative: relation?.relativeId ?? null,
+    p_other_parent: relation?.otherParentId ?? null,
+  } as any);
+  if (error) throw error;
+  return data as unknown as string;
+}
+
+/**
+ * Connect someone already in the tree: `personId` is the <kind> of
+ * `relativeId` (and, for a child, of `otherParentId` too). Admins only.
+ */
+export async function linkFamilyPeople(
+  familyId: string,
+  personId: string,
+  kind: RelativeKind,
+  relativeId: string,
+  otherParentId?: string | null,
+): Promise<void> {
+  const { error } = await supabase.rpc('link_family_people' as any, {
+    p_family_id: familyId,
+    p_person: personId,
+    p_relation: kind,
+    p_relative: relativeId,
+    p_other_parent: otherParentId ?? null,
+  } as any);
+  if (error) throw error;
+}
+
+/** Name, gender, birth date. An admin, or the person themselves. */
+export async function updateFamilyPerson(personId: string, details: PersonDetails): Promise<void> {
+  const { error } = await supabase.rpc('update_family_person' as any, {
+    p_person_id: personId,
+    p_display_name: details.name.trim(),
+    p_gender: details.gender,
+    p_birth_date: details.birthDate,
+  } as any);
+  if (error) throw error;
+}
+
+/**
+ * Take someone out of the tree, with their links. Their documents stay in
+ * the family, no longer marked as theirs. Someone with an account is taken
+ * out by removing them from the family instead. Admins only.
+ */
+export async function removeFamilyPerson(personId: string): Promise<void> {
+  const { error } = await supabase.rpc('remove_family_person' as any, { p_person_id: personId } as any);
+  if (error) throw error;
+}
+
+/** The documents marked as one person's, newest first. */
+export async function fetchPersonDocuments(familyId: string, personId: string): Promise<FamilyDocumentRow[]> {
+  const docs = await fetchAllDocuments(familyId);
+  return docs.filter((d) => d.belongs_to_member === personId);
 }
