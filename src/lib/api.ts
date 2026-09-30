@@ -1031,3 +1031,82 @@ export async function deleteSavedChat(id: string): Promise<void> {
   const { error } = await savedChats().delete().eq('id', id);
   if (error) throw error;
 }
+
+// ─── Deleting your account (029) ─────────────────────────────────
+//
+// The delete-account Edge Function does the work as the service role, for the
+// person in the session and nobody else. Families nobody would be left to
+// manage are deleted with the account; the others are left, and keep their
+// documents. Nothing is kept afterwards.
+
+export interface AccountDeletionFamily {
+  familyId: string;
+  name: string;
+  role: string;
+  otherMembers: number;
+  documentCount: number;
+  /** How many of the family's documents this person added. */
+  yourDocuments: number;
+  /** Deleted with the account, rather than left. */
+  deleted: boolean;
+}
+
+/**
+ * `unavailable` (the function or migration 029 is not on this server yet) or
+ * `error`, with a sentence for the person.
+ */
+export class AccountDeletionError extends Error {
+  status: 'unavailable' | 'error';
+  constructor(status: 'unavailable' | 'error', message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
+async function deleteAccountInvoke<T>(body: Record<string, unknown>): Promise<T> {
+  const { data, error } = await supabase.functions.invoke('delete-account', { body });
+  if (!error) return data as T;
+  const httpStatus = (error as { context?: Response })?.context?.status;
+  const payload = (await readFunctionError(error)) as { status?: string; error?: string } | null;
+  // The gateway's own 404 (not deployed here), or the database update missing.
+  if ((httpStatus === 404 && !payload?.status) || payload?.status === 'needs_migration') {
+    throw new AccountDeletionError('unavailable', 'Deleting your account from the app is not switched on yet.');
+  }
+  throw new AccountDeletionError('error', payload?.error ?? error.message);
+}
+
+/** What deleting the signed-in account would do, family by family. Changes nothing. */
+export async function previewAccountDeletion(): Promise<AccountDeletionFamily[]> {
+  const { families } = await deleteAccountInvoke<{
+    families: Array<{
+      family_id: string; name: string; role: string; other_members: number;
+      document_count: number; your_documents: number; deleted: boolean;
+    }>;
+  }>({ action: 'preview' });
+  return (families ?? []).map((f) => ({
+    familyId: f.family_id,
+    name: f.name,
+    role: f.role,
+    otherMembers: f.other_members,
+    documentCount: f.document_count,
+    yourDocuments: f.your_documents,
+    deleted: f.deleted,
+  }));
+}
+
+/** Delete the signed-in account, as the preview described. There is no undo. */
+export async function deleteAccount(): Promise<{ familiesDeleted: number; filesDeleted: number }> {
+  const result = await deleteAccountInvoke<{ families_deleted: number; files_deleted: number }>({
+    action: 'delete',
+    confirm: 'DELETE',
+  });
+  return { familiesDeleted: result.families_deleted ?? 0, filesDeleted: result.files_deleted ?? 0 };
+}
+
+/**
+ * Forget the session on this device only. After a deletion there is no
+ * account for a server-side sign-out to find.
+ */
+export async function signOutThisDevice(): Promise<void> {
+  await supabase.auth.signOut({ scope: 'local' });
+}

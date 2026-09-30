@@ -624,6 +624,20 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      account_deletion_plan: {
+        Args: { p_user_id: string }
+        Returns: {
+          delete_family: boolean
+          document_count: number
+          family_id: string
+          family_name: string
+          other_admins: number
+          other_members: number
+          role: string
+          storage_namespace: string
+          your_documents: number
+        }[]
+      }
       add_family_member: {
         Args: {
           p_added_by: string
@@ -672,9 +686,14 @@ export type Database = {
         }
         Returns: string
       }
+      delete_account_data: { Args: { p_user_id: string }; Returns: Json }
       delete_family_document: {
         Args: { p_document_id: string; p_family_id: string; p_user_id: string }
         Returns: undefined
+      }
+      family_storage_objects: {
+        Args: { p_storage_namespace: string }
+        Returns: string[]
       }
       get_document_chunks: {
         Args: { p_document_id: string; p_limit?: number; p_schema: string }
@@ -786,6 +805,7 @@ export type Database = {
         Args: { p_notification_id: string; p_user_id: string }
         Returns: undefined
       }
+      purge_family: { Args: { p_family_id: string }; Returns: string }
       rag_chunk_total: { Args: { p_schema: string }; Returns: number }
       rag_chunks_to_embed: {
         Args: { p_after?: string; p_limit?: number; p_schema: string }

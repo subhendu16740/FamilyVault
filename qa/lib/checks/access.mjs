@@ -122,6 +122,17 @@ const savedChatsJudge = (expect, needsChat) => (outcome) => {
   return typeof expect === 'function' ? expect(outcome) : judge(expect, outcome);
 };
 
+// Account deletion ships with migration 029 and the delete-account function:
+// skipped until both are on DEV, like the Gmail probes before 026.
+const accountFnJudge = (check) => ({ status, data }) => {
+  if (status === 404 && !data?.status) return ['skipped', 'delete-account is not deployed to DEV yet'];
+  if (status === 503 && data?.status === 'needs_migration') return ['skipped', 'migration 029 is not applied to DEV yet'];
+  return check(status, data);
+};
+const accountRpcJudge = (expect) => (outcome) => (String(outcome.error?.code) === 'PGRST202'
+  ? ['skipped', 'migration 029 is not applied to DEV yet']
+  : judge(expect, outcome));
+
 async function attempt(fn) {
   try {
     const out = await fn();
@@ -345,6 +356,25 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
       const { data, error } = await b.client.from('saved_chats').delete().eq('id', chatA).select('id');
       return error ? { error } : data?.length ? { allowed: true, reverted: false } : {};
     })],
+
+    // Deleting an account (029): only ever the caller's own, and the database
+    // side is the server's alone. Nothing here can delete anything even if the
+    // protection failed: the database probes aim at ids that belong to nobody,
+    // and no probe asks for a real deletion.
+    ['anon', 'see what deleting an account would do', accountFnJudge(http401), fn(anon, 'delete-account', { action: 'preview' })],
+    ['anon', 'delete an account', accountFnJudge(http401), fn(anon, 'delete-account', { action: 'delete', confirm: 'DELETE', user_id: A.user })],
+    ['anon', 'delete an account through the database (server-only)', accountRpcJudge('refused'), rpc(anon, 'delete_account_data', { p_user_id: randomUUID() })],
+    ['B', "read account A's deletion plan (server-only)", accountRpcJudge('refused'), rpc(b, 'account_deletion_plan', { p_user_id: A.user })],
+    ['B', 'delete an account through the database (server-only)', accountRpcJudge('refused'), rpc(b, 'delete_account_data', { p_user_id: randomUUID() })],
+    ['B', 'delete a family through the database (server-only)', accountRpcJudge('refused'), rpc(b, 'purge_family', { p_family_id: randomUUID() })],
+    ['B', "list QA Vault A's files through the database (server-only)", accountRpcJudge('refused'), rpc(b, 'family_storage_objects', { p_storage_namespace: A.ns })],
+    ['B', "get account A's deletion preview by naming A", accountFnJudge((status, data) => {
+      if (status !== 200) return ['fail', `HTTP ${status}: ${JSON.stringify(data).slice(0, 160)}`];
+      const ids = (data?.families ?? []).map((f) => f.family_id);
+      return ids.includes(A.family)
+        ? ['fail', 'LISTED QA Vault A: the preview answered for the account named in the body, not the caller']
+        : ['pass', `only its own families (${ids.length})`];
+    }), fn(b, 'delete-account', { action: 'preview', user_id: A.user })],
 
     // Undone the moment it is seen: a superuser B would make every read
     // probe above meaningless, so this runs after them.

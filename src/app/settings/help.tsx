@@ -42,6 +42,10 @@ const FAQ: { q: string; a: string }[] = [
     a: 'Family Plus is the paid plan, coming soon. Things marked with ★, like reminders before a document runs out, bringing documents in from Gmail and more storage space, will be part of it. Until then they work for everyone.',
   },
   {
+    q: 'How do I delete my account?',
+    a: 'Open Settings › Security and choose Delete account. It is immediate and nothing is kept. A family nobody else looks after is deleted with it, documents and all; the screen shows which ones before you confirm. To keep a family for the others, make one of them an admin first.',
+  },
+  {
     q: 'Why can\'t FamilyVault find something that is in a document?',
     a: 'A blurred or dark photo is hard to read. Try again in good light, holding the phone steady. If your documents are in another language, choose it in Settings, under Documents.',
   },

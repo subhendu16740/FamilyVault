@@ -71,7 +71,7 @@ export default function SettingsScreen() {
 
   const accountItems: LinkItem[] = [
     { icon: 'user', label: 'Profile', sub: 'Your name and phone number', route: '/settings/profile' },
-    { icon: 'shield', label: 'Security', sub: 'Password and signing out', route: '/settings/security' },
+    { icon: 'shield', label: 'Security', sub: 'Password, signing out, deleting your account', route: '/settings/security' },
     {
       icon: 'bell', label: 'Notifications', sub: 'Expiry alerts and family news',
       route: '/settings/notifications', value: notificationsEnabled ? 'On' : 'Off',

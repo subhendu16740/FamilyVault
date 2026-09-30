@@ -41,7 +41,8 @@ Four things will mislead you if you assume otherwise:
    `family_members`, `notifications` and `invitations` and grants back only
    the columns the app changes (listed in 025's header; 027 adds your own
    `display_name`, `phone` and `notifications_enabled`, and a write-only
-   `feedback` table; 028 adds `saved_chats`, which only its owner reads).
+   `feedback` table; 028 adds `saved_chats`, which only its owner reads;
+   029's account-deletion functions are service role only).
    **A new writable
    column needs its own `GRANT` in a migration.** Membership has no
    invitations and no requests: only an admin adds a person, through the
@@ -89,7 +90,7 @@ errors**) and `npm run build` are the local gates.
 at 03:10 IST, and on pushes that change `qa/`. It uploads synthetic SPECIMEN
 documents to its own vault (QA Vault A, account A), asks questions about
 them, and checks the answers on facts and sources, never wording. It also
-runs the 023 sweep and the 024 DEV/PROD fingerprint, 56 access probes (a
+runs the 023 sweep and the 024 DEV/PROD fingerprint, 64 access probes (a
 logged-out visitor and a second account must be refused everywhere, Gmail
 import's endpoints included), the
 membership model (the second account, added as a viewer, must not be able to
@@ -214,6 +215,7 @@ npx supabase@latest login
 npx supabase@latest functions deploy rag-search       --project-ref <ref>
 npx supabase@latest functions deploy ingest-document  --project-ref <ref>
 npx supabase@latest functions deploy add-member       --project-ref <ref>
+npx supabase@latest functions deploy delete-account   --project-ref <ref>
 npx supabase@latest functions deploy reembed-index    --project-ref <ref>
 npx supabase@latest functions deploy gmail-connect    --project-ref <ref>   # also gmail-scan, gmail-import
 npx supabase@latest functions deploy gmail-callback   --project-ref <ref> --no-verify-jwt   # Google's redirect target
@@ -374,6 +376,7 @@ src/
       index.tsx              # the list; every row opens a screen
       profile.tsx  security.tsx  notifications.tsx  privacy.tsx
       storage.tsx  help.tsx  feedback.tsx  about.tsx
+      delete-account.tsx     # Security › Delete account: shows what goes, asks for DELETE (029)
     document/[id].tsx        # document viewer
     gmail-import.tsx         # connect Gmail, review what it found, import (web only, ★ Family Plus)
     +html.tsx                # custom HTML shell, web only
@@ -412,7 +415,7 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `auth.tsx` | `AuthProvider`: session, signIn, signUp, signInWithGoogle, signOut |
 | `family-context.tsx` | `FamilyProvider`: currentFamily, members, membership, needsFamily |
 | `drawer-context.tsx` | Profile drawer open/close state |
-| `api.ts` | **All** Supabase queries — documents, search, upload, RAG, notifications, adding and leaving families, Gmail import, saved chats, and the Settings screens (profile, password, storage use, expiry dates, feedback) |
+| `api.ts` | **All** Supabase queries — documents, search, upload, RAG, notifications, adding and leaving families, Gmail import, saved chats, deleting your account, and the Settings screens (profile, password, storage use, expiry dates, feedback) |
 | `dates.ts` | `parseDocumentDate()`: expiry dates exactly as ingest stores them (DD/MM/YYYY and kin, YYYY-MM-DD, "19 October 2026") |
 | `plans.ts` | What the free plan includes: `FREE_STORAGE_GB` per family (shown on Settings › Storage, not enforced) and `storageLevel()` |
 | `file-types.ts` | What a picked file is (`detectFileType()`: MIME type, then name, never a web `blob:` uri) and whether the vault can keep it (PDF, JPG, PNG) |
@@ -424,7 +427,7 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `speech-text.ts` | `toSpeech()`: strips markdown and spells out ID numbers before they are read aloud |
 | `voice-languages.ts` | The language picker list and the few phrases the app itself says, per language |
 | `storage.ts` | Key-value cache: localStorage on web, AsyncStorage on native |
-| `database.types.ts` | Generated Supabase types, current to 028. Regenerate after every migration and re-append the hand-written block at the bottom (see the typecheck note) |
+| `database.types.ts` | Generated Supabase types, current to 029. Regenerate after every migration and re-append the hand-written block at the bottom (see the typecheck note) |
 
 ---
 
@@ -626,6 +629,33 @@ so storage policies live only in `019`.
   newest 100 turns, 6,000 characters each, and each source's id and name
   only. Before 028 the app says saving is not switched on yet.
 
+### Deleting your account — at once, nothing kept (029)
+
+- **Both stores require it in the app** (Apple 5.1.1(v); Google Play's
+  account-deletion policy, which also wants a web link — the web app's
+  `/settings/delete-account` is that page). Settings › Security › Delete
+  account shows, family by family, what goes and what stays, and asks for
+  DELETE to be typed. There is no waiting period and no copy kept.
+- **A family goes with the account when nobody would be left to manage it**:
+  the person is its last admin, or its last member. It goes whole — rows,
+  schema, index state, files — and its other members lose it; the screen
+  names them first, and points to Manage Family › Make Admin to keep it. In
+  a family with another admin the person just leaves, as with Leave family,
+  and the family keeps its documents, theirs included. A family they created
+  passes to its longest-standing admin (`families.created_by` is ON DELETE
+  RESTRICT).
+- **`delete-account` is the only way in.** It takes the caller from the
+  session, never the body, and calls migration 029's functions, which take a
+  user id and are therefore **service role only** (point 2 at the top):
+  `account_deletion_plan()` (the rule, in one place), `purge_family()`,
+  `delete_account_data()` (every row, one transaction) and
+  `family_storage_objects()` (a family folder's files, for the Storage API —
+  direct deletes from `storage.objects` are refused).
+- **The order makes failure retryable**: files first, then rows, then the
+  sign-in (`auth.admin.deleteUser`, which cascades Gmail, feedback and saved
+  chats). Calling again after a partial failure finds nothing and finishes.
+  A Gmail permission is revoked at Google on the way, best effort.
+
 ### Membership — an admin adds, nobody requests (025)
 
 - **There are no invitations.** The old flow wrote an `invitations` row and
@@ -704,6 +734,10 @@ so storage policies live only in `019`.
   It replaced `invite-member`, which the deploy workflow deletes from each
   project it deploys to — a function removed from the repo otherwise stays
   live, running its old code.
+- **`delete-account`** — a person deletes their own account: `preview`
+  lists what would go, `delete` with `confirm: 'DELETE'` does it; see
+  [Deleting your account](#deleting-your-account--at-once-nothing-kept-029).
+  503 `needs_migration` where 029 is not applied.
 - **`gmail-connect`**, **`gmail-callback`**, **`gmail-scan`**,
   **`gmail-import`** — Gmail import; see [below](#gmail-import--your-own-mailbox-your-tick-026).
 

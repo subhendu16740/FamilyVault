@@ -53,9 +53,12 @@ export default function PrivacyScreen() {
 
         <Card>
           <CardTitle icon="user-x">Leaving or deleting</CardTitle>
-          <Body>You can leave any family from Manage Family. To delete your account, send us a message.</Body>
+          <Body>
+            You can leave any family from Manage Family, or delete your account from Settings › Security. Deleting is
+            immediate and nothing is kept.
+          </Body>
           <SecondaryButton label="Manage Family" icon="users" onPress={() => router.push('/family' as any)} />
-          <SecondaryButton label="Send us a message" icon="send" onPress={() => router.push('/settings/feedback' as any)} />
+          <SecondaryButton label="Delete account" icon="user-x" onPress={() => router.push('/settings/delete-account' as any)} />
         </Card>
       </ScrollView>
     </SafeAreaView>
