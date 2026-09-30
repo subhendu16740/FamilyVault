@@ -17,6 +17,9 @@ import {
 } from '../../lib/ocr';
 import { usePreferences } from '../../lib/preferences';
 import { describeOcrLanguages } from '../../lib/ocr-languages';
+import {
+  detectFileType, isSaveable, mimeTypeFor, nameWithType, unsupportedFileMessage, type SaveableType,
+} from '../../lib/file-types';
 import type { Database } from '../../lib/database.types';
 import { ScreenHeader, PlusTag } from '../../components/screen-header';
 import { color, radius, shadow, size, space, type } from '../../constants/design';
@@ -26,13 +29,9 @@ type DocumentCategory = Database['public']['Tables']['document_categories']['Row
 interface PickedFile {
   uri: string;
   name: string;
-  type: string;       // 'pdf' | 'jpg' | 'jpeg' | 'png'
+  type: SaveableType;
   mimeType: string;
   size: number;
-}
-
-function getFileExtension(name: string): string {
-  return name.split('.').pop()?.toLowerCase() ?? 'unknown';
 }
 
 export default function UploadScreen() {
@@ -74,6 +73,31 @@ export default function UploadScreen() {
 
   // ─── File Pickers ─────────────────────────────────────────────
 
+  // Every picker's result goes through here, so they cannot disagree about
+  // what a file is. The type comes from its MIME type or name, never from a
+  // web blob: uri (see file-types.ts), and a file the vault cannot keep is
+  // turned away now rather than failing at Save.
+  const takeFile = (
+    picked: { uri: string; name?: string | null; mimeType?: string | null; size?: number | null },
+    fallbackStem: string,
+  ) => {
+    const kind = detectFileType(picked);
+    if (!isSaveable(kind)) {
+      setErrorMsg(unsupportedFileMessage(kind));
+      return;
+    }
+    const file: PickedFile = {
+      uri: picked.uri,
+      name: nameWithType(picked.name, kind, fallbackStem),
+      type: kind,
+      mimeType: mimeTypeFor(kind),
+      size: picked.size ?? 0,
+    };
+    setPickedFile(file);
+    setOcrText(null);
+    runOcr(file);
+  };
+
   const pickDocument = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -83,18 +107,10 @@ export default function UploadScreen() {
 
       if (result.canceled || !result.assets?.length) return;
       const asset = result.assets[0];
-      const ext = getFileExtension(asset.name);
-
-      const file: PickedFile = {
-        uri: asset.uri,
-        name: asset.name,
-        type: ext,
-        mimeType: asset.mimeType ?? `application/${ext}`,
-        size: asset.size ?? 0,
-      };
-      setPickedFile(file);
-      setOcrText(null);
-      runOcr(file);
+      takeFile(
+        { uri: asset.uri, name: asset.name, mimeType: asset.mimeType, size: asset.size },
+        `document_${Date.now()}`,
+      );
     } catch (err) {
       Alert.alert('Error', 'Failed to pick document.');
     }
@@ -111,18 +127,10 @@ export default function UploadScreen() {
 
     if (result.canceled || !result.assets?.length) return;
     const asset = result.assets[0];
-    const ext = asset.uri.split('.').pop()?.toLowerCase() ?? 'jpg';
-
-    const file: PickedFile = {
-      uri: asset.uri,
-      name: `scan_${Date.now()}.${ext}`,
-      type: ext,
-      mimeType: `image/${ext}`,
-      size: asset.fileSize ?? 0,
-    };
-    setPickedFile(file);
-    setOcrText(null);
-    runOcr(file);
+    takeFile(
+      { uri: asset.uri, name: null, mimeType: asset.mimeType, size: asset.fileSize },
+      `scan_${Date.now()}`,
+    );
   };
 
   const pickFromGallery = async () => {
@@ -139,18 +147,10 @@ export default function UploadScreen() {
 
     if (result.canceled || !result.assets?.length) return;
     const asset = result.assets[0];
-    const ext = asset.uri.split('.').pop()?.toLowerCase() ?? 'jpg';
-
-    const file: PickedFile = {
-      uri: asset.uri,
-      name: asset.fileName ?? `photo_${Date.now()}.${ext}`,
-      type: ext,
-      mimeType: `image/${ext}`,
-      size: asset.fileSize ?? 0,
-    };
-    setPickedFile(file);
-    setOcrText(null);
-    runOcr(file);
+    takeFile(
+      { uri: asset.uri, name: asset.fileName, mimeType: asset.mimeType, size: asset.fileSize },
+      `photo_${Date.now()}`,
+    );
   };
 
   // ─── OCR Processing ────────────────────────────────────────────
