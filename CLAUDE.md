@@ -14,9 +14,11 @@ Expo / React Native app (SDK 55) with expo-router. Backend is Supabase
 Four things will mislead you if you assume otherwise:
 
 1. **The schema-taking RPCs are service-role ONLY, and that is load-bearing.**
-   Twelve functions (`rag_*`, `get_document_chunks`) take the family's schema
+   The `rag_*` functions and `get_document_chunks` take the family's schema
    as a *parameter* and check no membership, so reachability IS the access
-   control. Migration 022 revokes them from `anon` and `authenticated`; before
+   control. Migration 022 revokes the original twelve from `anon` and
+   `authenticated`, and each one added since (031's `rag_documents_for_people`)
+   carries the same revoke; before
    it, any signed-in account could read or destroy any family's documents by
    naming their schema. Never grant one of these to a client role, and never
    add a new schema-taking function without the same revoke.
@@ -42,7 +44,8 @@ Four things will mislead you if you assume otherwise:
    the columns the app changes (listed in 025's header; 027 adds your own
    `display_name`, `phone` and `notifications_enabled`, and a write-only
    `feedback` table; 028 adds `saved_chats`, which only its owner reads;
-   029's account-deletion functions are service role only).
+   029's account-deletion functions are service role only; 031's family
+   tree is read by members and written only through its four functions).
    **A new writable
    column needs its own `GRANT` in a migration.** Membership has no
    invitations and no requests: only an admin adds a person, through the
@@ -90,11 +93,12 @@ errors**) and `npm run build` are the local gates.
 at 03:10 IST, and on pushes that change `qa/`. It uploads synthetic SPECIMEN
 documents to its own vault (QA Vault A, account A), asks questions about
 them, and checks the answers on facts and sources, never wording. It also
-runs the 023 sweep and the 024 DEV/PROD fingerprint, 64 access probes (a
+runs the 023 sweep and the 024 DEV/PROD fingerprint, 74 access probes (a
 logged-out visitor and a second account must be refused everywhere, Gmail
-import's endpoints included), the
+import's endpoints and the family tree included), the
 membership model (the second account, added as a viewer, must not be able to
-escalate, and must be able to leave), and the full upload → ingest →
+escalate, becomes a person in the family tree, and must be able to leave),
+a question asked by relation ("my mother's passport"), and the full upload → ingest →
 expiry-notification pipeline. By hand only, suite `languages` asks 12
 questions about documents in eight more Indian languages — two of them
 photos OCR'd the way the web app does it, with Tesseract — which is about
@@ -369,7 +373,9 @@ src/
     login.tsx                # email/password + Google OAuth
     setup-family.tsx         # first-time vault creation
     notifications.tsx        # expiry alerts, uploads, invites
-    family.tsx               # family tree + members    (NOT a tab)
+    family.tsx               # Manage Family: members, adding, leaving    (NOT a tab)
+    family-tree.tsx          # the family tree: everyone, and how they are related (031)
+    person/[id].tsx          # one person: their relation to you, documents, expiry dates
     reminders.tsx            # expiry dates, soonest first (★ Family Plus, in the drawer)
     saved-chats.tsx          # behind the clock on Ask: chats kept with Save chat (028)
     settings/                # (NOT a tab) its own Stack, so Back returns to Settings
@@ -417,6 +423,7 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `drawer-context.tsx` | Profile drawer open/close state |
 | `api.ts` | **All** Supabase queries — documents, search, upload, RAG, notifications, adding and leaving families, Gmail import, saved chats, deleting your account, and the Settings screens (profile, password, storage use, expiry dates, feedback) |
 | `dates.ts` | `parseDocumentDate()`: expiry dates exactly as ingest stores them (DD/MM/YYYY and kin, YYYY-MM-DD, "19 October 2026") |
+| `family-people.ts` | Whose a document can be: everyone in the tree, you first (`useDocumentOwners()`, members only before 031), and a person's expiry badge (`badgeFromExpiries()`) |
 | `plans.ts` | What the free plan includes: `FREE_STORAGE_GB` per family (shown on Settings › Storage, not enforced) and `storageLevel()` |
 | `file-types.ts` | What a picked file is (`detectFileType()`: MIME type, then name, never a web `blob:` uri) and whether the vault can keep it (PDF, JPG, PNG) |
 | `app-info.ts` | Version, release date and commit (stamped into `extra` by `app.config.ts` at build time), and the support contact Help shows |
@@ -427,7 +434,7 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `speech-text.ts` | `toSpeech()`: strips markdown and spells out ID numbers before they are read aloud |
 | `voice-languages.ts` | The language picker list and the few phrases the app itself says, per language |
 | `storage.ts` | Key-value cache: localStorage on web, AsyncStorage on native |
-| `database.types.ts` | Generated Supabase types, current to 029. Regenerate after every migration and re-append the hand-written block at the bottom (see the typecheck note) |
+| `database.types.ts` | Generated Supabase types, current to 031 (030 changed nothing in them). Regenerate after every migration and re-append the hand-written block at the bottom (see the typecheck note) |
 
 ---
 
@@ -488,7 +495,7 @@ Supabase, cloud-hosted. Three layers:
 
 - **Layer 1 (common)** — `public` schema: users, families, family_members,
   invitations, document_categories, notifications, audit_logs, feedback,
-  saved_chats. RLS enabled.
+  saved_chats, family_people, family_links. RLS enabled.
 - **Layer 2 (private)** — one isolated schema per family (`family_<short_uuid>`)
   holding documents, document_metadata, document_chunks, expiry_alerts,
   family_relationships. Created by the `public.create_family()` PG function.
@@ -629,7 +636,7 @@ so storage policies live only in `019`.
   newest 100 turns, 6,000 characters each, and each source's id and name
   only. Before 028 the app says saving is not switched on yet.
 
-### Deleting your account — at once, nothing kept (029)
+### Deleting your account — at once, nothing kept (029, 030)
 
 - **Both stores require it in the app** (Apple 5.1.1(v); Google Play's
   account-deletion policy, which also wants a web link — the web app's
@@ -641,7 +648,8 @@ so storage policies live only in `019`.
   schema, index state, files — and its other members lose it; the screen
   names them first, and points to Manage Family › Make Admin to keep it. In
   a family with another admin the person just leaves, as with Leave family,
-  and the family keeps its documents, theirs included. A family they created
+  and the family keeps its documents, theirs included, and them in its
+  family tree by name, without the account. A family they created
   passes to its longest-standing admin (`families.created_by` is ON DELETE
   RESTRICT).
 - **`delete-account` is the only way in.** It takes the caller from the
@@ -655,6 +663,29 @@ so storage policies live only in `019`.
   sign-in (`auth.admin.deleteUser`, which cascades Gmail, feedback and saved
   chats). Calling again after a partial failure finds nothing and finishes.
   A Gmail permission is revoked at Google on the way, best effort.
+  The device forgets what it kept for the account too (`forgetAccount()` in
+  `src/lib/storage.ts`, which names every per-account key).
+- **Never delete a person from the Supabase dashboard.** Before 030 that
+  removed only the sign-in. The profile (email, name, phone), memberships,
+  families, documents and files all stayed, and the stranded profile kept
+  its email, so signing up again with it failed (`users_email_key`). DEV
+  had two such profiles from March 2026. Since 030 (`users.id` references
+  `auth.users` ON DELETE CASCADE), the dashboard either deletes cleanly
+  (someone who created nothing) or refuses with "Database error deleting
+  user" (anyone who created a family or has history 029 deletes itself).
+  **Someone who cannot sign in** asks by email; delete them by hand, in
+  this order:
+  1. `select * from account_deletion_plan('<user id>')` — tells you which
+     families go.
+  2. In Storage › documents, delete each doomed family's folder
+     (`storage_namespace`).
+  3. `select delete_account_data('<user id>')`.
+  4. Delete the sign-in: Authentication › Users.
+- **Nothing left behind** is checkable: no `family_*` schema without a
+  `families` row, no file in a folder without one, no `public.users` row
+  without an `auth.users` row, no membership, saved chat or Gmail row for
+  a missing account. All read zero on DEV after the first real deletion
+  (30 September 2026), apart from the two March profiles 030 removes.
 
 ### Membership — an admin adds, nobody requests (025)
 
@@ -677,6 +708,55 @@ so storage policies live only in `019`.
   sees — and uploads into — for one picked by whoever added them.
 - `invitations` is kept, write-locked, because the app still on PROD reads
   it. Drop it once PROD runs this release.
+
+### Family tree — people, not accounts (031)
+
+- **Everyone in the family, with or without an account.** `family_people`
+  holds the people and `family_links` how they are related — parent, spouse
+  or sibling, never a label. What someone is called depends on who is
+  looking ("Your grandmother (Nani)"), so labels are computed by
+  `supabase/functions/_shared/kinship.ts`, which the app, rag-search and the
+  QA self-test all import: one set of rules, Hindi terms included (Dada/Dadi
+  and Nana/Nani by side, Tau/Chacha by age, Bua, Mama, Mausi, Bhabhi…).
+- **A member is a person under their MEMBER id.** A trigger on
+  `family_members` creates the person with the membership, and 031 backfilled
+  everyone already a member, so every document already marked as a member's
+  (`documents.belongs_to_member`, which has no foreign key) is now marked as
+  that person's, with nothing rewritten. A document can now belong to anyone
+  in the tree. Leaving, or deleting the account, clears `user_id` and keeps
+  the person: the family keeps its tree as it keeps its documents.
+- **Members read it; admins change it; you may edit yourself.** Clients have
+  SELECT (RLS through `get_my_family_ids()`) and nothing else. Writes go
+  through `add_family_person`, `link_family_people`, `update_family_person`
+  and `remove_family_person`, which take the caller from `auth.uid()`. The
+  helpers they share (`tree_*`) are revoked from every client role.
+  `update_family_person` spells out `v_user IS NOT NULL AND v_user = v_me`:
+  a bare `v_user = v_me` is NULL for a person without an account, and `IF NOT
+  (false OR NULL)` does not raise, which would let any member rename them.
+- **The shape stays sane.** One link per pair of people (a unique index on
+  the unordered pair), at most two parents, nobody their own ancestor, both
+  ends in the link's family (a composite foreign key). Someone with an
+  account is never removed from the tree directly: they leave through Manage
+  Family. Removing a person unmarks their documents; the documents stay.
+- **Document names come from the tree**, and only from the document's own
+  family. Before 031, `get_family_documents` and `get_document_detail` looked
+  a member up by id without checking the family, so a document marked with
+  another family's member id showed that stranger's name.
+- **Search understands relations, without a model call.**
+  `relativesNamedIn()` finds the people a question names by relation, from
+  the asker's place in the tree — "Nani's pension", "my mother's passport",
+  "Mummy ka PAN", "नानी की पेंशन" — and rag-search adds their names to the
+  search and tells the judge and the answer model who is who. It costs no
+  Groq tokens and runs on every question. The documents marked as those
+  people's join the candidates too (`rag_documents_for_people`, service role
+  only, like every `rag_*` function), so a scan whose text never says the
+  name is still found. `debug.relatives` shows what was resolved. Short or
+  two-way words are deliberately not relations: "ma" is also an MA degree,
+  and "mama" is a mother in English but a mother's brother in Hindi — the
+  tree says which.
+- **Not built yet:** merging two people. Someone added to the tree without an
+  account and later added as a member appears twice; an admin removes the
+  one without the account (its links go with it).
 
 ## Edge Functions
 
@@ -701,7 +781,9 @@ so storage policies live only in `019`.
   embedding model, in batches, resuming from a cursor in
   `public.family_embedding_state`. Any member may read progress; only an admin
   may run it. Driven from Settings › Search.
-- **`rag-search`** — embeds the query (`_shared/embeddings.ts`, same model as
+- **`rag-search`** — resolves relations first ("Nani's pension" → her name,
+  from the asker's place in the family tree; see
+  [Family tree](#family-tree--people-not-accounts-031)), then embeds the query (`_shared/embeddings.ts`, same model as
   ingest) → retrieves chunks via `rag_retrieve_chunks`, which blends semantic
   distance and full-text rank 0.7/0.3 → sends chunks + query to Groq → returns
   answer plus source document references. If embedding fails the RPC falls back

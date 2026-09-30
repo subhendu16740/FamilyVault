@@ -11,11 +11,11 @@ GitHub Actions (`.github/workflows/qa.yml`); nothing here ships with the app.
 |---|---|---|
 | Database | 023 sweep is zero rows on DEV and PROD; the 024 fingerprint matches between them | nothing (read-only catalog queries) |
 | Setup | QA Vault A holds all 17 SPECIMEN documents, indexed (uploaded once, on the first run) — English, Hindi, and one or two in each of eight more Indian languages, whose two photos are OCR'd the way the web app does it before upload (see [Indian languages](#indian-languages)) | first run only |
-| Access | 64 probes: a logged-out visitor and account B (another family) are refused by every app RPC, the server-only RPCs, all Edge Functions (Gmail import's too: no one reads another's connection or findings, gmail-callback redirects nowhere for a state it never issued, and a consent link never returns to a site off the allowlist) and storage, and B cannot rewrite the columns 025 locked (its own `is_superuser` and email, a family's storage namespace) or create user, family or membership rows, rename account A, or send feedback as someone else or read anyone's (027; skipped until it is applied), or read, add to, change or delete another account's saved chats (028; skipped until it is applied), or reach account deletion's database functions or another account's deletion preview (029; skipped until it is applied and deployed) — each with a positive control | nothing |
-| Members | only an admin adds (`add-member`): A adds B as a viewer, B is notified and sees the vault; "already a member" and "no account" are reported; B, now an insider, cannot make itself admin, give itself delete rights, delete A's document, add members, remove A or rename the vault; B can leave | nothing |
+| Access | 74 probes: a logged-out visitor and account B (another family) are refused by every app RPC, the server-only RPCs, all Edge Functions (Gmail import's too: no one reads another's connection or findings, gmail-callback redirects nowhere for a state it never issued, and a consent link never returns to a site off the allowlist) and storage, and B cannot rewrite the columns 025 locked (its own `is_superuser` and email, a family's storage namespace) or create user, family or membership rows, rename account A, or send feedback as someone else or read anyone's (027; skipped until it is applied), or read, add to, change or delete another account's saved chats (028; skipped until it is applied), or reach account deletion's database functions or another account's deletion preview (029; skipped until it is applied and deployed), or read, add to, rename, connect or remove anyone in another family's tree, write the tree's tables directly or list documents by person (031; skipped until it is applied) — each with a positive control | nothing |
+| Members | only an admin adds (`add-member`): A adds B as a viewer, B is notified and sees the vault; "already a member" and "no account" are reported; B, now an insider, cannot make itself admin, give itself delete rights, delete A's document, add members, remove A or rename the vault; B becomes a person in the family tree, sees it, cannot change it but may edit its own details (031); B can leave, and stays in the tree without the account until the check takes it out | nothing |
 | Upload | a fresh PDF goes through storage → insert → ingest-document; chunks, vectors, metadata, expiry alert → notification; a password-protected PDF fails visibly | 1 small embedding call, 1 OCR request |
 | Index | no unindexed documents; index up to date | nothing |
-| Questions | answers carry the right facts from the right document; refusals; Hindi; follow-ups; voice; with suite `languages`, eight more Indian languages | Groq — see below |
+| Questions | answers carry the right facts from the right document; refusals; Hindi; follow-ups; voice; a relation ("my mother's passport") named through the family tree; with suite `languages`, eight more Indian languages | Groq — see below |
 
 ## Groq budget
 
@@ -24,7 +24,7 @@ Each question costs about 9K tokens, ~6.5K of them on the relevance judge
 
 - **smoke** (3 questions) after each deploy to DEV and on pushes to `qa/`;
   **nightly** (8–9 questions: smoke + core + one rotating group) at 03:10 IST;
-  **full** (15), **languages** (12, about 43% of the free day on its own)
+  **full** (16), **languages** (12, about 43% of the free day on its own)
   and **no-questions** (0) by hand. `languages` is never scheduled and
   `full` does not include it; don't run both on one day.
 - At most two question-asking runs a day outside the nightly one; later runs

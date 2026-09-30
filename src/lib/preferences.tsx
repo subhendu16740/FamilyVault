@@ -11,7 +11,7 @@
 import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react';
 import { useAuth } from './auth';
 import { supabase } from './supabase';
-import { storageGet, storageSet } from './storage';
+import { storageGet, storageSet, accountKey } from './storage';
 import { DEFAULT_VOICE_LANGUAGE } from './voice-languages';
 import { DEFAULT_OCR_LANGUAGES } from './ocr-languages';
 
@@ -50,7 +50,7 @@ const PreferencesContext = createContext<PreferencesContextType>({
   setNotificationsEnabled: () => {},
 });
 
-const cacheKey = (userId: string) => `fv:prefs:${userId}`;
+const cacheKey = accountKey.prefs;
 
 // Untyped on purpose: the reads and writes below retry with older column
 // sets where a migration is not applied, and the generated types only know

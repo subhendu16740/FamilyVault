@@ -5,11 +5,12 @@ import {
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { useFamily } from '../../lib/family-context';
+import { useDocumentOwners } from '../../lib/family-people';
 import { useAuth } from '../../lib/auth';
 import { fetchCategories, uploadDocument } from '../../lib/api';
 import {
@@ -36,7 +37,11 @@ interface PickedFile {
 
 export default function UploadScreen() {
   const { user } = useAuth();
-  const { currentFamily, members } = useFamily();
+  const { currentFamily } = useFamily();
+  // Everyone in the family tree (you first); the members, before migration 031.
+  const owners = useDocumentOwners();
+  // From a person's page: "Add a document for Nani".
+  const { person } = useLocalSearchParams<{ person?: string }>();
   const { documentLanguages } = usePreferences();
   // Shown while scanning, so it is obvious which languages are being read —
   // and obvious what to change in Settings if a page comes back as nonsense.
@@ -60,10 +65,9 @@ export default function UploadScreen() {
   }, []);
 
   useEffect(() => {
-    if (members.length > 0 && !selectedPerson) {
-      setSelectedPerson(members[0].id);
-    }
-  }, [members]);
+    if (person && owners.some((o) => o.id === person)) setSelectedPerson(person);
+    else if (owners.length > 0 && !owners.some((o) => o.id === selectedPerson)) setSelectedPerson(owners[0].id);
+  }, [owners, person]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (categories.length > 0 && !selectedCategory) {
@@ -359,26 +363,27 @@ export default function UploadScreen() {
             {/* Owner */}
             <Text style={styles.sectionTitle}>Who does this belong to?</Text>
             <View style={styles.chipsWrap}>
-              {members.map((m) => {
-                const label = m.alias || m.users.display_name;
-                const sub = m.relationship ? ` (${m.relationship})` : '';
+              {owners.map((o) => {
+                const sub = o.label ? ` (${o.label})` : '';
                 return (
                   <TouchableOpacity
-                    key={m.id}
-                    onPress={() => setSelectedPerson(m.id)}
+                    key={o.id}
+                    onPress={() => setSelectedPerson(o.id)}
                     style={[
                       styles.chip,
-                      selectedPerson === m.id && styles.chipSelected,
+                      selectedPerson === o.id && styles.chipSelected,
                     ]}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: selectedPerson === o.id }}
                   >
-                    {selectedPerson === m.id && (
+                    {selectedPerson === o.id && (
                       <Feather name="check" size={14} color="#FFFFFF" style={styles.chipCheck} />
                     )}
                     <Text style={[
                       styles.chipText,
-                      selectedPerson === m.id && styles.chipTextSelected,
+                      selectedPerson === o.id && styles.chipTextSelected,
                     ]}>
-                      {label}{sub}
+                      {o.name}{sub}
                     </Text>
                   </TouchableOpacity>
                 );

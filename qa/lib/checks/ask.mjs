@@ -44,8 +44,37 @@ export function judgeAnswer(q, d) {
   const debug = d.debug ?? {};
   if (debug.embedded === false) reasons.push(`the question was NOT embedded (${debug.embed_error ?? 'no reason given'}) — search fell back to keywords`);
   if (debug.index_rebuilding) reasons.push('the search index is still rebuilding');
+  // A relation in the question must have become a name BEFORE search: the
+  // right answer alone does not show it, when only one document could match.
+  if (e.relative && !(debug.relatives ?? []).some((r) => r.name === e.relative)) {
+    reasons.push(`expected the question to name ${e.relative} through the family tree (relatives: ${JSON.stringify(debug.relatives ?? [])})`);
+  }
 
   return reasons;
+}
+
+// The people a question needs in QA Vault A's tree (migration 031), added
+// once and kept, like the permanent documents: "my mother" means someone only
+// when account A has a mother in the tree. Returns why the question cannot be
+// asked, or null.
+async function ensureFamily(a, vaultA, family) {
+  const read = () => a.client.from('family_people').select('id, display_name, user_id').eq('family_id', vaultA.id);
+  const { data: people, error } = await read();
+  if (error) {
+    return /PGRST205|42P01|could not find the table|does not exist/i.test(`${error.code} ${error.message}`)
+      ? 'migration 031 is not applied to DEV yet'
+      : `could not read the family tree: ${error.message}`;
+  }
+  const me = (people ?? []).find((p) => p.user_id === a.user.id);
+  if (!me) return 'account A has no person of its own in the family tree';
+  for (const f of family) {
+    const found = (people ?? []).find((p) => p.display_name.toLowerCase() === f.name.toLowerCase());
+    const { error: err } = found
+      ? await a.client.rpc('link_family_people', { p_family_id: vaultA.id, p_person: found.id, p_relation: f.relation, p_relative: me.id })
+      : await a.client.rpc('add_family_person', { p_family_id: vaultA.id, p_display_name: f.name, p_gender: f.gender ?? null, p_relation: f.relation, p_relative: me.id });
+    if (err) return `could not put ${f.name} in the tree as account A's ${f.relation}: ${err.message}`;
+  }
+  return null;
 }
 
 export async function runQuestions(cfg, { a, vaultA, notIndexed = new Map() }, results, questions) {
@@ -65,6 +94,13 @@ export async function runQuestions(cfg, { a, vaultA, notIndexed = new Map() }, r
     if (missing) {
       results.add('questions', q.id, title, 'skipped', { why: `${q.expect.source} is not indexed this run (${missing.status}) — see setup`, ask: q.ask });
       continue;
+    }
+    if (q.family?.length) {
+      const why = await ensureFamily(a, vaultA, q.family);
+      if (why) {
+        results.add('questions', q.id, title, 'skipped', { why, ask: q.ask });
+        continue;
+      }
     }
     const parent = q.after ? answered.get(q.after) : null;
     if (q.after && !parent) {

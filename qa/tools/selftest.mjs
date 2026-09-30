@@ -23,6 +23,7 @@ import {
 import {
   importTokenKey, sealToken, openToken, pkceChallenge, sha256Hex, base64url, fromBase64,
 } from '../../supabase/functions/_shared/gmail-crypto.ts';
+import { buildGraph, relationTo, relationLabel, relativesForPrompt, relativesNamedIn, buildForest } from '../../supabase/functions/_shared/kinship.ts';
 import { mentionsDate, mentionsAmount, mentionsPhone, mentionsText, refuses, devanagariShare, scriptShare, hasMarkdown } from '../lib/match.mjs';
 import { judgeAnswer } from '../lib/checks/ask.mjs';
 import { vehicleInsurance } from '../lib/tiny-pdf.mjs';
@@ -282,6 +283,113 @@ await test('gmail: refresh tokens are sealed, and PKCE matches RFC 7636', async 
   assert.deepEqual([...fromBase64(base64url(new Uint8Array([251, 255, 0, 1])))], [251, 255, 0, 1]);
 });
 
+// A fictional family, three generations on both sides (SPECIMEN names).
+const kin = (() => {
+  const P = (id, name, gender, birthDate) => ({ id, name, gender, birthDate });
+  const people = [
+    P('ramesh', 'Ramesh Verma', 'male', '1945-01-01'), P('kamala', 'Kamala Verma', 'female', '1948-01-01'),
+    P('suresh', 'Suresh Rao', 'male', '1950-01-01'), P('meena', 'Meena Rao', 'female', '1952-01-01'),
+    P('vinod', 'Vinod Verma', 'male', '1970-01-01'), P('sunita', 'Sunita Verma', 'female', '1972-01-01'),
+    P('rohan', 'Rohan Verma', 'male', '1975-01-01'), P('priya', 'Priya Singh', 'female', '1978-01-01'),
+    P('vikram', 'Vikram Singh', 'male', '1976-01-01'),
+    P('asha', 'Asha Verma', 'female', '1977-01-01'), P('anil', 'Anil Rao', 'male', '1980-01-01'),
+    P('neha', 'Neha Rao', 'female', '1982-01-01'), P('kavita', 'Kavita Iyer', 'female', '1983-01-01'),
+    P('manoj', 'Manoj Iyer', 'male', '1981-01-01'),
+    P('aarav', 'Aarav Verma', 'male', '2005-01-01'), P('diya', 'Diya Verma', 'female', '2008-01-01'),
+    P('kunal', 'Kunal Verma', 'male', '2000-01-01'), P('kabir', 'Kabir Singh', 'male', '2010-01-01'),
+    P('riya', 'Riya Verma', 'female', '2006-01-01'), P('ishaan', 'Ishaan Verma', 'male', '2026-01-01'),
+    P('guest', 'A Guest', null, null),
+  ];
+  const par = (from, ...tos) => tos.map((to) => ({ from, to, kind: 'parent' }));
+  const sp = (a, b) => ({ from: a, to: b, kind: 'spouse' });
+  const links = [
+    sp('ramesh', 'kamala'), sp('suresh', 'meena'), sp('vinod', 'sunita'), sp('rohan', 'asha'),
+    sp('priya', 'vikram'), sp('anil', 'neha'), sp('kavita', 'manoj'), sp('aarav', 'riya'),
+    ...par('ramesh', 'vinod', 'rohan', 'priya'), ...par('kamala', 'vinod', 'rohan', 'priya'),
+    ...par('suresh', 'asha', 'anil', 'kavita'), ...par('meena', 'asha', 'anil', 'kavita'),
+    ...par('rohan', 'aarav', 'diya'), ...par('asha', 'aarav', 'diya'),
+    ...par('vinod', 'kunal'), ...par('sunita', 'kunal'), ...par('priya', 'kabir'), ...par('vikram', 'kabir'),
+    ...par('aarav', 'ishaan'), ...par('riya', 'ishaan'),
+  ];
+  return buildGraph(people, links);
+})();
+const said = (me, other) => relationLabel(relationTo(kin, me, other));
+
+await test('kinship: parents, grandparents, aunts and uncles on each side', () => {
+  const expected = {
+    rohan: 'Father (Papa)', asha: 'Mother (Maa)', diya: 'Sister (Behen)',
+    ramesh: 'Grandfather (Dada)', kamala: 'Grandmother (Dadi)', suresh: 'Grandfather (Nana)', meena: 'Grandmother (Nani)',
+    vinod: 'Uncle (Tau)', priya: 'Aunt (Bua)', anil: 'Uncle (Mama)', kavita: 'Aunt (Mausi)',
+    sunita: 'Aunt (Tai)', vikram: 'Uncle (Phupha)', neha: 'Aunt (Mami)', manoj: 'Uncle (Mausa)',
+    kunal: 'Cousin', kabir: 'Cousin', riya: 'Wife (Patni)', ishaan: 'Son (Beta)',
+  };
+  for (const [who, label] of Object.entries(expected)) assert.equal(said('aarav', who), label, `Aarav → ${who}`);
+  assert.equal(said('diya', 'aarav'), 'Brother (Bhaiya)', 'an elder brother');
+  assert.equal(relationTo(kin, 'aarav', 'guest'), null, 'not connected');
+  assert.equal(relationTo(kin, 'aarav', 'aarav').en, 'You');
+});
+
+await test('kinship: in-laws and the next generation, named from each side', () => {
+  const cases = [
+    ['asha', 'rohan', 'Husband (Pati)'], ['asha', 'ramesh', 'Father-in-law (Sasur)'], ['asha', 'kamala', 'Mother-in-law (Saas)'],
+    ['asha', 'priya', 'Sister-in-law (Nanad)'], ['asha', 'vinod', 'Brother-in-law (Jeth)'], ['asha', 'riya', 'Daughter-in-law (Bahu)'],
+    ['asha', 'ishaan', 'Grandson (Pota)'], ['asha', 'anil', 'Brother (Bhai)'], ['asha', 'neha', 'Sister-in-law (Bhabhi)'],
+    ['asha', 'manoj', 'Brother-in-law (Jija)'], ['rohan', 'anil', 'Brother-in-law (Saala)'], ['rohan', 'kavita', 'Sister-in-law (Saali)'],
+    ['ramesh', 'aarav', 'Grandson (Pota)'], ['ramesh', 'kabir', 'Grandson (Nati)'], ['priya', 'aarav', 'Nephew (Bhatija)'],
+    ['priya', 'diya', 'Niece (Bhatiji)'], ['anil', 'aarav', 'Nephew (Bhanja)'], ['ramesh', 'ishaan', 'Great-grandson'],
+    ['ishaan', 'ramesh', 'Great-grandfather (Pardada)'], ['ishaan', 'meena', 'Great-grandmother'],
+  ];
+  for (const [me, other, label] of cases) assert.equal(said(me, other), label, `${me} → ${other}`);
+});
+
+await test('kinship: the family as rag-search hands it to the model', () => {
+  const lines = relativesForPrompt(kin, 'aarav');
+  assert.ok(lines.includes('Aarav Verma: you'));
+  assert.ok(lines.includes('Meena Rao: your grandmother (Nani)'));
+  assert.ok(lines.includes('Asha Verma: your mother (Maa)'));
+  assert.ok(lines.includes('A Guest'), 'unconnected people keep their name');
+  assert.ok(relativesForPrompt(kin, null).every((l) => !l.includes('your')), 'no viewer, no relations');
+});
+
+await test('kinship: relations named in a question become names, with no model call', () => {
+  const named = (me, ...texts) => relativesNamedIn(kin, me, ...texts).map((r) => `${r.term}=${r.name}`).sort();
+  assert.deepEqual(named('aarav', "When does Nani's pension renew?"), ['nani=Meena Rao']);
+  assert.deepEqual(named('aarav', 'Mummy ka passport kab expire hoga'), ['mummy=Asha Verma']);
+  assert.deepEqual(named('aarav', 'my dad and my mom'), ['dad=Rohan Verma', 'mom=Asha Verma']);
+  assert.deepEqual(named('aarav', 'Buaji ka Aadhaar'), ['buaji=Priya Singh']);
+  assert.deepEqual(named('aarav', 'नानी की पेंशन कब आएगी'), ['नानी=Meena Rao'], 'Hindi in Devanagari');
+  assert.deepEqual(named('aarav', 'my grandmother'), ['grandmother=Kamala Verma', 'grandmother=Meena Rao'], 'both grandmothers: the answer sorts it out');
+  assert.deepEqual(named('aarav', "Mama's car insurance"), ['mama=Anil Rao'], "Mama is Maa's brother, never Maa");
+  assert.deepEqual(named('asha', "my mother-in-law's PAN"), ['mother in law=Kamala Verma'], 'mother-in-law is not also mother');
+  assert.deepEqual(named('asha', 'Saasu maa'), ['maa=Meena Rao'], 'Maa is still her own mother');
+  assert.deepEqual(named('aarav', 'my MA degree certificate', 'the person who signed'), [], 'no MA, no "son" inside "person"');
+  assert.deepEqual(named('aarav', 'the house papers'), []);
+  assert.deepEqual(named(null, "Nani's pension"), [], 'no place in the tree, nothing to resolve');
+  assert.deepEqual(named('guest', "Nani's pension"), [], 'connected to nobody');
+  // No gender recorded: "mother" can only mean one of the parents.
+  const plain = buildGraph([{ id: 'k', name: 'Kid', gender: null }, { id: 'p', name: 'Pat Rao', gender: null }],
+    [{ from: 'p', to: 'k', kind: 'parent' }]);
+  assert.deepEqual(relativesNamedIn(plain, 'k', "my mother's passport").map((r) => r.name), ['Pat Rao']);
+});
+
+await test('kinship: the tree starts from each pair of ancestors, the viewer\'s own first', () => {
+  const forest = buildForest(kin, 'aarav');
+  assert.deepEqual(forest.branches.map((b) => b.title), ['Ramesh & Kamala', 'Suresh & Meena']);
+  assert.equal(forest.first, 0);
+  assert.equal(buildForest(kin, 'anil').first, 1, "Anil descends from Suresh & Meena");
+  assert.equal(buildForest(kin, 'vikram').first, 0, 'married in: shown with his wife\'s family');
+  const verma = forest.branches[0].roots[0];
+  assert.deepEqual(verma.children.map((c) => c.person.name), ['Vinod Verma', 'Rohan Verma', 'Priya Singh'], 'eldest first');
+  const rohan = verma.children[1];
+  assert.deepEqual(rohan.spouses.map((s) => s.name), ['Asha Verma']);
+  assert.deepEqual(rohan.children.map((c) => c.person.name), ['Aarav Verma', 'Diya Verma']);
+  assert.deepEqual(forest.loose.map((p) => p.name), ['A Guest']);
+  // A loop in bad data must not hang the screen.
+  const loop = buildGraph([{ id: 'x', name: 'X', gender: null }, { id: 'y', name: 'Y', gender: null }],
+    [{ from: 'x', to: 'y', kind: 'parent' }, { from: 'y', to: 'x', kind: 'parent' }]);
+  assert.ok(buildForest(loop, 'x'));
+});
+
 await test('questions.yaml is consistent with the fixtures', () => {
   const files = new Set(permanentDocuments.map((d) => d.file));
   for (const q of questions) if (q.expect.source) assert.ok(files.has(q.expect.source), `${q.id} cites ${q.expect.source}, which is not a permanent fixture`);
@@ -335,4 +443,4 @@ if (failures.length) {
   console.error(`\n${failures.length} self-test(s) failed, ${passed} passed.`);
   process.exit(1);
 }
-console.log(`✓ ${passed} self-tests passed — matchers, judge, run-time PDF, metadata, text cleaning, Gmail rules and token sealing, questions and budget.`);
+console.log(`✓ ${passed} self-tests passed — matchers, judge, run-time PDF, metadata, text cleaning, Gmail rules and token sealing, kinship and the family tree, questions and budget.`);

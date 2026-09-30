@@ -30,6 +30,8 @@
 #            helper model's free day on their own. Never scheduled.
 #
 # `after: <id>` asks the question as a follow-up in the same conversation.
+# `family:` puts people in account A's family tree first (added once, kept);
+# `relative:` checks the question named that person through the tree.
 # `guards:` names the past failure the question exists to catch.
 
 questions:
@@ -136,6 +138,18 @@ questions:
       text: SXA2609114
       source: warranty_card_photo_specimen_v1.jpg
     guards: a photographed card is read by server-side OCR
+
+  - id: relation-mother-passport
+    tier: rotate
+    group: 2
+    family:
+      - { relation: parent, name: Asha Verma, gender: female }
+    ask: When does my mother's passport expire?
+    expect:
+      date: 2033-07-19
+      source: passport_asha_verma_specimen_v1.pdf
+      relative: Asha Verma
+    guards: a relation becomes a name before search (the family tree, 031) — the documents say "Asha Verma", never "my mother"
 
   # ── rotate, group 3 ────────────────────────────────────────────
   # The Hindi notice's text layer is known to lose conjuncts and vowel
