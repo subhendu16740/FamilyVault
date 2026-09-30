@@ -115,6 +115,13 @@ const feedbackJudge = (expect) => (outcome) => (missingTable(outcome.error)
   ? ['skipped', 'migration 027 is not applied to DEV yet']
   : judge(expect, outcome));
 
+// public.saved_chats ships with migration 028: skipped until it is applied.
+const savedChatsJudge = (expect, needsChat) => (outcome) => {
+  if (missingTable(outcome.error) || outcome.missing) return ['skipped', 'migration 028 is not applied to DEV yet'];
+  if (needsChat && outcome.noTarget) return ['skipped', "no saved chat of account A's to aim at (see its control)"];
+  return typeof expect === 'function' ? expect(outcome) : judge(expect, outcome);
+};
+
 async function attempt(fn) {
   try {
     const out = await fn();
@@ -196,6 +203,32 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     const r = await invokeFunction(cfg, actor, name, body, { timeoutMs: 30_000 });
     return { status: r.status, data: r.data };
   };
+
+  // ── A saved chat of account A's for the saved-chat probes to aim at (028).
+  let chatA = null;
+  let chatsMissing = false;
+  {
+    const { data, error } = await a.client.from('saved_chats')
+      .insert({ family_id: A.family, title: `QA probe ${cfg.runId}`, messages: [{ role: 'user', text: 'SPECIMEN question' }] })
+      .select('id').single();
+    if (missingTable(error)) {
+      chatsMissing = true;
+      results.add('access', 'control:saved-chat', 'Control — account A saves a chat and reads it back', 'skipped', { why: 'migration 028 is not applied to DEV yet' });
+    } else if (error) {
+      results.add('access', 'control:saved-chat', 'Control — account A saves a chat and reads it back', 'fail', { why: error.message });
+    } else {
+      const { data: back } = await a.client.from('saved_chats').select('id').eq('id', data.id);
+      chatA = back?.length ? data.id : null;
+      results.add('access', 'control:saved-chat', 'Control — account A saves a chat and reads it back', chatA ? 'pass' : 'fail',
+        chatA ? {} : { why: 'saved, but A cannot read its own chat back' });
+    }
+  }
+  const onChatA = (run) => async () => {
+    if (chatsMissing) return { missing: true };
+    if (!chatA) return { noTarget: true };
+    return run();
+  };
+  const unchanged = (open) => savedChatsJudge(judgeWrite(open), true);
 
   const probes = [
     // Logged out
@@ -298,6 +331,21 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     ['B', 'send feedback as account A', feedbackJudge('refused'), () => b.client.from('feedback').insert({ user_id: A.user, message: `QA probe ${cfg.runId}` })],
     ['B', 'read the feedback people have sent', feedbackJudge('refused-or-empty'), () => b.client.from('feedback').select('id, message').limit(5)],
 
+    // Saved chats (028): only their owner reads, adds to, changes or deletes them.
+    ['anon', 'read saved chats', savedChatsJudge('refused-or-empty'), () => anon.client.from('saved_chats').select('id, title').limit(5)],
+    ['anon', 'save a chat into QA Vault A', savedChatsJudge('refused'), () => anon.client.from('saved_chats').insert({ family_id: A.family, title: 'QA probe', messages: [] })],
+    ['B', "read account A's saved chat", savedChatsJudge('refused-or-empty', true), onChatA(() => b.client.from('saved_chats').select('id, title, messages').eq('id', chatA))],
+    ['B', 'save a chat into QA Vault A', savedChatsJudge('refused'), () => b.client.from('saved_chats').insert({ family_id: A.family, title: 'QA probe', messages: [] })],
+    ['B', 'save a chat as account A', savedChatsJudge('refused'), () => b.client.from('saved_chats').insert({ user_id: A.user, family_id: vaultB.id, title: 'QA probe', messages: [] })],
+    ['B', "change account A's saved chat", unchanged("B rewrote a chat only A should see"), onChatA(async () => {
+      const { data, error } = await b.client.from('saved_chats').update({ title: 'QA intrusion' }).eq('id', chatA).select('id');
+      return error ? { error } : data?.length ? { allowed: true, reverted: false } : {};
+    })],
+    ['B', "delete account A's saved chat", unchanged("B deleted a chat only A should see"), onChatA(async () => {
+      const { data, error } = await b.client.from('saved_chats').delete().eq('id', chatA).select('id');
+      return error ? { error } : data?.length ? { allowed: true, reverted: false } : {};
+    })],
+
     // Undone the moment it is seen: a superuser B would make every read
     // probe above meaningless, so this runs after them.
     ['B', 'make itself superuser', judgeWrite("is_superuser() then opens every family's members, invitations, notifications and profiles"), async () => {
@@ -329,6 +377,14 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
   await a.client.storage.from('documents').remove([intrusionPath]);
   await b.client.from('family_members').delete().eq('family_id', A.family).eq('user_id', b.user.id);
   await a.client.from('invitations').delete().eq('family_id', A.family).eq('token', `qa-${cfg.runId}`);
+
+  if (chatA) {
+    const { data: chatStill } = await a.client.from('saved_chats').select('title').eq('id', chatA);
+    const intact = chatStill?.length === 1 && chatStill[0].title === `QA probe ${cfg.runId}`;
+    results.add('access', 'control:saved-chat-intact', "Control — account A's saved chat survived every probe", intact ? 'pass' : 'fail',
+      intact ? {} : { why: chatStill?.length ? 'its title was CHANGED' : 'it is GONE' });
+    await a.client.from('saved_chats').delete().eq('id', chatA);
+  }
 
   const { data: still } = await a.client.rpc('get_document_detail', { p_family_id: A.family, p_document_id: sacrificialId });
   results.add('access', 'control:target-intact', "Control — the sacrificial document survived every probe", still?.length ? 'pass' : 'fail',

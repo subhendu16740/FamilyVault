@@ -19,6 +19,7 @@ FamilyVault brings all your family's important documents into one secure, shared
 - **Home Dashboard** — At-a-glance stats (documents, members, categories), recent documents, quick actions
 - **Document Viewer** — View document details with metadata, category, and owner info
 - **Search Interface** — Category-based browsing and keyword search across documents
+- **Saved Chats** — Save chat on Ask keeps a conversation; the clock at the top right lists them to carry on or delete. Only you can see them, and they go if you leave the family
 - **Upload Flow** — Multi-step upload with source selection, metadata tagging, and owner assignment
 - **Import from Gmail** ★ (web) — Connect your own Gmail; FamilyVault lists the attachments that look like documents, and imports the ones you tick. Only you see what it finds; disconnecting makes it forget
 - **Menu Drawer** — Slides in from the left from the name button on Home: Home, Manage Family, Reminders ★ and Settings, with Sign Out

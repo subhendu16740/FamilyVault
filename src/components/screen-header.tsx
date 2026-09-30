@@ -30,6 +30,11 @@ export function ScreenHeader({
   );
 }
 
+/** Two icon actions side by side at the right of the bar (Ask: new question, saved chats). */
+export function HeaderActions({ children }: { children: ReactNode }) {
+  return <View style={styles.actions}>{children}</View>;
+}
+
 /** An icon-only action at the right of the bar, drawn like the back arrow. */
 export function HeaderIconButton({ icon, label, onPress }: { icon: string; label: string; onPress: () => void }) {
   return (
@@ -86,6 +91,7 @@ const styles = StyleSheet.create({
   titles: { flex: 1, minWidth: 0, paddingVertical: space.sm },
   title: type.title,
   subtitle: { ...type.caption, lineHeight: 16 },
+  actions: { flexDirection: 'row', alignItems: 'center', marginRight: -space.sm },
   iconButton: {
     width: size.control,
     height: size.control,

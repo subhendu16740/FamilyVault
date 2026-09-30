@@ -933,3 +933,103 @@ export function isMissingMigration(error: unknown): boolean {
   return !!e && (e.code === '42P01' || e.code === 'PGRST205' || e.code === 'PGRST204'
     || /does not exist|could not find the table|schema cache/i.test(e.message ?? ''));
 }
+
+// ─── Saved chats (028) ───────────────────────────────────────────
+//
+// Ask › Save chat keeps a conversation in public.saved_chats. Only its owner
+// can read it, and it is deleted with their membership of the family. Not in
+// the generated types until they are regenerated after 028. Before 028 every
+// call fails with a missing table: callers check isMissingMigration() and say
+// saving is not switched on yet.
+
+export interface SavedChatMessage {
+  role: 'user' | 'ai';
+  text: string;
+  sources?: RagSearchResult['sources'];
+}
+
+export interface SavedChatSummary {
+  id: string;
+  title: string;
+  updatedAt: string;
+}
+
+export interface SavedChat extends SavedChatSummary {
+  messages: SavedChatMessage[];
+}
+
+// Well inside the table's 256 KB check. A very long chat keeps its newest turns.
+const SAVED_CHAT_MAX_MESSAGES = 100;
+const SAVED_CHAT_MAX_TEXT = 6000;
+
+/** The first question, on one line: what the chat was about. */
+export function savedChatTitle(messages: SavedChatMessage[]): string {
+  const first = (messages.find((m) => m.role === 'user')?.text ?? '').replace(/\s+/g, ' ').trim();
+  return (first.length > 80 ? `${first.slice(0, 79)}…` : first) || 'Saved chat';
+}
+
+function chatForStorage(messages: SavedChatMessage[]): SavedChatMessage[] {
+  return messages
+    .filter((m) => m.text.trim())
+    .slice(-SAVED_CHAT_MAX_MESSAGES)
+    .map((m) => ({
+      role: m.role,
+      text: m.text.slice(0, SAVED_CHAT_MAX_TEXT),
+      ...(m.sources?.length
+        ? { sources: m.sources.slice(0, 10).map(({ id, file_name, file_type, category_name }) => ({ id, file_name, file_type, category_name })) }
+        : {}),
+    }));
+}
+
+const savedChats = () => (supabase as any).from('saved_chats');
+
+/** This person's saved chats about one family, most recently used first. */
+export async function listSavedChats(familyId: string): Promise<SavedChatSummary[]> {
+  const { data, error } = await savedChats()
+    .select('id, title, updated_at')
+    .eq('family_id', familyId)
+    .order('updated_at', { ascending: false })
+    .limit(200);
+  if (error) throw error;
+  return (data ?? []).map((r: { id: string; title: string; updated_at: string }) => ({
+    id: r.id, title: r.title, updatedAt: r.updated_at,
+  }));
+}
+
+export async function getSavedChat(id: string): Promise<SavedChat | null> {
+  const { data, error } = await savedChats().select('id, title, messages, updated_at').eq('id', id).maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  return {
+    id: data.id,
+    title: data.title,
+    updatedAt: data.updated_at,
+    messages: Array.isArray(data.messages) ? data.messages : [],
+  };
+}
+
+/**
+ * Save a conversation: a new saved chat, or — given its id — the same one
+ * brought up to date. Returns the id, which is new if the old chat had been
+ * deleted meanwhile (from the list, or by leaving and rejoining the family).
+ */
+export async function saveChat(familyId: string, messages: SavedChatMessage[], id?: string | null): Promise<string> {
+  const stored = chatForStorage(messages);
+  const title = savedChatTitle(stored);
+  if (id) {
+    const { data, error } = await savedChats()
+      .update({ title, messages: stored, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select('id');
+    if (error) throw error;
+    if (data?.length) return id;
+  }
+  const { data, error } = await savedChats().insert({ family_id: familyId, title, messages: stored }).select('id').single();
+  if (error) throw error;
+  return data.id as string;
+}
+
+export async function deleteSavedChat(id: string): Promise<void> {
+  const { error } = await savedChats().delete().eq('id', id);
+  if (error) throw error;
+}
