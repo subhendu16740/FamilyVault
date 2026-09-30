@@ -18,7 +18,8 @@ import { TOKENS, FREE_DAILY_TOKENS } from './budget.mjs';
 import { SCRIPTS } from './match.mjs';
 
 const TIERS = ['smoke', 'core', 'rotate', 'languages'];
-const ASSERTIONS = ['date', 'amount', 'not_amount', 'text', 'phone', 'not_phone', 'refuses', 'not_regex', 'source', 'answer_language', 'script', 'no_markdown'];
+const ASSERTIONS = ['date', 'amount', 'not_amount', 'text', 'phone', 'not_phone', 'refuses', 'not_regex', 'source', 'answer_language', 'script', 'no_markdown', 'relative'];
+const RELATIONS = ['parent', 'child', 'spouse', 'sibling'];
 
 export function loadQuestions(path) {
   const doc = parse(readFileSync(path, 'utf8'));
@@ -36,6 +37,9 @@ export function loadQuestions(path) {
     if (!keys.length) throw new Error(`${where}: has no expectations`);
     for (const key of keys) if (!ASSERTIONS.includes(key)) throw new Error(`${where}: unknown expectation '${key}'`);
     if (q.expect.script && !SCRIPTS[q.expect.script]) throw new Error(`${where}: script must be one of ${Object.keys(SCRIPTS).join(', ')}`);
+    for (const f of q.family ?? []) {
+      if (!f?.name || !RELATIONS.includes(f.relation)) throw new Error(`${where}: family entries need a name and a relation (${RELATIONS.join(', ')})`);
+    }
     seen.add(q.id);
   }
   return questions;

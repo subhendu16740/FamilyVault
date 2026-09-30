@@ -23,7 +23,7 @@ import {
 import {
   importTokenKey, sealToken, openToken, pkceChallenge, sha256Hex, base64url, fromBase64,
 } from '../../supabase/functions/_shared/gmail-crypto.ts';
-import { buildGraph, relationTo, relationLabel, relativesForPrompt, buildForest } from '../../supabase/functions/_shared/kinship.ts';
+import { buildGraph, relationTo, relationLabel, relativesForPrompt, relativesNamedIn, buildForest } from '../../supabase/functions/_shared/kinship.ts';
 import { mentionsDate, mentionsAmount, mentionsPhone, mentionsText, refuses, devanagariShare, scriptShare, hasMarkdown } from '../lib/match.mjs';
 import { judgeAnswer } from '../lib/checks/ask.mjs';
 import { vehicleInsurance } from '../lib/tiny-pdf.mjs';
@@ -349,6 +349,27 @@ await test('kinship: the family as rag-search hands it to the model', () => {
   assert.ok(lines.includes('Asha Verma: your mother (Maa)'));
   assert.ok(lines.includes('A Guest'), 'unconnected people keep their name');
   assert.ok(relativesForPrompt(kin, null).every((l) => !l.includes('your')), 'no viewer, no relations');
+});
+
+await test('kinship: relations named in a question become names, with no model call', () => {
+  const named = (me, ...texts) => relativesNamedIn(kin, me, ...texts).map((r) => `${r.term}=${r.name}`).sort();
+  assert.deepEqual(named('aarav', "When does Nani's pension renew?"), ['nani=Meena Rao']);
+  assert.deepEqual(named('aarav', 'Mummy ka passport kab expire hoga'), ['mummy=Asha Verma']);
+  assert.deepEqual(named('aarav', 'my dad and my mom'), ['dad=Rohan Verma', 'mom=Asha Verma']);
+  assert.deepEqual(named('aarav', 'Buaji ka Aadhaar'), ['buaji=Priya Singh']);
+  assert.deepEqual(named('aarav', 'नानी की पेंशन कब आएगी'), ['नानी=Meena Rao'], 'Hindi in Devanagari');
+  assert.deepEqual(named('aarav', 'my grandmother'), ['grandmother=Kamala Verma', 'grandmother=Meena Rao'], 'both grandmothers: the answer sorts it out');
+  assert.deepEqual(named('aarav', "Mama's car insurance"), ['mama=Anil Rao'], "Mama is Maa's brother, never Maa");
+  assert.deepEqual(named('asha', "my mother-in-law's PAN"), ['mother in law=Kamala Verma'], 'mother-in-law is not also mother');
+  assert.deepEqual(named('asha', 'Saasu maa'), ['maa=Meena Rao'], 'Maa is still her own mother');
+  assert.deepEqual(named('aarav', 'my MA degree certificate', 'the person who signed'), [], 'no MA, no "son" inside "person"');
+  assert.deepEqual(named('aarav', 'the house papers'), []);
+  assert.deepEqual(named(null, "Nani's pension"), [], 'no place in the tree, nothing to resolve');
+  assert.deepEqual(named('guest', "Nani's pension"), [], 'connected to nobody');
+  // No gender recorded: "mother" can only mean one of the parents.
+  const plain = buildGraph([{ id: 'k', name: 'Kid', gender: null }, { id: 'p', name: 'Pat Rao', gender: null }],
+    [{ from: 'p', to: 'k', kind: 'parent' }]);
+  assert.deepEqual(relativesNamedIn(plain, 'k', "my mother's passport").map((r) => r.name), ['Pat Rao']);
 });
 
 await test('kinship: the tree starts from each pair of ancestors, the viewer\'s own first', () => {

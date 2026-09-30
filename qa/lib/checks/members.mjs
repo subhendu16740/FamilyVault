@@ -13,6 +13,10 @@
 //   vault. Each is checked by reading the row back: RLS answers a refused
 //   UPDATE or DELETE with "0 rows", not with an error.
 //   B leaves                      → "Leave family" works
+//   the family tree (031): B became a person in it when added, reads it,
+//   cannot change it but may edit its own details, and stays in it — without
+//   the account — after leaving; the check then takes that person out, so
+//   runs do not pile up.
 //
 // Skipped, with the reason, until add-member is deployed to DEV and 025 is
 // applied there. B is removed again however the checks end.
@@ -64,6 +68,7 @@ export async function runMemberChecks(cfg, { a, b, vaultA }, results) {
   if (!isAdded) return;
 
   let sacrificialId = null;
+  let treePerson = null;              // B's person in A's tree, removed at the end
   try {
     const mine = await memberRow(b.user.id);
     check('added-as-viewer', 'The new member is a viewer who cannot delete', mine?.role === 'viewer' && mine?.can_delete === false,
@@ -125,15 +130,49 @@ export async function runMemberChecks(cfg, { a, b, vaultA }, results) {
     check('viewer-cannot-rename', 'A viewer cannot rename the family', fam?.name === vaultA.name, `name is "${fam?.name}"`);
     if (fam && fam.name !== vaultA.name) await a.client.from('families').update({ name: vaultA.name }).eq('id', vaultA.id);
 
+    // ── The family tree (031): B is a person in it now.
+    const { data: person, error: personErr } = await a.client.from('family_people')
+      .select('id, user_id, display_name').eq('id', mine.id).maybeSingle();
+    if (personErr && /PGRST205|42P01|could not find the table|does not exist/i.test(`${personErr.code} ${personErr.message}`)) {
+      results.add('members', 'tree', 'Family tree checks', 'skipped', { why: 'migration 031 is not applied to DEV yet' });
+    } else {
+      treePerson = person?.id ?? null;
+      check('member-is-a-person', 'A new member becomes a person in the family tree, under their member id',
+        !personErr && person?.user_id === b.user.id, personErr ? personErr.message : person ? `"${person.display_name}"` : 'no person');
+
+      const { data: seen, error: seenErr } = await b.client.from('family_people').select('id').eq('family_id', vaultA.id);
+      check('member-sees-tree', 'The new member sees the family tree', !seenErr && (seen?.length ?? 0) >= 2,
+        seenErr ? seenErr.message : `${seen?.length ?? 0} people`);
+
+      const { data: sneaked, error: addErr } = await b.client.rpc('add_family_person', { p_family_id: vaultA.id, p_display_name: `QA intrusion ${cfg.runId}` });
+      if (sneaked) await a.client.rpc('remove_family_person', { p_person_id: sneaked });
+      check('viewer-cannot-change-tree', 'A viewer cannot add people to the family tree', refusedByAuth(addErr),
+        addErr ? short(addErr) : 'the person was ADDED (and removed again)');
+
+      const { error: selfErr } = await b.client.rpc('update_family_person', { p_person_id: mine.id, p_display_name: person?.display_name ?? 'QA insider', p_gender: null, p_birth_date: null });
+      check('member-edits-self', 'A member may edit their own details in the tree', !selfErr, selfErr ? short(selfErr) : 'saved');
+    }
+
     // ── And anyone can leave.
     const { data: left, error: leaveErr } = await b.client.from('family_members').delete()
       .eq('family_id', vaultA.id).eq('user_id', b.user.id).select('id');
     const gone = !(await memberRow(b.user.id));
     check('member-can-leave', 'A member can leave the family', !leaveErr && (left?.length ?? 0) === 1 && gone,
       leaveErr ? leaveErr.message : gone ? 'left' : 'still a member');
+
+    if (treePerson && gone) {
+      const { data: after } = await a.client.from('family_people').select('user_id').eq('id', treePerson).maybeSingle();
+      check('leaver-stays-in-tree', 'Someone who leaves stays in the family tree, without their account',
+        !!after && after.user_id === null, after ? `user_id is ${after.user_id ?? 'cleared'}` : 'the person is GONE');
+    }
   } finally {
     if (await memberRow(b.user.id)) await a.client.from('family_members').delete().eq('family_id', vaultA.id).eq('user_id', b.user.id);
     if (sacrificialId) await a.client.rpc('delete_family_document', { p_family_id: vaultA.id, p_document_id: sacrificialId, p_user_id: a.user.id });
+    // B's person stays in the tree after leaving, by design; a QA run should not.
+    if (treePerson && !(await memberRow(b.user.id))) {
+      const { error: rmErr } = await a.client.rpc('remove_family_person', { p_person_id: treePerson });
+      if (rmErr) results.note('members', `could not take B's person out of the tree: ${rmErr.message}`);
+    }
     if (await memberRow(b.user.id)) {
       results.add('members', 'cleanup', 'Account B is out of QA Vault A again', 'fail', { why: 'B is STILL a member — the next run would start from an insider' });
     }

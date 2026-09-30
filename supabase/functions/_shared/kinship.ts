@@ -286,6 +286,137 @@ export function relativesForPrompt(g: KinGraph, meId: string | null): string[] {
   return lines;
 }
 
+// ─── Relations named in a question ──────────────────────────────
+//
+// "Nani's pension papers", "my mother's passport", "Papa ka PAN", "नानी की
+// पेंशन". The documents say "Meena Rao", never "Nani", so rag-search adds the
+// names to the question before it searches. Worked out here, from the
+// asker's place in the tree, with no model call: it costs nothing, runs on
+// every question, and cannot be talked into anything.
+
+export interface NamedRelative {
+  personId: string;
+  name: string;
+  /** The word in the question that named them: "nani", "mother". */
+  term: string;
+  /** "Grandmother (Nani)". */
+  label: string;
+}
+
+// Everyday words for a relation beyond its English label and Hindi term.
+// Left out on purpose: "ma" (also an MA degree), "pa", "baba" (a father in
+// Bengali, a grandfather or a holy man in Hindi), and "mama", which is a
+// mother in English but a mother's brother in Hindi. The Hindi Mama comes
+// from the tree, which knows which one it is.
+const EVERYDAY: Record<string, string[]> = {
+  mother: ['mom', 'mum', 'mummy', 'mommy', 'mumma', 'amma', 'ammi', 'mata', 'mataji', 'maa'],
+  father: ['dad', 'daddy', 'papa', 'pitaji', 'pita', 'abba', 'appa'],
+  grandmother: ['grandma', 'granny', 'grandmom'],
+  grandfather: ['grandpa', 'granddad', 'grandad'],
+  wife: ['biwi', 'patni'],
+  husband: ['pati'],
+  daughter: ['beti'],
+  son: ['beta'],
+  sister: ['sis', 'didi', 'behen', 'bahen'],
+  brother: ['bro', 'bhai', 'bhaiya'],
+  aunt: ['aunty', 'auntie'],
+};
+
+// A relation whose gender is not recorded answers to either word: with no
+// gender set, "my mother" can only mean one of the parents.
+const EITHER: Record<string, string[]> = {
+  parent: ['mother', 'father'],
+  grandparent: ['grandmother', 'grandfather'],
+  'great-grandparent': ['great-grandmother', 'great-grandfather'],
+  spouse: ['wife', 'husband'],
+  child: ['daughter', 'son'],
+  sibling: ['sister', 'brother'],
+  grandchild: ['granddaughter', 'grandson'],
+  "parent's sibling": ['aunt', 'uncle'],
+  "parent's sibling's spouse": ['aunt', 'uncle'],
+  "sibling's child": ['niece', 'nephew'],
+  'parent-in-law': ['mother-in-law', 'father-in-law'],
+  'child-in-law': ['daughter-in-law', 'son-in-law'],
+  'sibling-in-law': ['sister-in-law', 'brother-in-law'],
+};
+
+// The Hindi terms as they are written in Devanagari, for questions asked in
+// Hindi by voice or keyboard.
+const DEVANAGARI: Record<string, string[]> = {
+  maa: ['माँ', 'मां', 'मम्मी', 'माता'], papa: ['पापा', 'पिताजी', 'पिता'],
+  nani: ['नानी'], nana: ['नाना'], dadi: ['दादी'], dada: ['दादा'],
+  pardadi: ['परदादी'], pardada: ['परदादा'], parnani: ['परनानी'], parnana: ['परनाना'],
+  bua: ['बुआ'], phupha: ['फूफा'], mama: ['मामा'], mami: ['मामी'], mausi: ['मौसी'], mausa: ['मौसा'],
+  chacha: ['चाचा'], chachi: ['चाची'], tau: ['ताऊ'], tai: ['ताई'],
+  bhaiya: ['भैया'], bhai: ['भाई'], didi: ['दीदी'], behen: ['बहन'],
+  beta: ['बेटा'], beti: ['बेटी'], pati: ['पति'], patni: ['पत्नी'],
+  saas: ['सास'], sasur: ['ससुर'], bahu: ['बहू'], damad: ['दामाद'],
+  bhabhi: ['भाभी'], jija: ['जीजा'], devar: ['देवर'], jeth: ['जेठ'], nanad: ['ननद'], saala: ['साला'], saali: ['साली'],
+  pota: ['पोता'], poti: ['पोती'], nati: ['नाती'], natin: ['नातिन'],
+  bhatija: ['भतीजा'], bhatiji: ['भतीजी'], bhanja: ['भांजा', 'भानजा'], bhanji: ['भांजी', 'भानजी'],
+  samdhi: ['समधी'], samdhan: ['समधन'],
+};
+
+/** Words, in any script, with their combining marks: a Devanagari vowel sign is \p{M}. */
+const wordsOf = (text: string) => text.toLowerCase().match(/[\p{L}\p{M}\p{N}]+/gu) ?? [];
+
+function termsFor(rel: Relation): string[] {
+  const en = rel.en.toLowerCase();
+  const english = EITHER[en] ?? [en];
+  const terms = new Set<string>();
+  for (const word of english) {
+    terms.add(word);
+    for (const extra of EVERYDAY[word] ?? []) terms.add(extra);
+  }
+  if (rel.hi) {
+    const hi = rel.hi.toLowerCase();
+    terms.add(hi);
+    terms.add(`${hi}ji`);                               // Nanaji, Buaji, Mausiji
+    if (rel.path === 'PP') { terms.add(`${hi}ma`); terms.add(`${hi}maa`); }   // Nanima, Dadima
+    for (const d of DEVANAGARI[hi] ?? []) terms.add(d);
+  }
+  return [...terms];
+}
+
+/**
+ * The people a question names by relation, seen from `meId`. Longer terms win
+ * ("mother-in-law" is not also "mother"), and a term that fits several people
+ * ("grandmother", with both alive) names them all: the answer model, told who
+ * each one is, sorts out which was meant.
+ */
+export function relativesNamedIn(g: KinGraph, meId: string | null, ...texts: string[]): NamedRelative[] {
+  if (!meId || !g.people.has(meId)) return [];
+  let text = ` ${texts.flatMap(wordsOf).join(' ')} `;
+  if (!text.trim()) return [];
+
+  const byTerm = new Map<string, Array<{ person: KinPerson; rel: Relation }>>();
+  for (const person of g.people.values()) {
+    if (person.id === meId) continue;
+    const rel = relationTo(g, meId, person.id);
+    if (!rel) continue;
+    for (const term of termsFor(rel)) {
+      const key = wordsOf(term).join(' ');
+      if (!key) continue;
+      if (!byTerm.has(key)) byTerm.set(key, []);
+      byTerm.get(key)!.push({ person, rel });
+    }
+  }
+
+  const found = new Map<string, NamedRelative>();
+  const longestFirst = [...byTerm.keys()].sort((a, b) => b.split(' ').length - a.split(' ').length || b.length - a.length);
+  for (const term of longestFirst) {
+    const padded = ` ${term} `;
+    if (!text.includes(padded)) continue;
+    for (const { person, rel } of byTerm.get(term)!) {
+      if (!found.has(person.id)) {
+        found.set(person.id, { personId: person.id, name: person.name, term, label: relationLabel(rel) ?? rel.en });
+      }
+    }
+    text = text.split(padded).join(' · ');            // a shorter term cannot match inside it
+  }
+  return [...found.values()];
+}
+
 // ─── Laying the tree out ────────────────────────────────────────
 //
 // A family is not a tree: Aarav descends from his father's parents AND his

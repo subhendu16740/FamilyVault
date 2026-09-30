@@ -1149,25 +1149,22 @@ export interface PersonDetails {
   birthDate: string | null;
 }
 
-// Not in the generated types until they are regenerated after 031.
-const tree = (table: 'family_people' | 'family_links') => (supabase as any).from(table);
-
 export async function fetchFamilyTree(familyId: string): Promise<FamilyTree> {
   const [people, links] = await Promise.all([
-    tree('family_people').select('id, display_name, gender, birth_date, user_id').eq('family_id', familyId).order('created_at'),
-    tree('family_links').select('from_person, to_person, kind').eq('family_id', familyId),
+    supabase.from('family_people').select('id, display_name, gender, birth_date, user_id').eq('family_id', familyId).order('created_at'),
+    supabase.from('family_links').select('from_person, to_person, kind').eq('family_id', familyId),
   ]);
   if (people.error) throw people.error;
   if (links.error) throw links.error;
   return {
-    people: (people.data ?? []).map((p: any) => ({
+    people: (people.data ?? []).map((p) => ({
       id: p.id,
       name: p.display_name,
       gender: p.gender === 'female' || p.gender === 'male' ? p.gender : null,
       birthDate: p.birth_date ?? null,
       userId: p.user_id ?? null,
     })),
-    links: (links.data ?? []).map((l: any) => ({ from: l.from_person, to: l.to_person, kind: l.kind })),
+    links: (links.data ?? []).map((l) => ({ from: l.from_person, to: l.to_person, kind: l.kind as KinLink['kind'] })),
   };
 }
 
@@ -1181,17 +1178,18 @@ export async function addFamilyPerson(
   details: PersonDetails,
   relation?: { kind: RelativeKind; relativeId: string; otherParentId?: string | null },
 ): Promise<string> {
-  const { data, error } = await supabase.rpc('add_family_person' as any, {
+  // Left out rather than sent as null: each has a NULL default.
+  const { data, error } = await supabase.rpc('add_family_person', {
     p_family_id: familyId,
     p_display_name: details.name.trim(),
-    p_gender: details.gender,
-    p_birth_date: details.birthDate,
-    p_relation: relation?.kind ?? null,
-    p_relative: relation?.relativeId ?? null,
-    p_other_parent: relation?.otherParentId ?? null,
-  } as any);
+    p_gender: details.gender ?? undefined,
+    p_birth_date: details.birthDate ?? undefined,
+    p_relation: relation?.kind,
+    p_relative: relation?.relativeId,
+    p_other_parent: relation?.otherParentId ?? undefined,
+  });
   if (error) throw error;
-  return data as unknown as string;
+  return data;
 }
 
 /**
@@ -1205,24 +1203,25 @@ export async function linkFamilyPeople(
   relativeId: string,
   otherParentId?: string | null,
 ): Promise<void> {
-  const { error } = await supabase.rpc('link_family_people' as any, {
+  const { error } = await supabase.rpc('link_family_people', {
     p_family_id: familyId,
     p_person: personId,
     p_relation: kind,
     p_relative: relativeId,
-    p_other_parent: otherParentId ?? null,
-  } as any);
+    p_other_parent: otherParentId ?? undefined,
+  });
   if (error) throw error;
 }
 
 /** Name, gender, birth date. An admin, or the person themselves. */
 export async function updateFamilyPerson(personId: string, details: PersonDetails): Promise<void> {
-  const { error } = await supabase.rpc('update_family_person' as any, {
+  // A gender or birth date left out is cleared: the function's defaults are NULL.
+  const { error } = await supabase.rpc('update_family_person', {
     p_person_id: personId,
     p_display_name: details.name.trim(),
-    p_gender: details.gender,
-    p_birth_date: details.birthDate,
-  } as any);
+    p_gender: details.gender ?? undefined,
+    p_birth_date: details.birthDate ?? undefined,
+  });
   if (error) throw error;
 }
 
@@ -1232,7 +1231,7 @@ export async function updateFamilyPerson(personId: string, details: PersonDetail
  * out by removing them from the family instead. Admins only.
  */
 export async function removeFamilyPerson(personId: string): Promise<void> {
-  const { error } = await supabase.rpc('remove_family_person' as any, { p_person_id: personId } as any);
+  const { error } = await supabase.rpc('remove_family_person', { p_person_id: personId });
   if (error) throw error;
 }
 

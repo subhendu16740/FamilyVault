@@ -8,6 +8,7 @@ import { embedQuery, EMBEDDING_MODEL } from '../_shared/embeddings.ts';
 import { requireFamilyMember } from '../_shared/auth.ts';
 import { runReembed, afterResponse } from '../_shared/reembed.ts';
 import { groqChat, groqText, hasGroqKey } from '../_shared/groq.ts';
+import { buildGraph, relativesNamedIn, type KinGraph, type NamedRelative } from '../_shared/kinship.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -93,6 +94,14 @@ const PIN_CHUNKS_PER_DOC = 2;
 // tighter truncation only ever removed rows.
 const PIN_MAX_CHARS_PER_CHUNK = 1600;
 
+// "Nani's pension papers": the family tree (migration 031) turns the relation
+// into a name before retrieval, and a few chunks of the documents the family
+// marked as that person's join the candidates, so a document is found even
+// where its text never says her name (a scan, or a name the PDF reader
+// mangled). Kept small, like pinning, so the judge still decides.
+const OWNER_MAX_DOCS = 2;
+const OWNER_CHUNKS_PER_DOC = 2;
+
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
 const corsHeaders = {
@@ -145,6 +154,10 @@ Deno.serve(async (req) => {
 
     const schema = family.storage_namespace;
 
+    // Who is asking, in the family tree — so "Mom" and "Nani" mean the
+    // asker's mother and grandmother. Absent before 031: nothing changes.
+    const tree = await loadTree(family_id, auth.member.userId);
+
     // 2. Turn a follow-up into a standalone question, then retrieve on THAT.
     //    "latest available data?" retrieves nothing; "latest ISB placement
     //    data in the 2022 report" retrieves the right document.
@@ -166,6 +179,15 @@ Deno.serve(async (req) => {
     if (cond.changed) console.log(`[rag] Condensed: "${standalone}"`);
     else if (history.length > 0) console.log(`[rag] Not condensed${cond.error ? ` (${cond.error})` : ''}`);
 
+    // Relations become names: "Nani's pension" is searched as "… Meena Rao".
+    // Checked against the question as asked, as translated and as condensed.
+    const named = tree.graph ? relativesNamedIn(tree.graph, tree.meId, query, trans.query, standalone) : [];
+    const searchQuery = named.length ? `${standalone} ${named.map(n => n.name).join(' ')}` : standalone;
+    const judgeQuestion = named.length
+      ? `${standalone} (${named.map(n => `"${n.term}" is ${n.name}, the asker's ${n.label.toLowerCase()}`).join('; ')})`
+      : standalone;
+    if (named.length) console.log(`[rag] Relatives named: ${named.map(n => `${n.term}=${n.name}`).join(', ')}`);
+
     const citedIds = history.flatMap(t => t.source_ids ?? []);
     const indexReady = await isIndexReady(schema);
     if (!indexReady) {
@@ -183,14 +205,17 @@ Deno.serve(async (req) => {
           .catch(err => console.warn('[rag] Background re-embed failed:', err)),
       );
     }
-    const [pin, retrieved] = await Promise.all([
+    const [pin, owned, retrieved] = await Promise.all([
       history.length > 0 ? pinnedChunks(schema, history) : Promise.resolve({ chunks: [] as ChunkResult[], error: undefined as string | undefined }),
-      retrieveChunks(schema, standalone, citedIds, indexReady),
+      named.length > 0 ? ownerChunks(schema, named, searchQuery) : Promise.resolve({ chunks: [] as ChunkResult[], error: undefined as string | undefined }),
+      retrieveChunks(schema, searchQuery, citedIds, indexReady),
     ]);
     const pinned = pin.chunks;
     const retrievedChunks = retrieved.chunks;
     if (pinned.length) console.log(`[rag] Pinned ${pinned.length} chunk(s) from cited documents`);
     if (pin.error) console.warn(`[rag] Pin error: ${pin.error}`);
+    if (owned.chunks.length) console.log(`[rag] ${owned.chunks.length} chunk(s) from documents marked as theirs`);
+    if (owned.error) console.warn(`[rag] Owner documents error: ${owned.error}`);
 
     // Pinned chunks are CANDIDATES, not guaranteed context. They join the
     // pool so a document from earlier in the conversation is always
@@ -198,14 +223,14 @@ Deno.serve(async (req) => {
     // what stops last turn's document crowding out this turn's answer when
     // the user changes subject.
     const candidates = diversify(
-      dedupeChunks([...pinned, ...retrievedChunks]),
+      dedupeChunks([...pinned, ...owned.chunks, ...retrievedChunks]),
       MAX_CHUNKS_PER_DOC,
       RERANK_CANDIDATES,
     );
     console.log(`[rag] ${candidates.length} candidate chunks`);
 
     // 3. Judge every candidate against the question; keep only the relevant.
-    const rank = await rerankChunks(standalone, candidates);
+    const rank = await rerankChunks(judgeQuestion, candidates);
     const chunks = rank.kept;
     if (rank.error) console.warn(`[rag] Rerank fell back: ${rank.error}`);
     console.log(`[rag] Kept ${chunks.length}/${candidates.length} after rerank`);
@@ -214,7 +239,11 @@ Deno.serve(async (req) => {
     // what was searched, what was pinned, what came back, what survived.
     const uniqNames = (cs: ChunkResult[]) => [...new Set(cs.map(c => c.file_name))];
     const debug = {
-      searched_for: standalone,
+      searched_for: searchQuery,
+      ...(named.length ? { relatives: named.map(n => ({ term: n.term, name: n.name })) } : {}),
+      ...(owned.chunks.length ? { owner_docs: uniqNames(owned.chunks) } : {}),
+      ...(owned.error ? { owner_error: owned.error } : {}),
+      ...(tree.error ? { tree_error: tree.error } : {}),
       history_turns: history.length,
       client_sent_sources: clientSentSources,
       pinned_docs: uniqNames(pinned),
@@ -274,7 +303,11 @@ Deno.serve(async (req) => {
     // The model answers the STANDALONE question. Handing it the raw
     // follow-up ("What about 2026?") next to whatever retrieval found lets it
     // answer a different question from the context instead of the one asked.
-    const result = await generateAnswer(standalone, context, chunks, history, { language, voice });
+    // Who "Nani" is, for the model: the asker, and each relative the question named.
+    const familyNote = named.length && tree.meName
+      ? `The person asking is ${tree.meName}. In this question, ${named.map(n => `"${n.term}" means ${n.name}, their ${n.label.toLowerCase()}`).join('; ')}.`
+      : undefined;
+    const result = await generateAnswer(standalone, context, chunks, history, { language, voice, family: familyNote });
     console.log(
       `[rag] Answer ${result.degraded ? 'DEGRADED' : 'generated'} (${result.answer.length} chars)`,
     );
@@ -315,6 +348,8 @@ interface ChunkResult {
   category_name: string | null;
   content: string;
   chunk_index: number;
+  /** Whose document the family marked it as, when that is why it is here. */
+  owner?: string;
 }
 
 async function retrieveChunks(
@@ -471,6 +506,113 @@ async function pinnedChunks(
   return { chunks: results, ...(errors.length ? { error: errors.join('; ') } : {}) };
 }
 
+// ─── The family tree ───────────────────────────────────────────
+
+interface FamilyTreeForSearch {
+  graph: KinGraph | null;
+  /** The asker's own person in the tree, if they have one. */
+  meId: string | null;
+  meName: string | null;
+  error?: string;
+}
+
+/**
+ * The family's tree and the asker's place in it. Read with the service role,
+ * after requireFamilyMember has checked the asker belongs to this family.
+ * Before migration 031 the tables do not exist: no tree, nothing changes.
+ */
+async function loadTree(familyId: string, userId: string): Promise<FamilyTreeForSearch> {
+  const none = (error?: string): FamilyTreeForSearch => ({ graph: null, meId: null, meName: null, ...(error ? { error } : {}) });
+  try {
+    const [people, links] = await Promise.all([
+      supabase.from('family_people').select('id, display_name, gender, birth_date, user_id').eq('family_id', familyId).limit(500),
+      supabase.from('family_links').select('from_person, to_person, kind').eq('family_id', familyId).limit(2000),
+    ]);
+    const failed = people.error ?? links.error;
+    if (failed) {
+      // Not an error before 031: there is simply no tree yet.
+      return /does not exist|schema cache|PGRST205/i.test(`${failed.code ?? ''} ${failed.message}`)
+        ? none()
+        : none(failed.message.slice(0, 120));
+    }
+    const rows = (people.data ?? []) as Array<{ id: string; display_name: string; gender: string | null; birth_date: string | null; user_id: string | null }>;
+    const me = rows.find(p => p.user_id === userId) ?? null;
+    const graph = buildGraph(
+      rows.map(p => ({
+        id: p.id,
+        name: p.display_name,
+        gender: p.gender === 'female' || p.gender === 'male' ? p.gender : null,
+        birthDate: p.birth_date,
+      })),
+      ((links.data ?? []) as Array<{ from_person: string; to_person: string; kind: 'parent' | 'spouse' | 'sibling' }>)
+        .map(l => ({ from: l.from_person, to: l.to_person, kind: l.kind })),
+    );
+    return { graph, meId: me?.id ?? null, meName: me?.display_name ?? null };
+  } catch (err) {
+    return none(String(err).slice(0, 120));
+  }
+}
+
+const STOPWORDS = new Set(['the', 'and', 'for', 'what', 'when', 'where', 'which', 'does', 'did', 'with', 'from',
+  'this', 'that', 'have', 'has', 'are', 'was', 'will', 'how', 'our', 'your', 'kab', 'hai', 'hoga', 'kya']);
+const wordsIn = (text: string) =>
+  (text.toLowerCase().match(/[\p{L}\p{M}\p{N}]+/gu) ?? []).filter(w => w.length > 2 && !STOPWORDS.has(w));
+
+/**
+ * A few chunks from the documents the family marked as the people the
+ * question names — preferring the ones whose file name or type shares a word
+ * with the question ("pension" → the pension papers). Candidates, not
+ * answers: the judge scores them like everything else.
+ */
+async function ownerChunks(
+  schema: string,
+  people: NamedRelative[],
+  question: string,
+): Promise<{ chunks: ChunkResult[]; error?: string }> {
+  const { data, error } = await supabase.rpc('rag_documents_for_people', {
+    p_schema: schema,
+    p_people: people.map(p => p.personId),
+    p_limit: 20,
+  });
+  if (error) return { chunks: [], error: error.message.slice(0, 120) };
+
+  const docs = (data ?? []) as Array<{ id: string; file_name: string; file_type: string; category_name: string | null; belongs_to_member: string }>;
+  const asked = new Set(wordsIn(question));
+  const overlap = (d: typeof docs[number]) => wordsIn(`${d.file_name} ${d.category_name ?? ''}`).filter(w => asked.has(w)).length;
+  const chosen = docs
+    .map((d, i) => ({ d, score: overlap(d), i }))
+    .sort((a, b) => b.score - a.score || a.i - b.i)   // then newest first, as listed
+    .slice(0, OWNER_MAX_DOCS)
+    .map(x => x.d);
+  const nameOf = new Map(people.map(p => [p.personId, p.name]));
+
+  const results: ChunkResult[] = [];
+  const errors: string[] = [];
+  await Promise.all(chosen.map(async (doc) => {
+    const { data: rows, error: chunkErr } = await supabase.rpc('get_document_chunks', {
+      p_schema: schema,
+      p_document_id: doc.id,
+      p_limit: OWNER_CHUNKS_PER_DOC,
+    });
+    if (chunkErr || !rows) {
+      errors.push(`${doc.file_name}: ${chunkErr?.message ?? 'no data'}`);
+      return;
+    }
+    for (const c of rows as { content: string; chunk_index: number }[]) {
+      results.push({
+        document_id: doc.id,
+        file_name: doc.file_name,
+        file_type: doc.file_type,
+        category_name: doc.category_name,
+        content: c.content.slice(0, PIN_MAX_CHARS_PER_CHUNK),
+        chunk_index: c.chunk_index,
+        owner: nameOf.get(doc.belongs_to_member),
+      });
+    }
+  }));
+  return { chunks: results, ...(errors.length ? { error: errors.join('; ') } : {}) };
+}
+
 /**
  * Score every candidate against the question in ONE call to the small model,
  * then keep only those above the floor. Any failure returns the candidates
@@ -487,6 +629,7 @@ async function rerankChunks(
 
   const listing = candidates.map((c, i) => {
     const type = c.category_name ? ` · ${c.category_name}` : '';
+    const whose = c.owner ? ` · marked as ${c.owner}'s` : '';
     // Do NOT flatten whitespace. The line breaks and the two-space column
     // gaps ARE the table: collapsing them hands the judge the same
     // run-together text that reading a PDF in content-stream order produced,
@@ -496,7 +639,7 @@ async function rerankChunks(
       .replace(/[ \t]+$/gm, '')
       .replace(/\n{3,}/g, '\n\n')
       .trim();
-    return `[${i}] ${c.file_name}${type}\n${snippet}`;
+    return `[${i}] ${c.file_name}${type}${whose}\n${snippet}`;
   }).join('\n\n');
 
   try {
@@ -809,7 +952,7 @@ async function generateAnswer(
   context: string,
   chunks: ChunkResult[],
   history: HistoryTurn[] = [],
-  opts: { language?: string; voice?: boolean } = {},
+  opts: { language?: string; voice?: boolean; family?: string } = {},
 ): Promise<AnswerResult> {
   const langName = opts.language ? languageName(opts.language) : undefined;
   const languageRule = langName && !opts.language!.toLowerCase().startsWith('en')
@@ -837,7 +980,7 @@ Today's date is ${todayLabel()}. Use it to interpret "this year", "recently", "l
 You ONLY answer based on the provided document context.
 The context is whatever search returned — it may not actually answer the question. If it doesn't, say so plainly and, if a related document exists, say what it does cover instead. NEVER answer a different question just because the context happens to contain information about it.
 This is an ongoing conversation: use earlier turns to understand what the user is referring to.
-Keep answers concise (1-3 sentences). Include specific details like dates, amounts, and document names.${languageRule}${voiceRule}`,
+Keep answers concise (1-3 sentences). Include specific details like dates, amounts, and document names.${opts.family ? `\n${opts.family} Answer about that person, and say whose document it is.` : ''}${languageRule}${voiceRule}`,
         },
         // Prior turns, so "this one" and "that policy" resolve naturally.
         ...history.map(t => ({ role: t.role, content: t.content })),
@@ -987,7 +1130,8 @@ function buildContext(chunks: ChunkResult[]): { text: string; used: ChunkResult[
     // The document TYPE is the single most useful hint for routing a question:
     // "IDV" belongs to the insurance policy, not the tax return beside it.
     const type = c.category_name ? ` | Type: ${c.category_name}` : '';
-    parts.push(`[Document: ${c.file_name}${type}]\n${body}`);
+    const whose = c.owner ? ` | Marked as ${c.owner}'s` : '';
+    parts.push(`[Document: ${c.file_name}${type}${whose}]\n${body}`);
     used.push(c);
     budget -= body.length;
   }

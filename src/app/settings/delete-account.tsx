@@ -154,7 +154,7 @@ export default function DeleteAccountScreen() {
             {leaving.length > 0 && (
               <Card>
                 <CardTitle icon="log-out">Families you leave</CardTitle>
-                <Muted>These keep their documents, as when anyone leaves a family.</Muted>
+                <Muted>These keep their documents, as when anyone leaves a family. You stay in their family tree by name, without your account.</Muted>
                 {leaving.map((f) => (
                   <View key={f.familyId} style={styles.family}>
                     <Text style={styles.familyName}>{f.name}</Text>

@@ -189,6 +189,55 @@ export type Database = {
         }
         Relationships: []
       }
+      family_links: {
+        Row: {
+          created_at: string
+          family_id: string
+          from_person: string
+          id: string
+          kind: string
+          to_person: string
+        }
+        Insert: {
+          created_at?: string
+          family_id: string
+          from_person: string
+          id?: string
+          kind: string
+          to_person: string
+        }
+        Update: {
+          created_at?: string
+          family_id?: string
+          from_person?: string
+          id?: string
+          kind?: string
+          to_person?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "family_links_family_id_fkey"
+            columns: ["family_id"]
+            isOneToOne: false
+            referencedRelation: "families"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "family_links_from_fkey"
+            columns: ["family_id", "from_person"]
+            isOneToOne: false
+            referencedRelation: "family_people"
+            referencedColumns: ["family_id", "id"]
+          },
+          {
+            foreignKeyName: "family_links_to_fkey"
+            columns: ["family_id", "to_person"]
+            isOneToOne: false
+            referencedRelation: "family_people"
+            referencedColumns: ["family_id", "id"]
+          },
+        ]
+      }
       family_members: {
         Row: {
           alias: string | null
@@ -236,6 +285,50 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      family_people: {
+        Row: {
+          birth_date: string | null
+          created_at: string
+          created_by: string | null
+          display_name: string
+          family_id: string
+          gender: string | null
+          id: string
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          birth_date?: string | null
+          created_at?: string
+          created_by?: string | null
+          display_name: string
+          family_id: string
+          gender?: string | null
+          id?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          birth_date?: string | null
+          created_at?: string
+          created_by?: string | null
+          display_name?: string
+          family_id?: string
+          gender?: string | null
+          id?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "family_people_family_id_fkey"
+            columns: ["family_id"]
+            isOneToOne: false
+            referencedRelation: "families"
             referencedColumns: ["id"]
           },
         ]
@@ -649,6 +742,18 @@ export type Database = {
         }
         Returns: Json
       }
+      add_family_person: {
+        Args: {
+          p_birth_date?: string
+          p_display_name: string
+          p_family_id: string
+          p_gender?: string
+          p_other_parent?: string
+          p_relation?: string
+          p_relative?: string
+        }
+        Returns: string
+      }
       assert_caller_in_family: {
         Args: { p_family_id: string }
         Returns: undefined
@@ -801,6 +906,16 @@ export type Database = {
       }
       is_family_admin: { Args: { p_family_id: string }; Returns: boolean }
       is_superuser: { Args: never; Returns: boolean }
+      link_family_people: {
+        Args: {
+          p_family_id: string
+          p_other_parent?: string
+          p_person: string
+          p_relation: string
+          p_relative: string
+        }
+        Returns: undefined
+      }
       mark_notification_read: {
         Args: { p_notification_id: string; p_user_id: string }
         Returns: undefined
@@ -811,6 +926,17 @@ export type Database = {
         Args: { p_after?: string; p_limit?: number; p_schema: string }
         Returns: {
           content: string
+          id: string
+        }[]
+      }
+      rag_documents_for_people: {
+        Args: { p_limit?: number; p_people: string[]; p_schema: string }
+        Returns: {
+          belongs_to_member: string
+          category_name: string
+          created_at: string
+          file_name: string
+          file_type: string
           id: string
         }[]
       }
@@ -878,6 +1004,10 @@ export type Database = {
           ingestion_status: string
         }[]
       }
+      remove_family_person: {
+        Args: { p_person_id: string }
+        Returns: undefined
+      }
       search_family_documents: {
         Args: { p_family_id: string; p_limit?: number; p_query: string }
         Returns: {
@@ -902,6 +1032,28 @@ export type Database = {
         Returns: undefined
       }
       shares_family: { Args: { p_user: string }; Returns: boolean }
+      tree_add_pair: {
+        Args: { p_a: string; p_b: string; p_family_id: string; p_kind: string }
+        Returns: undefined
+      }
+      tree_add_parent: {
+        Args: { p_child: string; p_family_id: string; p_parent: string }
+        Returns: undefined
+      }
+      tree_check_details: {
+        Args: { p_birth_date: string; p_display_name: string; p_gender: string }
+        Returns: undefined
+      }
+      tree_connect: {
+        Args: {
+          p_family_id: string
+          p_other_parent: string
+          p_person: string
+          p_relation: string
+          p_relative: string
+        }
+        Returns: undefined
+      }
       update_family_document: {
         Args: {
           p_belongs_to_member?: string
@@ -910,6 +1062,15 @@ export type Database = {
           p_family_id: string
           p_file_name?: string
           p_user_id: string
+        }
+        Returns: undefined
+      }
+      update_family_person: {
+        Args: {
+          p_birth_date?: string
+          p_display_name: string
+          p_gender?: string
+          p_person_id: string
         }
         Returns: undefined
       }

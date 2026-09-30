@@ -133,6 +133,17 @@ const accountRpcJudge = (expect) => (outcome) => (String(outcome.error?.code) ==
   ? ['skipped', 'migration 029 is not applied to DEV yet']
   : judge(expect, outcome));
 
+// The family tree ships with migration 031: skipped until it is applied, like
+// saved chats before 028. PGRST202 is its functions missing, a missing table
+// its tables.
+const treeJudge = (expect, needsPerson) => (outcome) => {
+  if (outcome.missing || missingTable(outcome.error) || String(outcome.error?.code) === 'PGRST202') {
+    return ['skipped', 'migration 031 is not applied to DEV yet'];
+  }
+  if (needsPerson && outcome.noTarget) return ['skipped', "no person in account A's tree to aim at (see its control)"];
+  return judge(expect, outcome);
+};
+
 async function attempt(fn) {
   try {
     const out = await fn();
@@ -240,6 +251,30 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     return run();
   };
   const unchanged = (open) => savedChatsJudge(judgeWrite(open), true);
+
+  // ── A person in account A's family tree for the tree probes to aim at (031).
+  const personName = `QA probe ${cfg.runId}`;
+  let personA = null;
+  let treeMissing = false;
+  {
+    const { data, error } = await a.client.rpc('add_family_person', { p_family_id: A.family, p_display_name: personName });
+    if (missingTable(error) || String(error?.code) === 'PGRST202') {
+      treeMissing = true;
+      results.add('access', 'control:tree', 'Control — account A adds a person to its family tree and reads it back', 'skipped', { why: 'migration 031 is not applied to DEV yet' });
+    } else if (error) {
+      results.add('access', 'control:tree', 'Control — account A adds a person to its family tree and reads it back', 'fail', { why: error.message });
+    } else {
+      const { data: back } = await a.client.from('family_people').select('id').eq('id', data);
+      personA = back?.length ? data : null;
+      results.add('access', 'control:tree', 'Control — account A adds a person to its family tree and reads it back', personA ? 'pass' : 'fail',
+        personA ? {} : { why: 'added, but A cannot read the person back' });
+    }
+  }
+  const onPersonA = (run) => async () => {
+    if (treeMissing) return { missing: true };
+    if (!personA) return { noTarget: true };
+    return run();
+  };
 
   const probes = [
     // Logged out
@@ -357,6 +392,19 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
       return error ? { error } : data?.length ? { allowed: true, reverted: false } : {};
     })],
 
+    // The family tree (031): its members read it; only its admins change it,
+    // through functions that take the caller from the session.
+    ['anon', "read QA Vault A's family tree", treeJudge('refused-or-empty'), () => anon.client.from('family_people').select('id, display_name').eq('family_id', A.family)],
+    ['anon', "add a person to QA Vault A's tree", treeJudge('refused'), rpc(anon, 'add_family_person', { p_family_id: A.family, p_display_name: 'QA intrusion' })],
+    ['B', "read QA Vault A's family tree", treeJudge('refused-or-empty'), () => b.client.from('family_people').select('id, display_name').eq('family_id', A.family)],
+    ['B', "read how QA Vault A's people are related", treeJudge('refused-or-empty'), () => b.client.from('family_links').select('id').eq('family_id', A.family)],
+    ['B', "add a person to QA Vault A's tree", treeJudge('refused'), rpc(b, 'add_family_person', { p_family_id: A.family, p_display_name: 'QA intrusion' })],
+    ['B', "write QA Vault A's tree directly", treeJudge('refused'), () => b.client.from('family_people').insert({ family_id: A.family, display_name: 'QA intrusion' })],
+    ['B', "rename a person in A's tree", treeJudge('refused', true), onPersonA(() => b.client.rpc('update_family_person', { p_person_id: personA, p_display_name: 'QA intrusion' }))],
+    ['B', "connect people in A's tree", treeJudge('refused', true), onPersonA(() => b.client.rpc('link_family_people', { p_family_id: A.family, p_person: personA, p_relation: 'sibling', p_relative: randomUUID() }))],
+    ['B', "take a person out of A's tree", treeJudge('refused', true), onPersonA(() => b.client.rpc('remove_family_person', { p_person_id: personA }))],
+    ['B', "list the documents marked as A's people (server-only)", treeJudge('refused'), rpc(b, 'rag_documents_for_people', { p_schema: A.ns, p_people: [randomUUID()] })],
+
     // Deleting an account (029): only ever the caller's own, and the database
     // side is the server's alone. Nothing here can delete anything even if the
     // protection failed: the database probes aim at ids that belong to nobody,
@@ -414,6 +462,15 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     results.add('access', 'control:saved-chat-intact', "Control — account A's saved chat survived every probe", intact ? 'pass' : 'fail',
       intact ? {} : { why: chatStill?.length ? 'its title was CHANGED' : 'it is GONE' });
     await a.client.from('saved_chats').delete().eq('id', chatA);
+  }
+
+  if (personA) {
+    const { data: personStill } = await a.client.from('family_people').select('display_name').eq('id', personA);
+    const intact = personStill?.length === 1 && personStill[0].display_name === personName;
+    results.add('access', 'control:tree-intact', "Control — the person in account A's tree survived every probe", intact ? 'pass' : 'fail',
+      intact ? {} : { why: personStill?.length ? 'their name was CHANGED' : 'they are GONE' });
+    const { error: rmErr } = await a.client.rpc('remove_family_person', { p_person_id: personA });
+    if (rmErr) results.note('access', `could not remove the probe person from the tree: ${rmErr.message}`);
   }
 
   const { data: still } = await a.client.rpc('get_document_detail', { p_family_id: A.family, p_document_id: sacrificialId });

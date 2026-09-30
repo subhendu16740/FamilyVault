@@ -34,6 +34,10 @@ const FAQ: { q: string; a: string }[] = [
     a: 'If you are an admin, open Manage Family and choose Add Member, then type the email they use for FamilyVault. They need to have signed up first.',
   },
   {
+    q: 'Who is in the family tree?',
+    a: 'Everyone in your family, with or without an account — a grandmother who will never sign in included. Admins add people and say how they are related; everyone in the family sees the tree, with each person named from where you stand (Nani, Bua, Mama…). You can change your own name and date of birth. Mark a document as someone\'s and you can ask about it by relation, like "Nani\'s pension papers".',
+  },
+  {
     q: 'How much space does my family get?',
     a: `Every family gets ${FREE_STORAGE_LABEL} free for its documents. Settings › Storage shows how much is used. More space will come with ★ Family Plus, the paid plan. Until then you can keep adding documents.`,
   },
