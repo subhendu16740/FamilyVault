@@ -17,11 +17,14 @@
 //   cannot change it but may edit its own details, and stays in it — without
 //   the account — after leaving; the check then takes that person out, so
 //   runs do not pile up.
+//   emergency cards (032): B writes its own card and reads the family's,
+//   cannot change the admin's, and its card goes when it leaves.
 //
 // Skipped, with the reason, until add-member is deployed to DEV and 025 is
 // applied there. B is removed again however the checks end.
 // ────────────────────────────────────────────────────────────────
 
+import { randomUUID } from 'node:crypto';
 import { invokeFunction } from '../supabase.mjs';
 import { refusedByAuth, short } from './access.mjs';
 
@@ -69,6 +72,7 @@ export async function runMemberChecks(cfg, { a, b, vaultA }, results) {
 
   let sacrificialId = null;
   let treePerson = null;              // B's person in A's tree, removed at the end
+  let cardChecked = false;            // B saved an emergency card (032)
   try {
     const mine = await memberRow(b.user.id);
     check('added-as-viewer', 'The new member is a viewer who cannot delete', mine?.role === 'viewer' && mine?.can_delete === false,
@@ -151,6 +155,27 @@ export async function runMemberChecks(cfg, { a, b, vaultA }, results) {
 
       const { error: selfErr } = await b.client.rpc('update_family_person', { p_person_id: mine.id, p_display_name: person?.display_name ?? 'QA insider', p_gender: null, p_birth_date: null });
       check('member-edits-self', 'A member may edit their own details in the tree', !selfErr, selfErr ? short(selfErr) : 'saved');
+
+      // ── Emergency cards (032): B writes its own, reads the family's, and
+      // cannot change the admin's.
+      const { error: ownErr } = await b.client.rpc('save_emergency_card', { p_person_id: mine.id, p_card: { blood_group: 'O+', notes: `QA SPECIMEN ${cfg.runId}` } });
+      if (ownErr && /^(PGRST202|PGRST205|42P01)$/.test(String(ownErr.code))) {
+        results.add('members', 'emergency', 'Emergency card checks', 'skipped', { why: 'migration 032 is not applied to DEV yet' });
+      } else {
+        cardChecked = !ownErr;
+        check('member-saves-own-card', 'A member may write their own emergency card', !ownErr, ownErr ? short(ownErr) : 'saved');
+
+        const { data: cards, error: readErr } = await b.client.from('family_emergency_cards').select('person_id').eq('family_id', vaultA.id);
+        check('member-reads-cards', "A member reads the family's emergency cards", !readErr && (cards ?? []).some((c) => c.person_id === mine.id),
+          readErr ? readErr.message : `${cards?.length ?? 0} card(s)`);
+
+        const { data: adminPerson } = await a.client.from('family_people').select('id')
+          .eq('family_id', vaultA.id).eq('user_id', a.user.id).maybeSingle();
+        const { error: otherErr } = await b.client.rpc('save_emergency_card', { p_person_id: adminPerson?.id ?? randomUUID(), p_card: { blood_group: 'AB-' } });
+        if (!otherErr && adminPerson) await a.client.rpc('save_emergency_card', { p_person_id: adminPerson.id, p_card: {} });   // undo
+        check('viewer-cannot-change-card', "A viewer cannot change someone else's emergency card", refusedByAuth(otherErr),
+          otherErr ? short(otherErr) : 'the card was CHANGED (and cleared again)');
+      }
     }
 
     // ── And anyone can leave.
@@ -164,6 +189,11 @@ export async function runMemberChecks(cfg, { a, b, vaultA }, results) {
       const { data: after } = await a.client.from('family_people').select('user_id').eq('id', treePerson).maybeSingle();
       check('leaver-stays-in-tree', 'Someone who leaves stays in the family tree, without their account',
         !!after && after.user_id === null, after ? `user_id is ${after.user_id ?? 'cleared'}` : 'the person is GONE');
+    }
+    if (treePerson && gone && cardChecked) {
+      const { data: leftCard } = await a.client.from('family_emergency_cards').select('person_id').eq('person_id', treePerson);
+      check('leaver-card-deleted', 'Someone who leaves takes their emergency card with them', (leftCard?.length ?? 0) === 0,
+        leftCard?.length ? 'the card is STILL there' : 'deleted');
     }
   } finally {
     if (await memberRow(b.user.id)) await a.client.from('family_members').delete().eq('family_id', vaultA.id).eq('user_id', b.user.id);

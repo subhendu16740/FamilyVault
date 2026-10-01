@@ -144,6 +144,16 @@ const treeJudge = (expect, needsPerson) => (outcome) => {
   return judge(expect, outcome);
 };
 
+// Emergency cards ship with migration 032, on top of 031's tree: skipped
+// until it is applied, the same way.
+const emergencyJudge = (expect, needsCard) => (outcome) => {
+  if (outcome.missing || missingTable(outcome.error) || String(outcome.error?.code) === 'PGRST202') {
+    return ['skipped', 'migration 032 is not applied to DEV yet'];
+  }
+  if (needsCard && outcome.noTarget) return ['skipped', "no emergency card in account A's tree to aim at (see its control)"];
+  return judge(expect, outcome);
+};
+
 async function attempt(fn) {
   try {
     const out = await fn();
@@ -276,6 +286,31 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     return run();
   };
 
+  // ── An emergency card on that person for the card probes to aim at (032).
+  const cardBody = { blood_group: 'B+', allergies: `QA SPECIMEN ${cfg.runId}` };
+  let cardA = false;
+  let cardsMissing = treeMissing;
+  if (personA) {
+    const { error } = await a.client.rpc('save_emergency_card', { p_person_id: personA, p_card: cardBody });
+    if (missingTable(error) || String(error?.code) === 'PGRST202') {
+      cardsMissing = true;
+      results.add('access', 'control:emergency', 'Control — account A saves an emergency card in its tree and reads it back', 'skipped', { why: 'migration 032 is not applied to DEV yet' });
+    } else if (error) {
+      results.add('access', 'control:emergency', 'Control — account A saves an emergency card in its tree and reads it back', 'fail', { why: error.message });
+    } else {
+      const { data: back } = await a.client.from('family_emergency_cards').select('allergies').eq('person_id', personA);
+      cardA = back?.length === 1 && back[0].allergies === cardBody.allergies;
+      results.add('access', 'control:emergency', 'Control — account A saves an emergency card in its tree and reads it back', cardA ? 'pass' : 'fail',
+        cardA ? {} : { why: 'saved, but A cannot read the card back' });
+    }
+  }
+  const onCards = (run) => async () => (cardsMissing ? { missing: true } : run());
+  const onCardA = (run) => async () => {
+    if (cardsMissing) return { missing: true };
+    if (!cardA) return { noTarget: true };
+    return run();
+  };
+
   const probes = [
     // Logged out
     ['anon', 'list QA Vault A', 'refused-or-empty', rpc(anon, 'get_family_documents', { p_family_id: A.family, p_limit: 5, p_offset: 0 })],
@@ -404,6 +439,14 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     ['B', "connect people in A's tree", treeJudge('refused', true), onPersonA(() => b.client.rpc('link_family_people', { p_family_id: A.family, p_person: personA, p_relation: 'sibling', p_relative: randomUUID() }))],
     ['B', "take a person out of A's tree", treeJudge('refused', true), onPersonA(() => b.client.rpc('remove_family_person', { p_person_id: personA }))],
     ['B', "list the documents marked as A's people (server-only)", treeJudge('refused'), rpc(b, 'rag_documents_for_people', { p_schema: A.ns, p_people: [randomUUID()] })],
+    // Emergency cards (032): the family's members read them; only an admin,
+    // or the person themselves, changes one, and nobody writes the table.
+    ['anon', "read QA Vault A's emergency cards", emergencyJudge('refused-or-empty'), onCards(() => anon.client.from('family_emergency_cards').select('person_id').eq('family_id', A.family))],
+    ['anon', "change an emergency card in A's tree", emergencyJudge('refused', true), onCardA(() => anon.client.rpc('save_emergency_card', { p_person_id: personA, p_card: { blood_group: 'O-' } }))],
+    ['B', "read QA Vault A's emergency cards", emergencyJudge('refused-or-empty'), onCards(() => b.client.from('family_emergency_cards').select('person_id, allergies').eq('family_id', A.family))],
+    ['B', "change an emergency card in A's tree", emergencyJudge('refused', true), onCardA(() => b.client.rpc('save_emergency_card', { p_person_id: personA, p_card: { blood_group: 'O-' } }))],
+    ['B', "delete an emergency card in A's tree", emergencyJudge('refused', true), onCardA(() => b.client.rpc('save_emergency_card', { p_person_id: personA, p_card: {} }))],
+    ['B', "write QA Vault A's emergency cards directly", emergencyJudge('refused'), onCards(() => b.client.from('family_emergency_cards').insert({ person_id: personA ?? randomUUID(), family_id: A.family, blood_group: 'O-' }))],
 
     // Deleting an account (029): only ever the caller's own, and the database
     // side is the server's alone. Nothing here can delete anything even if the
@@ -464,7 +507,14 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     await a.client.from('saved_chats').delete().eq('id', chatA);
   }
 
-  if (personA) {
+  if (cardA) {
+    const { data: cardStill } = await a.client.from('family_emergency_cards').select('blood_group, allergies').eq('person_id', personA);
+    const intact = cardStill?.length === 1 && cardStill[0].blood_group === cardBody.blood_group && cardStill[0].allergies === cardBody.allergies;
+    results.add('access', 'control:emergency-intact', "Control — the emergency card in account A's tree survived every probe", intact ? 'pass' : 'fail',
+      intact ? {} : { why: cardStill?.length ? 'it was CHANGED' : 'it is GONE' });
+  }
+
+  if (personA) {   // taking the person out takes their card with it
     const { data: personStill } = await a.client.from('family_people').select('display_name').eq('id', personA);
     const intact = personStill?.length === 1 && personStill[0].display_name === personName;
     results.add('access', 'control:tree-intact', "Control — the person in account A's tree survived every probe", intact ? 'pass' : 'fail',

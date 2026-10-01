@@ -26,6 +26,15 @@ export default function PrivacyScreen() {
         </Card>
 
         <Card>
+          <CardTitle icon="plus-square">Emergency cards</CardTitle>
+          <Body>
+            Everyone in your family can see each person's emergency card, so whoever is there in an emergency can
+            help. Only a family admin, or the person themselves, can change one. When someone leaves the family or
+            deletes their account, their card is deleted.
+          </Body>
+        </Card>
+
+        <Card>
           <CardTitle icon="message-circle">When you ask a question</CardTitle>
           <Body>
             FamilyVault finds the passages in your family's documents that best match your question, and sends the

@@ -38,6 +38,15 @@ export function longDate(date: Date): string {
   return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
+/** Full years since a YYYY-MM-DD birth date, as of today. */
+export function ageInYears(birthDate: string): number {
+  const b = new Date(`${birthDate}T00:00:00`);
+  const now = new Date();
+  let years = now.getFullYear() - b.getFullYear();
+  if (now.getMonth() < b.getMonth() || (now.getMonth() === b.getMonth() && now.getDate() < b.getDate())) years--;
+  return years;
+}
+
 /** "Runs out in 20 days", "Runs out today", "Ran out 3 days ago". */
 export function expiryPhrase(daysLeft: number): string {
   if (daysLeft === 0) return 'Runs out today';

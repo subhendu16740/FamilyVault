@@ -2,6 +2,7 @@ import { supabase } from './supabase';
 import { parseDocumentDate } from './dates';
 import { isSaveable, mimeTypeFor, unsupportedFileMessage } from './file-types';
 import type { Gender, KinLink, KinPerson } from '../../supabase/functions/_shared/kinship';
+import { isBloodGroup, type EmergencyCard, type EmergencyCardInput, type EmergencyContact } from './emergency';
 import type {
   FamilyWithMembership,
   FamilyMemberWithUser,
@@ -10,6 +11,7 @@ import type {
   FamilySearchResultRow,
   Database,
   Json,
+  Tables,
 } from './database.types';
 
 type DocumentCategory = Database['public']['Tables']['document_categories']['Row'];
@@ -1232,6 +1234,82 @@ export async function updateFamilyPerson(personId: string, details: PersonDetail
  */
 export async function removeFamilyPerson(personId: string): Promise<void> {
   const { error } = await supabase.rpc('remove_family_person', { p_person_id: personId });
+  if (error) throw error;
+}
+
+// ─── Emergency cards (032) ───────────────────────────────────────
+//
+// One card per person in the tree: blood group, allergies, conditions,
+// medicines, the family doctor, health insurance, people to call. Every
+// member reads every card (RLS); save_emergency_card() writes, for an admin
+// or the person themselves, and an empty card is deleted. A person's card
+// goes with their membership when they leave the family. Before 032 every
+// call fails with a missing table or function: callers check
+// isMissingMigration() and say cards are not switched on yet.
+
+function toEmergencyCard(row: Tables<'family_emergency_cards'>): EmergencyCard {
+  const contacts = Array.isArray(row.contacts) ? (row.contacts as unknown[]) : [];
+  return {
+    personId: row.person_id,
+    bloodGroup: isBloodGroup(row.blood_group) ? row.blood_group : null,
+    allergies: row.allergies,
+    conditions: row.conditions,
+    medicines: row.medicines,
+    doctorName: row.doctor_name,
+    doctorPhone: row.doctor_phone,
+    insurer: row.insurer,
+    policyNumber: row.policy_number,
+    contacts: contacts
+      .map((c) => (c ?? {}) as Partial<Record<keyof EmergencyContact, unknown>>)
+      .filter((c) => typeof c.name === 'string' && typeof c.phone === 'string')
+      .map((c) => ({ name: c.name as string, relation: typeof c.relation === 'string' ? c.relation : null, phone: c.phone as string })),
+    notes: row.notes,
+    updatedBy: row.updated_by,
+    updatedAt: row.updated_at,
+  };
+}
+
+/** Every card in the family. People without one are simply not in the list. */
+export async function fetchEmergencyCards(familyId: string): Promise<EmergencyCard[]> {
+  const { data, error } = await supabase.from('family_emergency_cards').select('*').eq('family_id', familyId);
+  if (error) throw error;
+  return (data ?? []).map(toEmergencyCard);
+}
+
+/** One person's card, or null when they have none yet. */
+export async function fetchEmergencyCard(familyId: string, personId: string): Promise<EmergencyCard | null> {
+  const { data, error } = await supabase
+    .from('family_emergency_cards')
+    .select('*')
+    .eq('family_id', familyId)
+    .eq('person_id', personId)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? toEmergencyCard(data) : null;
+}
+
+/**
+ * Save the whole card: fields left blank are cleared, and a card with
+ * nothing on it is deleted. An admin, or the person themselves; the
+ * database checks, and its messages are written to be shown as they are.
+ */
+export async function saveEmergencyCard(personId: string, card: EmergencyCardInput): Promise<void> {
+  const payload = {
+    blood_group: card.bloodGroup,
+    allergies: card.allergies,
+    conditions: card.conditions,
+    medicines: card.medicines,
+    doctor_name: card.doctorName,
+    doctor_phone: card.doctorPhone,
+    insurer: card.insurer,
+    policy_number: card.policyNumber,
+    contacts: card.contacts.map((c) => ({ name: c.name, relation: c.relation, phone: c.phone })),
+    notes: card.notes,
+  };
+  const { error } = await supabase.rpc('save_emergency_card', {
+    p_person_id: personId,
+    p_card: payload as unknown as Json,
+  });
   if (error) throw error;
 }
 

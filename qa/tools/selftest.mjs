@@ -24,6 +24,7 @@ import {
   importTokenKey, sealToken, openToken, pkceChallenge, sha256Hex, base64url, fromBase64,
 } from '../../supabase/functions/_shared/gmail-crypto.ts';
 import { buildGraph, relationTo, relationLabel, relativesForPrompt, relativesNamedIn, buildForest, shortName, siblingsSharingParents } from '../../supabase/functions/_shared/kinship.ts';
+import { phoneLooksRight, cardProblem, cardIsEmpty, emptyCard, bloodGroupLabel, bloodGroupSpoken, telHref } from '../../src/lib/emergency.ts';
 import { mentionsDate, mentionsAmount, mentionsPhone, mentionsText, refuses, devanagariShare, scriptShare, hasMarkdown } from '../lib/match.mjs';
 import { judgeAnswer } from '../lib/checks/ask.mjs';
 import { vehicleInsurance } from '../lib/tiny-pdf.mjs';
@@ -416,6 +417,28 @@ await test('kinship: a sister added before Papa is drawn beside her brother, und
   assert.equal(shortName('Ramesh Verma'), 'Ramesh');
 });
 
+await test('emergency card: the form checks what save_emergency_card() checks (032)', () => {
+  for (const ok of ['+91 98765 43210', '(011) 2345-6789', '112', '9876543210', '+44 20 7946 0958']) assert.ok(phoneLooksRight(ok), ok);
+  for (const bad of ['call me', '12', '+', '98765 ext 5', '1234567890123456', '']) assert.ok(!phoneLooksRight(bad), bad);
+  const wrongPhone = "doesn't look right. Use digits, like +91 98765 43210.";
+  assert.equal(cardProblem({ ...emptyCard(), doctorPhone: 'call me' }), `The doctor's phone number ${wrongPhone}`);
+  assert.equal(cardProblem({ ...emptyCard(), contacts: [{ name: 'Asha', relation: null, phone: 'call' }] }), `Asha's phone number ${wrongPhone}`);
+  assert.equal(cardProblem({ ...emptyCard(), contacts: [{ name: 'Rohan', relation: 'Son', phone: '' }] }),
+    'Each person to call needs a name and a phone number.');
+  const four = ['111', '112', '113', '114'].map((phone, i) => ({ name: `P${i}`, relation: null, phone }));
+  assert.equal(cardProblem({ ...emptyCard(), contacts: four }), 'Add at most three people to call.');
+  // An empty row on the form is not a contact, and a card of empty rows is empty.
+  const blankRow = { ...emptyCard(), allergies: '  ', contacts: [{ name: ' ', relation: '', phone: '' }] };
+  assert.equal(cardProblem(blankRow), null);
+  assert.ok(cardIsEmpty(blankRow));
+  assert.ok(!cardIsEmpty({ ...emptyCard(), bloodGroup: 'O+' }));
+  assert.equal(bloodGroupLabel('A-'), 'A−');
+  assert.equal(bloodGroupLabel('hh'), 'Bombay (hh)');
+  assert.equal(bloodGroupLabel(null), 'Not known');
+  assert.equal(bloodGroupSpoken('AB+'), 'AB positive');
+  assert.equal(telHref('+91 98765-43210'), 'tel:+919876543210');
+});
+
 await test('questions.yaml is consistent with the fixtures', () => {
   const files = new Set(permanentDocuments.map((d) => d.file));
   for (const q of questions) if (q.expect.source) assert.ok(files.has(q.expect.source), `${q.id} cites ${q.expect.source}, which is not a permanent fixture`);
@@ -469,4 +492,4 @@ if (failures.length) {
   console.error(`\n${failures.length} self-test(s) failed, ${passed} passed.`);
   process.exit(1);
 }
-console.log(`✓ ${passed} self-tests passed — matchers, judge, run-time PDF, metadata, text cleaning, Gmail rules and token sealing, kinship and the family tree, questions and budget.`);
+console.log(`✓ ${passed} self-tests passed — matchers, judge, run-time PDF, metadata, text cleaning, Gmail rules and token sealing, kinship and the family tree, emergency card checks, questions and budget.`);

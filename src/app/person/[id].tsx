@@ -1,5 +1,5 @@
-// One person in the family tree: who they are to you, their close family,
-// the documents marked as theirs and when those run out.
+// One person in the family tree: who they are to you, their emergency card,
+// their close family, the documents marked as theirs and when those run out.
 //
 // Anyone in the family can look. An admin can edit, add a relative or take
 // them out of the tree; people can edit their own details. Confirmation is
@@ -13,30 +13,24 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../lib/auth';
 import { useFamily } from '../../lib/family-context';
 import {
-  fetchFamilyTree, fetchPersonDocuments, fetchExpiringDocuments, removeFamilyPerson, isMissingMigration,
-  type FamilyTree, type ExpiringDocument,
+  fetchFamilyTree, fetchPersonDocuments, fetchExpiringDocuments, fetchEmergencyCard, removeFamilyPerson,
+  isMissingMigration, type FamilyTree, type ExpiringDocument,
 } from '../../lib/api';
+import type { EmergencyCard } from '../../lib/emergency';
 import type { FamilyDocumentRow } from '../../lib/database.types';
-import { longDate, expiryPhrase } from '../../lib/dates';
+import { longDate, expiryPhrase, ageInYears } from '../../lib/dates';
 import {
   buildGraph, relationTo, relationLabel, parentsOf, childrenOf, spousesOf, siblingsOf, shortName,
 } from '../../../supabase/functions/_shared/kinship';
 import { ScreenHeader, HeaderIconButton } from '../../components/screen-header';
 import { Avatar } from '../../components/family-tree-view';
 import { PersonSheet, type PersonSheetState } from '../../components/person-sheet';
-import { Card, CardTitle, Muted, SecondaryButton, DangerButton, Status, screenStyles } from '../../components/settings-ui';
+import { BloodPill } from '../../components/emergency-card-view';
+import { Card, CardTitle, Muted, PrimaryButton, SecondaryButton, DangerButton, Status, screenStyles } from '../../components/settings-ui';
 import { color, radius, size, space, type } from '../../constants/design';
 
 // "K C Das Mohapatra" is not "K": an initial alone says nothing.
 const first = shortName;
-
-function age(birthDate: string): number {
-  const b = new Date(`${birthDate}T00:00:00`);
-  const now = new Date();
-  let years = now.getFullYear() - b.getFullYear();
-  if (now.getMonth() < b.getMonth() || (now.getMonth() === b.getMonth() && now.getDate() < b.getDate())) years--;
-  return years;
-}
 
 export default function PersonScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -46,6 +40,8 @@ export default function PersonScreen() {
   const [tree, setTree] = useState<FamilyTree | null>(null);
   const [docs, setDocs] = useState<FamilyDocumentRow[] | null>(null);
   const [expiring, setExpiring] = useState<ExpiringDocument[]>([]);
+  // undefined while loading, null when they have none; 'off' before migration 032.
+  const [card, setCard] = useState<EmergencyCard | null | undefined | 'off'>(undefined);
   const [problem, setProblem] = useState<string | null>(null);
   const [sheet, setSheet] = useState<PersonSheetState | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
@@ -68,6 +64,9 @@ export default function PersonScreen() {
     fetchExpiringDocuments(currentFamily.id)
       .then((e) => { if (!cancelled) setExpiring(e.filter((x) => x.memberId === id)); })
       .catch(() => undefined);
+    fetchEmergencyCard(currentFamily.id, id)
+      .then((c) => { if (!cancelled) setCard(c); })
+      .catch((err) => { if (!cancelled) setCard(isMissingMigration(err) ? 'off' : null); });
     return () => { cancelled = true; };
   }, [currentFamily?.id, id]);
 
@@ -129,13 +128,51 @@ export default function PersonScreen() {
               {isMe && <Text style={styles.relation}>You</Text>}
               {!!relation && <Text style={styles.relation}>Your {relation.charAt(0).toLowerCase() + relation.slice(1)}</Text>}
               {!!person.birthDate && (
-                <Muted>Born {longDate(new Date(`${person.birthDate}T00:00:00`))} · {age(person.birthDate)} years</Muted>
+                <Muted>Born {longDate(new Date(`${person.birthDate}T00:00:00`))} · {ageInYears(person.birthDate)} years</Muted>
               )}
               {!!person.userId && (
                 <View style={styles.accountPill}>
                   <Feather name="smartphone" size={12} color={color.primary} />
                   <Text style={styles.accountText}>{isMe ? 'Your account' : 'Has a FamilyVault account'}</Text>
                 </View>
+              )}
+            </Card>
+
+            <Card>
+              <CardTitle icon="plus-square">Emergency card</CardTitle>
+              {card === undefined ? (
+                <ActivityIndicator color={color.primary} />
+              ) : card === 'off' ? (
+                <Muted>Emergency cards are not switched on yet.</Muted>
+              ) : card ? (
+                <>
+                  <View style={styles.emergencyRow}>
+                    <BloodPill group={card.bloodGroup} />
+                    {card.contacts.length > 0 && (
+                      <Text style={styles.docSub}>{card.contacts.length === 1 ? '1 person to call' : `${card.contacts.length} people to call`}</Text>
+                    )}
+                  </View>
+                  {!!card.allergies && <Text style={styles.allergies} numberOfLines={2}>Allergies: {card.allergies}</Text>}
+                  <PrimaryButton
+                    label="Open emergency card"
+                    icon="maximize-2"
+                    onPress={() => router.push({ pathname: '/emergency/[id]', params: { id: person.id } } as any)}
+                  />
+                </>
+              ) : (
+                <>
+                  <Muted>
+                    {isMe ? 'You have' : `${first(person.name)} has`} no emergency card yet: blood group, allergies, medicines,
+                    their doctor and who to call, ready to show a doctor.
+                  </Muted>
+                  {canEdit && (
+                    <SecondaryButton
+                      label="Add an emergency card"
+                      icon="plus"
+                      onPress={() => router.push({ pathname: '/emergency/edit/[id]', params: { id: person.id } } as any)}
+                    />
+                  )}
+                </>
               )}
             </Card>
 
@@ -293,6 +330,8 @@ const styles = StyleSheet.create({
   docText: { flex: 1, minWidth: 0, gap: 2 },
   docName: type.label,
   docSub: type.caption,
+  emergencyRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, flexWrap: 'wrap' },
+  allergies: { ...type.body, color: '#991B1B' },
   soon: { color: '#B45309' },
   over: { color: '#B91C1C' },
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: space.xl },
