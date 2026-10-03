@@ -1,19 +1,20 @@
 // One person in the family tree: who they are to you, their emergency card,
 // their close family, the documents marked as theirs and when those run out.
 //
-// Anyone in the family can look. An admin can edit, add a relative or take
-// them out of the tree; people can edit their own details. Confirmation is
-// on screen, never Alert.alert, which does nothing on the web.
+// Anyone in the family can look. An admin can edit, add a relative, link
+// someone added by name to their FamilyVault account (033) or take them out
+// of the tree; people can edit their own details. Confirmation is on screen,
+// never Alert.alert, which does nothing on the web.
 
-import { useCallback, useMemo, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Modal, Pressable, StyleSheet } from 'react-native';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Modal, Pressable, KeyboardAvoidingView, Platform, StyleSheet } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../lib/auth';
 import { useFamily } from '../../lib/family-context';
 import {
-  fetchFamilyTree, fetchPersonDocuments, fetchExpiringDocuments, fetchEmergencyCard, removeFamilyPerson,
+  fetchFamilyTree, fetchPersonDocuments, fetchExpiringDocuments, fetchEmergencyCard, removeFamilyPerson, linkPersonToAccount,
   isMissingMigration, type FamilyTree, type ExpiringDocument,
 } from '../../lib/api';
 import type { EmergencyCard } from '../../lib/emergency';
@@ -26,14 +27,15 @@ import { ScreenHeader, HeaderIconButton } from '../../components/screen-header';
 import { Avatar } from '../../components/family-tree-view';
 import { PersonSheet, type PersonSheetState } from '../../components/person-sheet';
 import { BloodPill } from '../../components/emergency-card-view';
-import { Card, CardTitle, Muted, PrimaryButton, SecondaryButton, DangerButton, Status, screenStyles } from '../../components/settings-ui';
+import { Card, CardTitle, Field, Muted, PrimaryButton, SecondaryButton, DangerButton, Status, screenStyles } from '../../components/settings-ui';
 import { color, radius, size, space, type } from '../../constants/design';
 
 // "K C Das Mohapatra" is not "K": an initial alone says nothing.
 const first = shortName;
 
 export default function PersonScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  // `joined` is set when this page was opened after two entries became one.
+  const { id, joined } = useLocalSearchParams<{ id: string; joined?: string }>();
   const { user } = useAuth();
   const { currentFamily, membership } = useFamily();
   const isAdmin = membership?.role === 'admin';
@@ -46,6 +48,12 @@ export default function PersonScreen() {
   const [sheet, setSheet] = useState<PersonSheetState | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [linkEmail, setLinkEmail] = useState('');
+  const [linking, setLinking] = useState(false);
+  const [linkError, setLinkError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(joined ? 'Their two entries are one now: everything that was marked as either is theirs.' : null);
+  const scroll = useRef<ScrollView>(null);
 
   const load = useCallback(() => {
     if (!currentFamily || !id) return () => {};
@@ -104,6 +112,57 @@ export default function PersonScreen() {
     }
   };
 
+  const openLink = () => {
+    setLinkEmail('');
+    setLinkError(null);
+    setNotice(null);
+    setLinkOpen(true);
+  };
+
+  // Someone added by name has signed up: link this entry to their account.
+  // Not yet a member, they join as a viewer AS this person; already added in
+  // Manage Family, their two entries become one and this page is gone, so
+  // the joined person's opens instead.
+  const link = async () => {
+    if (!currentFamily || !person) return;
+    const address = linkEmail.trim().toLowerCase();
+    if (!address) {
+      setLinkError('Enter the email they sign in with.');
+      return;
+    }
+    setLinking(true);
+    setLinkError(null);
+    try {
+      const outcome = await linkPersonToAccount(currentFamily.id, person.id, address);
+      switch (outcome.status) {
+        case 'linked':
+          setLinkOpen(false);
+          setNotice(`${first(person.name)} is on FamilyVault now, in this family as a viewer, and got a notification.`);
+          scroll.current?.scrollTo({ y: 0, animated: true });   // the news is at the top; the button was at the bottom
+          load();
+          break;
+        case 'merged':
+          setLinkOpen(false);
+          router.replace({ pathname: '/person/[id]', params: { id: outcome.memberId, joined: '1' } } as any);
+          break;
+        case 'no_account':
+          setLinkError(`No FamilyVault account uses ${address} yet. Ask ${first(person.name)} to sign up with this email, then link again.`);
+          break;
+        case 'invalid_email':
+          setLinkError("That doesn't look like an email address.");
+          break;
+        case 'refused':
+        case 'unavailable':
+          setLinkError(outcome.message);
+          break;
+      }
+    } catch (err: any) {
+      setLinkError(err?.message || 'Could not link them. Please try again.');
+    } finally {
+      setLinking(false);
+    }
+  };
+
   const title = person?.name ?? 'Family';
 
   return (
@@ -113,7 +172,7 @@ export default function PersonScreen() {
         fallback="/family-tree"
         right={person && canEdit ? <HeaderIconButton icon="edit-2" label={`Edit ${person.name}`} onPress={() => setSheet({ mode: 'edit', personId: person.id })} /> : undefined}
       />
-      <ScrollView contentContainerStyle={screenStyles.body} showsVerticalScrollIndicator={false}>
+      <ScrollView ref={scroll} contentContainerStyle={screenStyles.body} showsVerticalScrollIndicator={false}>
         {tree === null ? (
           <View style={styles.center}><ActivityIndicator color={color.primary} /></View>
         ) : problem ? (
@@ -122,6 +181,7 @@ export default function PersonScreen() {
           <Status kind="error">This person is no longer in the family tree.</Status>
         ) : (
           <>
+            {!!notice && <Status kind="ok">{notice}</Status>}
             <Card style={styles.hero}>
               <Avatar name={person.name} me={isMe} size={56} onApp={!!person.userId} />
               <Text style={styles.name}>{person.name}</Text>
@@ -266,6 +326,9 @@ export default function PersonScreen() {
                   onPress={() => setSheet({ mode: 'connect', personId: person.id })}
                 />
                 {!person.userId && (
+                  <SecondaryButton label="Link to their FamilyVault account" icon="smartphone" onPress={openLink} />
+                )}
+                {!person.userId && (
                   <DangerButton label="Take out of the tree" icon="user-minus" onPress={() => setConfirmRemove(true)} />
                 )}
               </Card>
@@ -285,6 +348,44 @@ export default function PersonScreen() {
           onSaved={() => { setSheet(null); load(); }}
         />
       )}
+
+      <Modal visible={linkOpen} transparent animationType="fade" onRequestClose={() => !linking && setLinkOpen(false)}>
+        {/* The email field sits mid-screen: keep the dialog above the phone's keyboard. */}
+        <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+          <Pressable style={styles.overlay} onPress={() => !linking && setLinkOpen(false)}>
+            <Pressable style={styles.dialog} onPress={() => {}}>
+              <Text style={styles.dialogTitle}>Link {person ? first(person.name) : 'them'} to their account</Text>
+              <Text style={styles.dialogText}>
+                If {person ? first(person.name) : 'they'} has signed up for FamilyVault, enter the email they sign in with. They
+                join this family as a viewer and keep everything here: their place in the tree, their documents and their
+                emergency card.
+              </Text>
+              <Muted>Already added in Manage Family? Linking makes the two entries one.</Muted>
+              <Field
+                label="Their email"
+                placeholder="The email they sign in with"
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="email"
+                value={linkEmail}
+                onChangeText={(v) => { setLinkEmail(v); setLinkError(null); }}
+                onSubmitEditing={link}
+                editable={!linking}
+              />
+              {!!linkError && <Text style={styles.linkError} accessibilityLiveRegion="polite">{linkError}</Text>}
+              <View style={styles.dialogButtons}>
+                <TouchableOpacity style={styles.cancelBtn} onPress={() => setLinkOpen(false)} disabled={linking} accessibilityRole="button">
+                  <Text style={styles.cancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.linkBtn} onPress={link} disabled={linking} accessibilityRole="button" accessibilityLabel="Link">
+                  {linking ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Text style={styles.confirmText}>Link</Text>}
+                </TouchableOpacity>
+              </View>
+            </Pressable>
+          </Pressable>
+        </KeyboardAvoidingView>
+      </Modal>
 
       <Modal visible={confirmRemove} transparent animationType="fade" onRequestClose={() => setConfirmRemove(false)}>
         <Pressable style={styles.overlay} onPress={() => !removing && setConfirmRemove(false)}>
@@ -310,6 +411,7 @@ export default function PersonScreen() {
 
 const styles = StyleSheet.create({
   center: { alignItems: 'center', paddingVertical: 40 },
+  flex: { flex: 1 },
   hero: { alignItems: 'center', gap: space.sm },
   name: { ...type.heading, fontSize: 17, textAlign: 'center' },
   relation: { ...type.body, color: color.primary, fontWeight: '500', textAlign: 'center' },
@@ -343,4 +445,6 @@ const styles = StyleSheet.create({
   cancelText: { ...type.button, color: '#4B5563' },
   confirmBtn: { flex: 1, minHeight: size.control, borderRadius: radius.control, backgroundColor: color.danger, alignItems: 'center', justifyContent: 'center' },
   confirmText: { ...type.button, color: '#FFFFFF' },
+  linkBtn: { flex: 1, minHeight: size.control, borderRadius: radius.control, backgroundColor: color.primary, alignItems: 'center', justifyContent: 'center' },
+  linkError: { ...type.caption, color: '#B91C1C' },
 });

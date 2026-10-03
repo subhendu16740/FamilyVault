@@ -133,6 +133,17 @@ const accountRpcJudge = (expect) => (outcome) => (String(outcome.error?.code) ==
   ? ['skipped', 'migration 029 is not applied to DEV yet']
   : judge(expect, outcome));
 
+// Linking someone in the tree to an account ships with migration 033 and the
+// link-account function: skipped until both are on DEV, likewise.
+const linkFnJudge = (check) => ({ status, data }) => {
+  if (status === 404 && !data?.status) return ['skipped', 'link-account is not deployed to DEV yet'];
+  if (status === 503 && data?.status === 'needs_migration') return ['skipped', 'migration 033 is not applied to DEV yet'];
+  return check(status, data);
+};
+const linkRpcJudge = (expect) => (outcome) => (String(outcome.error?.code) === 'PGRST202'
+  ? ['skipped', 'migration 033 is not applied to DEV yet']
+  : judge(expect, outcome));
+
 // The family tree ships with migration 031: skipped until it is applied, like
 // saved chats before 028. PGRST202 is its functions missing, a missing table
 // its tables.
@@ -448,6 +459,11 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     ['B', "delete an emergency card in A's tree", emergencyJudge('refused', true), onCardA(() => b.client.rpc('save_emergency_card', { p_person_id: personA, p_card: {} }))],
     ['B', "write QA Vault A's emergency cards directly", emergencyJudge('refused'), onCards(() => b.client.from('family_emergency_cards').insert({ person_id: personA ?? randomUUID(), family_id: A.family, blood_group: 'O-' }))],
 
+    // Linking someone in the tree to an account (033): an admin's job, through
+    // link-account. B's two attempts come near the end, below.
+    ['anon', "link a person in A's tree to an account", linkFnJudge(http401), fn(anon, 'link-account', { family_id: A.family, person_id: randomUUID(), email: cfg.b.email })],
+    ['anon', 'link an account through the database (server-only)', linkRpcJudge('refused'), rpc(anon, 'link_family_person_account', { p_family_id: A.family, p_linked_by: A.user, p_person_id: randomUUID(), p_email: cfg.b.email })],
+
     // Deleting an account (029): only ever the caller's own, and the database
     // side is the server's alone. Nothing here can delete anything even if the
     // protection failed: the database probes aim at ids that belong to nobody,
@@ -466,6 +482,12 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
         ? ['fail', 'LISTED QA Vault A: the preview answered for the account named in the body, not the caller']
         : ['pass', `only its own families (${ids.length})`];
     }), fn(b, 'delete-account', { action: 'preview', user_id: A.user })],
+
+    // Late, like the last probe: were linking open, B naming its own email
+    // would be in QA Vault A as that person, with their documents and card,
+    // and every probe after it would be testing an insider.
+    ['B', "link a person in A's tree to its own account", linkFnJudge(http401), async () => fn(b, 'link-account', { family_id: A.family, person_id: personA ?? randomUUID(), email: cfg.b.email })()],
+    ['B', 'link an account through the database (server-only)', linkRpcJudge('refused'), async () => b.client.rpc('link_family_person_account', { p_family_id: A.family, p_linked_by: A.user, p_person_id: personA ?? randomUUID(), p_email: cfg.b.email })],
 
     // Undone the moment it is seen: a superuser B would make every read
     // probe above meaningless, so this runs after them.

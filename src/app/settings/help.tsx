@@ -38,6 +38,10 @@ const FAQ: { q: string; a: string }[] = [
     a: 'Everyone in your family, with or without an account — a grandmother who will never sign in included. Admins add people and say how they are related; everyone in the family sees the tree, with each person named from where you stand (Nani, Bua, Mama…). A green phone on someone\'s picture means they are on FamilyVault with their own account; nobody else needs one. You can change your own name and date of birth. Mark a document as someone\'s and you can ask about it by relation, like "Nani\'s pension papers".',
   },
   {
+    q: 'Someone in our tree has just signed up. How do I connect them?',
+    a: 'If you are an admin, open them in the family tree and choose Link to their FamilyVault account, then type the email they sign in with. They join the family as a viewer and keep their place in the tree, their documents and their emergency card. If you already added them in Manage Family and they now appear twice, linking makes the two one.',
+  },
+  {
     q: 'What is an emergency card?',
     a: 'Each person in your family tree can have one: blood group, allergies, health conditions, medicines, their doctor, health insurance and up to three people to call. Open Emergency cards from the menu, or the person\'s page, to show it to a doctor; every phone number on it is one tap from your phone. Everyone in the family can see it; an admin, or the person themselves, can change it.',
   },

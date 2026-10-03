@@ -982,6 +982,15 @@ export type Database = {
         }
         Returns: undefined
       }
+      link_family_person_account: {
+        Args: {
+          p_email: string
+          p_family_id: string
+          p_linked_by: string
+          p_person_id: string
+        }
+        Returns: Json
+      }
       mark_notification_read: {
         Args: { p_notification_id: string; p_user_id: string }
         Returns: undefined

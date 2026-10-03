@@ -50,8 +50,9 @@ Four things will mislead you if you assume otherwise:
    **A new writable
    column needs its own `GRANT` in a migration.** Membership has no
    invitations and no requests: only an admin adds a person, through the
-   `add-member` Edge Function, and clients cannot insert a membership row at
-   all. See [Membership](#membership--an-admin-adds-nobody-requests-025).
+   `add-member` Edge Function (or links someone already in the family tree
+   to their account, through `link-account`, 033), and clients cannot insert
+   a membership row at all. See [Membership](#membership--an-admin-adds-nobody-requests-025).
 4. **This app targets both native and web from one codebase.** Day-to-day
    review happens on the web build (deployed to Vercel), but native
    Android/iOS is a real target with platform-specific code paths. A change
@@ -94,12 +95,13 @@ errors**) and `npm run build` are the local gates.
 at 03:10 IST, and on pushes that change `qa/`. It uploads synthetic SPECIMEN
 documents to its own vault (QA Vault A, account A), asks questions about
 them, and checks the answers on facts and sources, never wording. It also
-runs the 023 sweep and the 024 DEV/PROD fingerprint, 80 access probes (a
+runs the 023 sweep and the 024 DEV/PROD fingerprint, 84 access probes (a
 logged-out visitor and a second account must be refused everywhere, Gmail
-import's endpoints, the family tree and emergency cards included), the
-membership model (the second account, added as a viewer, must not be able to
-escalate, becomes a person in the family tree, writes only its own emergency
-card, and must be able to leave),
+import's endpoints, the family tree, emergency cards and linking included),
+the membership model (the second account, added as a viewer, must not be able
+to escalate, becomes a person in the family tree, writes only its own
+emergency card, must be able to leave, and is linked to an entry in the tree
+both ways: merged while a member, brought back as it after leaving),
 a question asked by relation ("my mother's passport"), and the full upload → ingest →
 expiry-notification pipeline. By hand only, suite `languages` asks 12
 questions about documents in eight more Indian languages — two of them
@@ -221,6 +223,7 @@ npx supabase@latest login
 npx supabase@latest functions deploy rag-search       --project-ref <ref>
 npx supabase@latest functions deploy ingest-document  --project-ref <ref>
 npx supabase@latest functions deploy add-member       --project-ref <ref>
+npx supabase@latest functions deploy link-account     --project-ref <ref>
 npx supabase@latest functions deploy delete-account   --project-ref <ref>
 npx supabase@latest functions deploy reembed-index    --project-ref <ref>
 npx supabase@latest functions deploy gmail-connect    --project-ref <ref>   # also gmail-scan, gmail-import
@@ -377,7 +380,7 @@ src/
     notifications.tsx        # expiry alerts, uploads, invites
     family.tsx               # Manage Family: members, adding, leaving    (NOT a tab)
     family-tree.tsx          # the family tree: everyone, and how they are related (031)
-    person/[id].tsx          # one person: their relation to you, emergency card, documents, expiry dates
+    person/[id].tsx          # one person: their relation to you, emergency card, documents, expiry dates, link to their account (033)
     emergency/               # emergency cards (032), in the drawer
       index.tsx              # everyone in the tree, blood group at a glance
       [id].tsx               # one card, full screen, every number one tap from the dialler
@@ -441,7 +444,7 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `speech-text.ts` | `toSpeech()`: strips markdown and spells out ID numbers before they are read aloud |
 | `voice-languages.ts` | The language picker list and the few phrases the app itself says, per language |
 | `storage.ts` | Key-value cache: localStorage on web, AsyncStorage on native |
-| `database.types.ts` | Generated Supabase types, current to 032 (030 changed nothing in them). Regenerate after every migration and re-append the hand-written block at the bottom (see the typecheck note) |
+| `database.types.ts` | Generated Supabase types, current to 033 (030 changed nothing in them). Regenerate after every migration and re-append the hand-written block at the bottom (see the typecheck note) |
 
 ---
 
@@ -706,6 +709,12 @@ so storage policies live only in `019`.
   deleted, not anonymous — and adds them as a viewer, with a `member`
   notification and an audit row, in one transaction. No such account → the
   admin is told to ask them to sign up, and nothing is created.
+- **Someone already in the family tree is linked, not added** (033). Adding
+  by email gives a person added by name a second entry beside the one with
+  their links, documents and card, so their page has **Link to their
+  FamilyVault account** for admins: `link-account` →
+  `link_family_person_account()`, service role only like 025's. See
+  [Family tree](#family-tree--people-not-accounts-031).
 - **Being added needs no consent, so it must be visible and reversible.** The
   person is notified, sees every family they are in under Manage Family, and
   can leave any of them (`family_members_delete_self`). The last admin cannot
@@ -783,9 +792,23 @@ so storage policies live only in `019`.
   two-way words are deliberately not relations: "ma" is also an MA degree,
   and "mama" is a mother in English but a mother's brother in Hindi — the
   tree says which.
-- **Not built yet:** merging two people. Someone added to the tree without an
-  account and later added as a member appears twice; an admin removes the
-  one without the account (its links go with it).
+- **An entry without an account is linked to one when they sign up** (033):
+  their page's **Link to their FamilyVault account**, admins only, by the
+  email they sign in with, through `link-account` →
+  `link_family_person_account()` (service role only; it takes the admin's
+  user id). Not yet a member, they join as a viewer and the membership takes
+  the ENTRY's id — the rule above — so links, documents and card stay put,
+  nothing rewritten; they get the same `member` notification as when added.
+  Already a member (added in Manage Family, so in the tree twice), the two
+  become one: the member's person keeps its id and takes the entry's name
+  (the one the family uses), a gender or birth date it lacks, the entry's
+  links — re-made through `tree_add_parent`/`tree_add_pair`, so a third
+  parent or a cycle refuses the whole join with that rule's message —, the
+  documents marked as the entry, and its card unless the member has one; the
+  entry is deleted. A function of its own, not an option on `add-member`, on
+  purpose: an older `add-member` asked to link would ADD the person again,
+  the very duplicate this prevents, while a missing `link-account` answers
+  the gateway's 404, which the app shows as not switched on yet.
 
 ### Emergency cards — one per person, for whoever is there (032)
 
@@ -872,6 +895,12 @@ so storage policies live only in `019`.
   It replaced `invite-member`, which the deploy workflow deletes from each
   project it deploys to — a function removed from the repo otherwise stays
   live, running its old code.
+- **`link-account`** — a family admin links someone already in the family
+  tree to the account they have since made, by email (033; see
+  [Family tree](#family-tree--people-not-accounts-031)). Answers 200 `linked`
+  or `merged`, 404 `no_account`/`no_person`, 409 `already_linked`,
+  `already_member` or `tree_rule` (with the rule's own words), and 503
+  `needs_migration` where 033 is not applied.
 - **`delete-account`** — a person deletes their own account: `preview`
   lists what would go, `delete` with `confirm: 'DELETE'` does it; see
   [Deleting your account](#deleting-your-account--at-once-nothing-kept-029).
