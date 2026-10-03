@@ -1,38 +1,44 @@
 // Reminders — every document in the family with an expiry date, soonest
 // first. FamilyVault reminds every member 90, 30 and 7 days before and on the
 // day (migration 034): under the bell, and as a notification on any device
-// where they turned reminders on. Reminders are part of Family Plus, the paid
-// plan (★ in the menu), which does not exist yet, so they work for everyone.
+// where they turned reminders on — every family, Free or Plus. This page, the
+// list, is part of Family Plus (★ in the menu): a free family is sent to the
+// Family Plus page instead, here too in case it arrives by a link or a refresh.
 
 import { useCallback, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Platform } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { router, useFocusEffect } from 'expo-router';
+import { Redirect, router, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFamily } from '../lib/family-context';
 import { fetchExpiringDocuments, type ExpiringDocument } from '../lib/api';
+import { plusPage, useFamilyPlan } from '../lib/family-plan';
 import { expiryPhrase, longDate } from '../lib/dates';
 import { ScreenHeader, PlusTag } from '../components/screen-header';
 import { color, radius, shadow, size, space, type } from '../constants/design';
 
 export default function RemindersScreen() {
   const { currentFamily } = useFamily();
+  const { isFree } = useFamilyPlan();
   const [items, setItems] = useState<ExpiringDocument[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useFocusEffect(useCallback(() => {
     let cancelled = false;
+    if (isFree) return;
     if (!currentFamily) { setItems([]); return; }
     setError(null);
     fetchExpiringDocuments(currentFamily.id)
       .then((found) => { if (!cancelled) setItems(found); })
       .catch((err) => { if (!cancelled) { setItems([]); setError(err?.message ?? 'Could not load your documents.'); } });
     return () => { cancelled = true; };
-  }, [currentFamily?.id]));
+  }, [currentFamily?.id, isFree]));
+
+  if (isFree) return <Redirect href={plusPage('reminders') as any} />;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScreenHeader title="Reminders" right={<PlusTag />} />
+      <ScreenHeader title="Reminders" right={<PlusTag link />} />
 
       <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
         <View style={styles.plusCard}>
@@ -41,8 +47,8 @@ export default function RemindersScreen() {
             FamilyVault reminds the whole family 90, 30 and 7 days before a passport, licence or policy expires, and on the day.
           </Text>
           <Text style={styles.plusCardNote}>
-            Reminders appear under the bell on Home{Platform.OS === 'web' ? ', and as notifications on any phone or computer where you turn them on' : ''}.
-            Family Plus is coming soon; until then, reminders are free for everyone.
+            Reminders appear under the bell on Home{Platform.OS === 'web' ? ', and as notifications on any phone or computer where you turn them on' : ''}, for every family.
+            This page, with every expiry date in one list, is part of Family Plus.
           </Text>
           {Platform.OS === 'web' && (
             <TouchableOpacity

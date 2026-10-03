@@ -5,8 +5,9 @@
 // unenforced, from the documents' own sizes (see src/lib/plans.ts).
 
 import { useCallback, useState } from 'react';
-import { ScrollView, View, Text, ActivityIndicator, StyleSheet } from 'react-native';
-import { useFocusEffect } from 'expo-router';
+import { ScrollView, View, Text, ActivityIndicator, TouchableOpacity, StyleSheet } from 'react-native';
+import { Feather } from '@expo/vector-icons';
+import { router, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../lib/auth';
 import { useFamily } from '../../lib/family-context';
@@ -18,9 +19,10 @@ import {
   storageLevel, type PlanLimits, type StorageLevel,
 } from '../../lib/plans';
 import { longDate } from '../../lib/dates';
+import { plusPage } from '../../lib/family-plan';
 import { ScreenHeader, PlusTag } from '../../components/screen-header';
 import { Card, CardTitle, Body, Muted, Status, screenStyles } from '../../components/settings-ui';
-import { color, radius, space, type } from '../../constants/design';
+import { color, radius, size, space, type } from '../../constants/design';
 
 const documents = (n: number) => `${n} ${n === 1 ? 'document' : 'documents'}`;
 
@@ -95,10 +97,14 @@ export default function StorageScreen() {
               </View>
               {!PLUS_FOR_SALE && (
                 <View style={styles.plusRow}>
-                  <PlusTag />
+                  <PlusTag link />
                   <Text style={styles.plusText}>Family Plus can't be bought in the app yet. Coming soon.</Text>
                 </View>
               )}
+              <TouchableOpacity style={styles.compare} onPress={() => router.push('/plus' as any)} accessibilityRole="link">
+                <Text style={styles.compareText}>Compare Free and Family Plus</Text>
+                <Feather name="chevron-right" size={16} color={color.primary} />
+              </TouchableOpacity>
             </Card>
 
             <Text style={styles.sectionTitle}>Your families</Text>
@@ -160,6 +166,11 @@ export default function StorageScreen() {
                             ? storageFullMessage(status, 0, limits, price)
                             : `Nearly full: ${formatBytes(limit - used)} left. When it is full, new documents can't be added.`}
                       </Text>
+                      {!isPlus && (
+                        <TouchableOpacity onPress={() => router.push(plusPage('storage') as any)} accessibilityRole="link">
+                          <Text style={[styles.noteLink, level === 'full' ? styles.noteTextFull : styles.noteTextNearly]}>See Family Plus ›</Text>
+                        </TouchableOpacity>
+                      )}
                     </View>
                   )}
                 </Card>
@@ -192,6 +203,12 @@ const styles = StyleSheet.create({
   planRowSize: { ...type.label, color: color.primary, fontWeight: '600' },
   plusRow: { flexDirection: 'row', alignItems: 'flex-start', gap: space.sm },
   plusText: { ...type.caption, flex: 1, color: color.textBody, marginTop: 2 },
+  compare: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    minHeight: size.control, borderTopWidth: 1, borderTopColor: color.divider, marginTop: -space.xs,
+  },
+  compareText: { ...type.label, color: color.primary },
+  noteLink: { fontSize: 14, lineHeight: 20, fontWeight: '600', marginTop: space.xs },
   big: { fontSize: 22, lineHeight: 28, fontWeight: '600', color: color.primary },
   sectionTitle: { ...type.overline, marginTop: space.sm, marginLeft: space.xs },
   familyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.md },

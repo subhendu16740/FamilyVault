@@ -79,6 +79,7 @@ export default function SettingsScreen() {
   const vaultItems: LinkItem[] = [
     { icon: 'users', label: 'Manage Families', sub: 'View and switch families', route: '/family' },
     { icon: 'hard-drive', label: 'Storage', sub: 'Your family\'s plan, and how much of its space is used', route: '/settings/storage' },
+    { icon: 'star', label: 'Family Plus', sub: 'What Plus gives, side by side with Free', route: '/plus' },
     { icon: 'lock', label: 'Privacy', sub: 'Who can see your documents', route: '/settings/privacy' },
   ];
   const helpItems: LinkItem[] = [

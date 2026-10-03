@@ -19,7 +19,7 @@ import {
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router, useLocalSearchParams } from 'expo-router';
+import { Redirect, router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../lib/auth';
 import { useFamily } from '../lib/family-context';
@@ -29,6 +29,7 @@ import {
 } from '../lib/api';
 import type { Database } from '../lib/database.types';
 import { ScreenHeader, PlusTag } from '../components/screen-header';
+import { plusPage, useFamilyPlan } from '../lib/family-plan';
 import { color, radius, shadow, size, space, type } from '../constants/design';
 
 type DocumentCategory = Database['public']['Tables']['document_categories']['Row'];
@@ -69,6 +70,7 @@ function readable(err: unknown): string {
 export default function GmailImportScreen() {
   const { user } = useAuth();
   const { currentFamily, members } = useFamily();
+  const { isFree } = useFamilyPlan();
   const params = useLocalSearchParams<{ gmail_state?: string; gmail_code?: string; gmail_error?: string }>();
 
   const [status, setStatus] = useState<GmailStatus | null>(null);
@@ -410,11 +412,17 @@ export default function GmailImportScreen() {
 
   const connected = !!status?.connected && !status.expired;
 
+  // ★ Family Plus: a free family sees the Family Plus page instead (the
+  // import itself is refused on the server too). Not while Google is handing
+  // back a connection, which would be lost.
+  if (isFree && !params.gmail_state && !params.gmail_code && !params.gmail_error) {
+    return <Redirect href={plusPage('gmail') as any} />;
+  }
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      {/* ★: part of Family Plus, the paid plan. It works for everyone until
-          the plan exists, and says so. */}
-      <ScreenHeader title="Import from Gmail" fallback="/upload" right={<PlusTag />} />
+      {/* ★: part of Family Plus. */}
+      <ScreenHeader title="Import from Gmail" fallback="/upload" right={<PlusTag link />} />
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
         {notice && (
@@ -467,7 +475,7 @@ export default function GmailImportScreen() {
             {!status?.expired && (
               <Text style={styles.plusNote}>
                 <Text style={styles.plusNoteTag}>★ Family Plus</Text>
-                {'  '}Part of the paid plan, coming soon. Free for everyone until then.
+                {'  '}Part of Family Plus, for the whole family.
               </Text>
             )}
             <TouchableOpacity onPress={connect} disabled={connecting} activeOpacity={0.85} style={styles.fullWidth}>

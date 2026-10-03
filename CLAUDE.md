@@ -412,6 +412,7 @@ src/
       delete-account.tsx     # Security › Delete account: shows what goes, asks for DELETE (029)
     document/[id].tsx        # document viewer; Share opens the share sheet (036, web only)
     gmail-import.tsx         # connect Gmail, review what it found, import (web only, ★ Family Plus)
+    plus.tsx                 # Family Plus: what Plus gives, side by side with Free; every ★ opens it for a free family
     s.tsx                    # what a share link opens: one document, for anyone with the link, no account (036)
     +html.tsx                # custom HTML shell, web only
     (tabs)/
@@ -455,6 +456,7 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `emergency.ts` | The emergency card's shape, blood groups (`bloodGroupLabel()`: "A−", "Bombay (hh)"), `telHref()`, and `cardProblem()` — the same checks and messages as `save_emergency_card()`, so the form can say what is wrong before saving |
 | `family-people.ts` | Whose a document can be: everyone in the tree, you first (`useDocumentOwners()`, members only before 031), and a person's expiry badge (`badgeFromExpiries()`) |
 | `plans.ts` | What each plan may keep (038, 039): the limits as 039 sets them (`DEFAULT_PLAN_LIMITS`, used only when the database cannot be asked), Family Plus's price (`PLUS_PRICE`; `localPlusPrice()` shows rupees in India, dollars elsewhere, by the device's time zone), `storageLevel()`, and the words for a full vault (`storageFullMessage()`), which live in `supabase/functions/_shared/plan-text.ts` so Gmail import says the same. `PLUS_FOR_SALE` is false until payments exist |
+| `family-plan.ts` | Is the current family on Family Plus? `useFamilyPlan()` (from `family_storage_status()`, kept a minute per family): `isFree`, and `routeFor(feature, route)`, which sends a free family to `/plus?feature=…` instead of a starred feature. Unknown (before 038, offline) gates nothing |
 | `file-types.ts` | What a picked file is (`detectFileType()`: MIME type, then name, never a web `blob:` uri) and whether the vault can keep it (PDF, JPG, PNG) |
 | `app-info.ts` | Version, release date and commit (stamped into `extra` by `app.config.ts` at build time), and the support contact Help shows |
 | `ocr.ts` | Platform-split OCR with progress callback; reads the person's chosen languages |
@@ -1027,6 +1029,19 @@ so storage policies live only in `019`.
   searches every document and only cannot add more while over the free
   limit; Storage says so. Those files go on costing storage — at most a
   lapsed family's 10 GB, about $0.21 a month past Pro's included 100 GB.
+- **Starred features are for Plus families, and each one leads to the Plus
+  page.** `/plus` (`src/app/plus.tsx`) shows what Plus gives side by side
+  with Free, the price where the person is, and the family's own plan. For a
+  free family, tapping a ★ feature — the Reminders page in the drawer, From
+  Gmail on Upload — opens `/plus?feature=…`, which says which feature brought
+  them there and marks its row; the screens redirect there too, after a
+  refresh or from a link (Gmail import not while Google is handing back a
+  connection). A ★ tag drawn on its own (`<PlusTag link />`), Settings ›
+  Family Plus, Storage and a full vault's dialog open it as well. Gmail
+  import also refuses a free family on the server. The reminders themselves
+  — under the bell and on devices — reach every family. While Plus cannot be
+  bought (`PLUS_FOR_SALE`), the page says "Coming soon" rather than showing a
+  button that does nothing.
 - **Not built yet:** paying for Plus (a webhook calling `set_family_plan`;
   `source` allows `razorpay` and `dodo`), and a limit on questions per plan.
 
@@ -1169,10 +1184,12 @@ rules sort the rest (`_shared/gmail-rules.ts`).
   sign-in never inherits the unverified status or the cap.
 - **Imported photos are OCR'd on the server** (OCR.space, English only),
   not in the browser in the family's languages as an upload is.
-- **It stops at the family's storage limit** (038). Import stores as the
-  service role, which no storage policy stops, so it asks
-  `family_storage_status()` first and refuses a file that does not fit, in
-  the same words as an upload (`_shared/plan-text.ts`).
+- **It is for Family Plus families, and stops at their storage limit**
+  (038, 039). Import stores as the service role, which no storage policy
+  stops, so it asks `family_storage_status()` first: a free family's import
+  is refused, and so is a file that does not fit, in the same words as an
+  upload (`_shared/plan-text.ts`). The app sends a free family to the Plus
+  page before it gets that far.
 
 ### PDF text — read by position, not by content-stream order
 
@@ -1430,15 +1447,15 @@ rule again once pinned chunks are mixed in.
 - **A row or button that opens nothing is not shown.** Settings once listed
   six rows with an arrow that went nowhere, and the document viewer had a
   menu button with no menu. Add the control when its screen exists.
-- **★ Family Plus marks what the paid plan will include** (`<PlusTag />`).
-  Since 038 the plan exists — a family on it has 10 GB instead of 1 GB
-  (₹100 a month in India, $10 elsewhere; given by hand until payments
-  exist) — but it cannot be bought yet, so space is the only thing it
-  changes: Reminders (in the drawer;
-  since 034 they really are sent) and Import from Gmail (on Upload) work for
-  everyone and say the paid version is coming. Each shows the tag where you
-  find it, and Help's FAQ names all three. Every plan, Free included, has a
-  storage limit the server keeps (see
+- **★ Family Plus marks what only Plus families get** (`<PlusTag />`):
+  10 GB instead of 1 GB, the Reminders page (in the drawer) and Import from
+  Gmail (on Upload) — ₹100 a month in India, $10 elsewhere, given by hand
+  until payments exist. For a free family a starred feature opens the
+  Family Plus page, Free and Plus side by side (`/plus`); a new starred
+  feature must do the same, through `useFamilyPlan().routeFor()` and a
+  redirect in its own screen, and get a row on that page. Each shows the tag
+  where you find it, and Help's FAQ names all three. Every plan, Free
+  included, has a storage limit the server keeps (see
   [Plans and storage limits](#plans-and-storage-limits--every-plan-has-a-limit-038-039)).
 - **Never give a web panel `flex` for its width.** On react-native-web
   `flex: 1` fills the row and `flex: 0` collapses it, whatever `width` says.

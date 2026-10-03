@@ -103,15 +103,19 @@ Deno.serve(async (req) => {
       return json(200, { status: 'duplicate', document_id: twin.document_id });
     }
 
-    // 5. Room for it (038). Every plan has a storage limit, and the bucket's
-    //    policy keeps it for uploads from the app; the service role passes no
-    //    policy, so the limit is checked here. Before 038 there is nothing to
+    // 5. Family Plus, and room for it (038, 039). Import from Gmail is part of
+    //    Family Plus, and every plan has a storage limit, which the bucket's
+    //    policy keeps for uploads from the app; the service role passes no
+    //    policy, so both are checked here. Before 038 there is nothing to
     //    ask, and nothing is checked, as before.
     const { data: rooms } = await supabase.rpc('family_storage_status', { p_family_id: family_id });
     const r = (rooms as Array<{ plan: string; limit_bytes: number; used_bytes: number }> | null)?.[0];
     if (r) {
+      if (r.plan !== 'plus') {
+        throw new ImportProblem('Import from Gmail is part of Family Plus. Settings › Family Plus shows what it includes.');
+      }
       const room: StorageRoom = {
-        plan: r.plan === 'plus' ? 'plus' : 'free',
+        plan: 'plus',
         limitBytes: Number(r.limit_bytes),
         usedBytes: Number(r.used_bytes),
       };
