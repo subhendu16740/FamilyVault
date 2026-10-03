@@ -50,6 +50,10 @@ const FAQ: { q: string; a: string }[] = [
     a: `Every family gets ${FREE_STORAGE_LABEL} free for its documents. Settings › Storage shows how much is used. More space will come with ★ Family Plus, the paid plan. Until then you can keep adding documents.`,
   },
   {
+    q: 'How do reminders work?',
+    a: 'When a document with an expiry date is added, FamilyVault reminds everyone in the family 90, 30 and 7 days before it expires, and on the day — under the bell on Home. To get them as notifications on your phone or computer, even when FamilyVault is closed, open Settings › Notifications and turn them on for that device. On iPhone, add FamilyVault to your Home Screen first. It is free.',
+  },
+  {
     q: 'What does ★ Family Plus mean?',
     a: 'Family Plus is the paid plan, coming soon. Things marked with ★, like reminders before a document runs out, bringing documents in from Gmail and more storage space, will be part of it. Until then they work for everyone.',
   },

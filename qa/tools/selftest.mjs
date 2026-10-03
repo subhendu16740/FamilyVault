@@ -24,6 +24,7 @@ import {
   importTokenKey, sealToken, openToken, pkceChallenge, sha256Hex, base64url, fromBase64,
 } from '../../supabase/functions/_shared/gmail-crypto.ts';
 import { buildGraph, relationTo, relationLabel, relativesForPrompt, relativesNamedIn, buildForest, shortName, siblingsSharingParents } from '../../supabase/functions/_shared/kinship.ts';
+import { encryptPayload, vapidAuthorization, generateVapidKeys, isPushServiceEndpoint, MAX_PLAINTEXT } from '../../supabase/functions/_shared/webpush.ts';
 import { phoneLooksRight, cardProblem, cardIsEmpty, emptyCard, bloodGroupLabel, bloodGroupSpoken, telHref } from '../../src/lib/emergency.ts';
 import { mentionsDate, mentionsAmount, mentionsPhone, mentionsText, refuses, devanagariShare, scriptShare, hasMarkdown } from '../lib/match.mjs';
 import { judgeAnswer } from '../lib/checks/ask.mjs';
@@ -439,6 +440,43 @@ await test('emergency card: the form checks what save_emergency_card() checks (0
   assert.equal(telHref('+91 98765-43210'), 'tel:+919876543210');
 });
 
+await test('web push: encryption matches RFC 8291\'s example, byte for byte', async () => {
+  // RFC 8291 section 5 and appendix A: "When I grow up, I want to be a watermelon".
+  const target = { p256dh: 'BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4', auth: 'BTBZMqHH6r4Tts7J_aSIgg' };
+  const fixed = {
+    salt: fromBase64('DGv6ra1nlYgDCS1FRnbzlw'),
+    publicKey: 'BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8',
+    privateKey: 'yfWPiYE-n46HLnH0KqZOF1fJJU3MYrct3AELtAQ-oRw',
+  };
+  const message = await encryptPayload(fromBase64('V2hlbiBJIGdyb3cgdXAsIEkgd2FudCB0byBiZSBhIHdhdGVybWVsb24'), target, fixed);
+  const header = fromBase64('DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8');
+  const ciphertext = fromBase64('8pfeW0KbunFT06SuDKoJH9Ql87S1QUrdirN6GcG7sFz1y1sqLgVi1VhjVkHsUoEsbI_0LpXMuGvnzQ');
+  assert.equal(base64url(message), base64url(new Uint8Array([...header, ...ciphertext])));
+  // A real message: a fresh salt and key every time, never the same bytes twice.
+  const plain = new TextEncoder().encode('{"title":"Passport expires in 30 days"}');
+  assert.notEqual(base64url(await encryptPayload(plain, target)), base64url(await encryptPayload(plain, target)));
+  await assert.rejects(encryptPayload(new Uint8Array(MAX_PLAINTEXT + 1), target), /at most/);
+  await assert.rejects(encryptPayload(plain, { ...target, auth: 'c2hvcnQ' }), /16 bytes/);
+});
+
+await test('web push: VAPID signs for the push service, and only push services are posted to', async () => {
+  const keys = await generateVapidKeys();
+  assert.equal(fromBase64(keys.publicKey).length, 65);
+  const auth = await vapidAuthorization('https://fcm.googleapis.com/fcm/send/abc', { ...keys, subject: 'https://example.org' }, 1_900_000_000);
+  const [, token, k] = auth.match(/^vapid t=([^,]+), k=(.+)$/) ?? [];
+  assert.equal(k, keys.publicKey);
+  const [h, c, sig] = token.split('.');
+  assert.deepEqual(JSON.parse(new TextDecoder().decode(fromBase64(c))), { aud: 'https://fcm.googleapis.com', exp: 1_900_000_000, sub: 'https://example.org' });
+  const pub = await crypto.subtle.importKey('raw', fromBase64(keys.publicKey), { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
+  assert.ok(await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, pub, fromBase64(sig), new TextEncoder().encode(`${h}.${c}`)), 'the signature verifies');
+  for (const ok of ['https://fcm.googleapis.com/fcm/send/x', 'https://updates.push.services.mozilla.com/wpush/v2/x', 'https://web.push.apple.com/Q', 'https://wns2-par02p.notify.windows.com/w/?token=x']) {
+    assert.ok(isPushServiceEndpoint(ok), ok);
+  }
+  for (const bad of ['https://evil.example/fcm.googleapis.com', 'http://fcm.googleapis.com/x', 'https://fcm.googleapis.com.evil.example/x', 'https://fcm.googleapis.com:8443/x', 'not a url']) {
+    assert.ok(!isPushServiceEndpoint(bad), bad);
+  }
+});
+
 await test('questions.yaml is consistent with the fixtures', () => {
   const files = new Set(permanentDocuments.map((d) => d.file));
   for (const q of questions) if (q.expect.source) assert.ok(files.has(q.expect.source), `${q.id} cites ${q.expect.source}, which is not a permanent fixture`);
@@ -492,4 +530,4 @@ if (failures.length) {
   console.error(`\n${failures.length} self-test(s) failed, ${passed} passed.`);
   process.exit(1);
 }
-console.log(`✓ ${passed} self-tests passed — matchers, judge, run-time PDF, metadata, text cleaning, Gmail rules and token sealing, kinship and the family tree, emergency card checks, questions and budget.`);
+console.log(`✓ ${passed} self-tests passed — matchers, judge, run-time PDF, metadata, text cleaning, Gmail rules and token sealing, kinship and the family tree, emergency card checks, web push, questions and budget.`);

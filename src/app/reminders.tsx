@@ -1,10 +1,11 @@
 // Reminders — every document in the family with an expiry date, soonest
-// first. Reminders sent 90, 30 and 7 days ahead are part of Family Plus, the
-// paid plan (★ in the menu), which does not exist yet; the list works for
-// everyone, and the bell on Home already carries expiry alerts.
+// first. FamilyVault reminds every member 90, 30 and 7 days before and on the
+// day (migration 034): under the bell, and as a notification on any device
+// where they turned reminders on. Reminders are part of Family Plus, the paid
+// plan (★ in the menu), which does not exist yet, so they work for everyone.
 
 import { useCallback, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Platform } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -37,11 +38,23 @@ export default function RemindersScreen() {
         <View style={styles.plusCard}>
           <Text style={styles.plusCardTag}>★ Family Plus</Text>
           <Text style={styles.plusCardText}>
-            With Family Plus, FamilyVault reminds you 90, 30 and 7 days before a passport, licence or policy runs out.
+            FamilyVault reminds the whole family 90, 30 and 7 days before a passport, licence or policy expires, and on the day.
           </Text>
           <Text style={styles.plusCardNote}>
-            Family Plus is coming soon. Until then, expiry alerts appear under the bell on Home.
+            Reminders appear under the bell on Home{Platform.OS === 'web' ? ', and as notifications on any phone or computer where you turn them on' : ''}.
+            Family Plus is coming soon; until then, reminders are free for everyone.
           </Text>
+          {Platform.OS === 'web' && (
+            <TouchableOpacity
+              style={styles.plusCardLink}
+              onPress={() => router.push('/settings/notifications' as any)}
+              accessibilityRole="button"
+            >
+              <Feather name="bell" size={16} color={color.primary} />
+              <Text style={styles.plusCardLinkText}>Get them on this device</Text>
+              <Feather name="chevron-right" size={16} color={color.primary} />
+            </TouchableOpacity>
+          )}
         </View>
 
         <Text style={styles.sectionTitle}>
@@ -110,6 +123,8 @@ const styles = StyleSheet.create({
   plusCardTag: { fontSize: 13, lineHeight: 18, fontWeight: '600', color: color.accent },
   plusCardText: type.body,
   plusCardNote: type.caption,
+  plusCardLink: { flexDirection: 'row', alignItems: 'center', gap: space.sm, minHeight: size.control, marginTop: space.xs },
+  plusCardLinkText: { ...type.label, color: color.primary, fontWeight: '600', flex: 1 },
   sectionTitle: { ...type.overline, marginTop: space.sm, marginLeft: space.xs },
   center: { alignItems: 'center', gap: space.sm, paddingVertical: 32 },
   muted: type.caption,

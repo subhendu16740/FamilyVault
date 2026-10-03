@@ -144,6 +144,24 @@ const linkRpcJudge = (expect) => (outcome) => (String(outcome.error?.code) === '
   ? ['skipped', 'migration 033 is not applied to DEV yet']
   : judge(expect, outcome));
 
+// Reminders on devices ship with migration 034 and the push function:
+// skipped until both are on DEV, like the Gmail probes before 026.
+const pushJudge = (expect, needsDevice) => (outcome) => {
+  if (outcome.missing || missingTable(outcome.error) || String(outcome.error?.code) === 'PGRST202') {
+    return ['skipped', 'migration 034 is not applied to DEV yet'];
+  }
+  if (needsDevice && outcome.noTarget) return ['skipped', "no device of account A's to aim at (see its control)"];
+  return typeof expect === 'function' ? expect(outcome) : judge(expect, outcome);
+};
+const pushFnJudge = (check) => ({ status, data }) => {
+  if (status === 404 && !data?.status) return ['skipped', 'push is not deployed to DEV yet'];
+  if (status === 503 && data?.status === 'needs_migration') return ['skipped', 'migration 034 is not applied to DEV yet'];
+  return check(status, data);
+};
+// A well-formed device key and secret: RFC 8291's own example.
+const PROBE_P256DH = 'BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4';
+const PROBE_AUTH = 'BTBZMqHH6r4Tts7J_aSIgg';
+
 // The family tree ships with migration 031: skipped until it is applied, like
 // saved chats before 028. PGRST202 is its functions missing, a missing table
 // its tables.
@@ -322,6 +340,47 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     return run();
   };
 
+  // ── A notification device of account A's for the device probes to aim at
+  // (034): an address at Google's push service that leads nowhere — Google
+  // answers 410, and the sender forgets a device that answers so. So nothing
+  // may be waiting for it: A's notifications are marked read first, and the
+  // device is removed straight after the probes.
+  const deviceEndpoint = `https://fcm.googleapis.com/fcm/send/qa-probe-${cfg.runId}`;
+  let deviceA = false;
+  let pushMissing = false;
+  {
+    await a.client.from('notifications').update({ is_read: true }).eq('user_id', A.user).eq('is_read', false);
+    const { error } = await a.client.rpc('save_push_subscription', {
+      p_endpoint: deviceEndpoint, p_p256dh: PROBE_P256DH, p_auth: PROBE_AUTH, p_label: 'QA probe',
+    });
+    if (missingTable(error) || String(error?.code) === 'PGRST202') {
+      pushMissing = true;
+      results.add('access', 'control:push-device', 'Control — account A turns notifications on for a device and reads it back', 'skipped', { why: 'migration 034 is not applied to DEV yet' });
+    } else if (error) {
+      results.add('access', 'control:push-device', 'Control — account A turns notifications on for a device and reads it back', 'fail', { why: error.message });
+    } else {
+      const { data: back } = await a.client.from('push_subscriptions').select('id').eq('endpoint', deviceEndpoint);
+      deviceA = back?.length === 1;
+      results.add('access', 'control:push-device', 'Control — account A turns notifications on for a device and reads it back', deviceA ? 'pass' : 'fail',
+        deviceA ? {} : { why: 'saved, but A cannot read its own device back' });
+    }
+    // The push function hands a signed-in account this project's public key.
+    const key = await invokeFunction(cfg, a, 'push', { action: 'key' }, { timeoutMs: 30_000 });
+    const [state, why] = pushFnJudge((status, data) => {
+      const bytes = typeof data?.public_key === 'string' ? Buffer.from(data.public_key, 'base64url') : null;
+      return status === 200 && bytes?.length === 65 && bytes[0] === 4
+        ? ['pass', 'a P-256 public key']
+        : ['fail', `HTTP ${status}: ${JSON.stringify(data).slice(0, 160)}`];
+    })({ status: key.status, data: key.data });
+    results.add('access', 'control:push-key', 'Control — account A gets the key to turn notifications on with', state, { why });
+  }
+  const onPush = (run) => async () => (pushMissing ? { missing: true } : run());
+  const onDeviceA = (run) => async () => {
+    if (pushMissing) return { missing: true };
+    if (!deviceA) return { noTarget: true };
+    return run();
+  };
+
   const probes = [
     // Logged out
     ['anon', 'list QA Vault A', 'refused-or-empty', rpc(anon, 'get_family_documents', { p_family_id: A.family, p_limit: 5, p_offset: 0 })],
@@ -459,6 +518,27 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     ['B', "delete an emergency card in A's tree", emergencyJudge('refused', true), onCardA(() => b.client.rpc('save_emergency_card', { p_person_id: personA, p_card: {} }))],
     ['B', "write QA Vault A's emergency cards directly", emergencyJudge('refused'), onCards(() => b.client.from('family_emergency_cards').insert({ person_id: personA ?? randomUUID(), family_id: A.family, blood_group: 'O-' }))],
 
+    // Reminders on devices (034): only your own devices, and everything
+    // behind them is the server's. (push's `send` is open to anyone by design:
+    // it reads nothing from the request and returns only counts.)
+    ['anon', 'turn notifications on for a device', pushJudge('refused'), onPush(() => anon.client.rpc('save_push_subscription', { p_endpoint: `https://fcm.googleapis.com/fcm/send/qa-anon-${cfg.runId}`, p_p256dh: PROBE_P256DH, p_auth: PROBE_AUTH }))],
+    ['anon', "list anyone's notification devices", pushJudge('refused-or-empty'), onPush(() => anon.client.from('push_subscriptions').select('endpoint'))],
+    ['anon', 'get the notification key without signing in', pushFnJudge(http401), fn(anon, 'push', { action: 'key' })],
+    ['anon', 'send a test notification', pushFnJudge(http401), fn(anon, 'push', { action: 'test' })],
+    ['B', "list account A's notification devices", pushJudge('refused-or-empty', true), onDeviceA(() => b.client.from('push_subscriptions').select('endpoint').eq('endpoint', deviceEndpoint))],
+    ['B', "remove account A's notification device", pushJudge(judgeWrite("B removed a device of A's"), true), onDeviceA(async () => {
+      const { data, error } = await b.client.from('push_subscriptions').delete().eq('endpoint', deviceEndpoint).select('id');
+      return error ? { error } : data?.length ? { allowed: true, reverted: false } : {};
+    })],
+    ['B', 'write a notification device directly', pushJudge('refused'), onPush(() => b.client.from('push_subscriptions').insert({ user_id: A.user, endpoint: `https://fcm.googleapis.com/fcm/send/qa-direct-${cfg.runId}`, p256dh: PROBE_P256DH, auth: PROBE_AUTH }))],
+    ['B', "read the server's notification keys (server-only)", pushJudge('refused'), onPush(() => b.client.rpc('push_keys'))],
+    // Nulls: even were it open, this would change nothing.
+    ['B', "replace the server's notification keys (server-only)", pushJudge('refused'), onPush(() => b.client.rpc('push_setup', { p_vapid_public: 'x', p_vapid_private: 'x', p_subject: 'https://example.invalid', p_functions_url: null, p_anon_key: null }))],
+    ['B', "read every family's waiting notifications (server-only)", pushJudge('refused'), onPush(() => b.client.rpc('push_pending', { p_limit: 5 }))],
+    ['B', 'mark notifications sent and remove devices (server-only)', pushJudge('refused'), onPush(() => b.client.rpc('push_done', { p_notifications: [randomUUID()], p_gone: [randomUUID()], p_delivered: [] }))],
+    ['B', "make QA Vault A's reminders (server-only)", pushJudge('refused'), onPush(() => b.client.rpc('queue_family_expiry_reminders', { p_family_id: A.family }))],
+    ['B', 'run the reminder clock (server-only)', pushJudge('refused'), onPush(() => b.client.rpc('run_reminders'))],
+
     // Linking someone in the tree to an account (033): an admin's job, through
     // link-account. B's two attempts come near the end, below.
     ['anon', "link a person in A's tree to an account", linkFnJudge(http401), fn(anon, 'link-account', { family_id: A.family, person_id: randomUUID(), email: cfg.b.email })],
@@ -527,6 +607,13 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     results.add('access', 'control:saved-chat-intact', "Control — account A's saved chat survived every probe", intact ? 'pass' : 'fail',
       intact ? {} : { why: chatStill?.length ? 'its title was CHANGED' : 'it is GONE' });
     await a.client.from('saved_chats').delete().eq('id', chatA);
+  }
+
+  if (deviceA) {
+    const { data: deviceStill } = await a.client.from('push_subscriptions').select('id').eq('endpoint', deviceEndpoint);
+    results.add('access', 'control:push-intact', "Control — account A's notification device survived every probe", deviceStill?.length === 1 ? 'pass' : 'fail',
+      deviceStill?.length === 1 ? {} : { why: 'it is GONE' });
+    await a.client.from('push_subscriptions').delete().eq('endpoint', deviceEndpoint);
   }
 
   if (cardA) {

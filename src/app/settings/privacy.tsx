@@ -1,6 +1,6 @@
 // Settings › Privacy — who can see what, and where a document's text goes.
 // Every sentence here has to stay true of the code: check it when changing
-// sharing, search, OCR or Gmail import.
+// sharing, search, OCR, notifications or Gmail import.
 
 import { ScrollView } from 'react-native';
 import { router } from 'expo-router';
@@ -49,6 +49,15 @@ export default function PrivacyScreen() {
             So that you can search them, the text of your documents is read when you add them. Photos are read on
             your phone or in your browser. PDFs are read on FamilyVault's server, and a scanned PDF may be read by an
             outside text-reading (OCR) service.
+          </Body>
+        </Card>
+
+        <Card>
+          <CardTitle icon="bell">Notifications on your devices</CardTitle>
+          <Body>
+            If you turn them on, reminders reach your phone or computer through your browser's own notification
+            service (Google's, Apple's, Mozilla's or Microsoft's). They are locked so that service cannot read them,
+            and only the devices you turned on get them. Signing out on a device turns its notifications off.
           </Body>
         </Card>
 

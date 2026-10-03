@@ -860,8 +860,17 @@ export async function changePassword(newPassword: string): Promise<void> {
   if (error) throw error;
 }
 
-/** Ends every session this account has, on every device, this one included. */
+/**
+ * Ends every session this account has, on every device, this one included —
+ * and their notifications with them (034): a lost phone must not go on
+ * showing the family's reminders. Before 034 there are none to remove.
+ */
 export async function signOutEverywhere(): Promise<void> {
+  const { data } = await supabase.auth.getUser();
+  if (data.user) {
+    const { error: pushErr } = await supabase.from('push_subscriptions').delete().eq('user_id', data.user.id);
+    if (pushErr && !isMissingMigration(pushErr)) throw pushErr;
+  }
   const { error } = await supabase.auth.signOut({ scope: 'global' });
   if (error) throw error;
 }
