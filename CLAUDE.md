@@ -756,6 +756,11 @@ so storage policies live only in `019`.
   brother or sister, under that sibling's parents — so a sister added before
   Papa is never left in a branch of her own. Branch titles use the full name
   when the first word is only an initial ("K C Das Mohapatra", not "K").
+- **Who is on FamilyVault shows.** A person with an account (`user_id`) gets
+  a green phone badge on their avatar — in the tree, its lists, their page and
+  Emergency cards (`<Avatar onApp />`, drawn from 28px up) — and a key above
+  the tree says what it means. Everyone else is simply family: the tree is
+  never limited to accounts.
 - **One picture for everyone, always open.** Who sits where is computed from
   the whole family, never from the viewer. The screen draws every branch
   (one per pair of eldest ancestors: Papa's side, Maa's side), one below the

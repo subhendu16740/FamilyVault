@@ -123,7 +123,7 @@ export default function PersonScreen() {
         ) : (
           <>
             <Card style={styles.hero}>
-              <Avatar name={person.name} me={isMe} size={56} />
+              <Avatar name={person.name} me={isMe} size={56} onApp={!!person.userId} />
               <Text style={styles.name}>{person.name}</Text>
               {isMe && <Text style={styles.relation}>You</Text>}
               {!!relation && <Text style={styles.relation}>Your {relation.charAt(0).toLowerCase() + relation.slice(1)}</Text>}
@@ -133,7 +133,7 @@ export default function PersonScreen() {
               {!!person.userId && (
                 <View style={styles.accountPill}>
                   <Feather name="smartphone" size={12} color={color.primary} />
-                  <Text style={styles.accountText}>{isMe ? 'Your account' : 'Has a FamilyVault account'}</Text>
+                  <Text style={styles.accountText}>{isMe ? 'You are on FamilyVault' : 'On FamilyVault (has an account)'}</Text>
                 </View>
               )}
             </Card>

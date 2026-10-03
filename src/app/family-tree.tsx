@@ -9,8 +9,10 @@
 // Admins add and connect people; everyone sees the same tree. Every branch
 // is drawn, one below the other, in the same order for everyone — nothing
 // hides behind a tab — and the viewer's own card is highlighted wherever it
-// appears. Below the drawing the same people are listed plainly, for screen
-// readers and large text.
+// appears. The tree holds people with and without accounts; a green phone on
+// someone's picture says they are on FamilyVault, and a key above the tree
+// says so in words. Below the drawing the same people are listed plainly, for
+// screen readers and large text.
 
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet } from 'react-native';
@@ -27,7 +29,7 @@ import {
   buildGraph, buildForest, relationTo, relationLabel, type KinPerson, type FamilyBranch, type TreeUnit,
 } from '../../supabase/functions/_shared/kinship';
 import { ScreenHeader, HeaderButton } from '../components/screen-header';
-import { FamilyTreeView, Avatar } from '../components/family-tree-view';
+import { FamilyTreeView, Avatar, OnAppKey } from '../components/family-tree-view';
 import { badgeFromExpiries } from '../lib/family-people';
 import { PersonSheet, type PersonSheetState } from '../components/person-sheet';
 import { Card, CardTitle, Body, PrimaryButton, Status, screenStyles } from '../components/settings-ui';
@@ -70,6 +72,8 @@ export default function FamilyTreeScreen() {
 
   const labelFor = (id: string) => (graph && me ? relationLabel(relationTo(graph, me.id, id)) : null);
   const badgeFor = (id: string) => badgeFromExpiries(expiring, id);
+  const onApp = useMemo(() => new Set((tree?.people ?? []).filter((p) => !!p.userId).map((p) => p.id)), [tree]);
+  const onAppFor = (id: string) => onApp.has(id);
   const open = (p: KinPerson) => router.push({ pathname: '/person/[id]', params: { id: p.id } } as any);
 
   const everyone = useMemo(() => {
@@ -107,6 +111,8 @@ export default function FamilyTreeScreen() {
               </Card>
             )}
 
+            {forest && forest.branches.length > 0 && onApp.size > 0 && <OnAppKey />}
+
             {forest?.branches.map((b) => (
               <BranchCanvas
                 key={b.key}
@@ -115,6 +121,7 @@ export default function FamilyTreeScreen() {
                 meId={me?.id ?? null}
                 labelFor={labelFor}
                 badgeFor={badgeFor}
+                onAppFor={onAppFor}
                 onPressPerson={open}
               />
             ))}
@@ -126,7 +133,7 @@ export default function FamilyTreeScreen() {
                   {forest.loose.map((p, i) => (
                     <View key={p.id} style={[styles.row, i > 0 && styles.rowBorder]}>
                       <TouchableOpacity style={styles.rowMain} onPress={() => open(p)} accessibilityRole="button">
-                        <Avatar name={p.name} me={p.id === me?.id} size={size.iconBox} />
+                        <Avatar name={p.name} me={p.id === me?.id} size={size.iconBox} onApp={onApp.has(p.id)} />
                         <View style={styles.rowText}>
                           <Text style={styles.rowName} numberOfLines={1}>{p.id === me?.id ? `${p.name} (you)` : p.name}</Text>
                           <Text style={styles.rowSub}>Not connected to anyone yet</Text>
@@ -162,11 +169,11 @@ export default function FamilyTreeScreen() {
                         onPress={() => open(p)}
                         accessibilityRole="button"
                       >
-                        <Avatar name={p.name} me={p.id === me?.id} size={size.iconBox} />
+                        <Avatar name={p.name} me={p.id === me?.id} size={size.iconBox} onApp={!!p.userId} />
                         <View style={styles.rowText}>
                           <Text style={styles.rowName} numberOfLines={1}>{p.name}</Text>
                           <Text style={styles.rowSub} numberOfLines={1}>
-                            {[label, p.userId && p.id !== me?.id ? 'has an account' : null].filter(Boolean).join(' · ') || 'Family'}
+                            {[label, p.userId && p.id !== me?.id ? 'On FamilyVault' : null].filter(Boolean).join(' · ') || 'Family'}
                           </Text>
                         </View>
                         {badge && (
@@ -206,12 +213,13 @@ const branchHas = (branch: FamilyBranch, id: string) => branch.roots.some(functi
  * One branch's drawing. It is usually wider than a phone, so it opens
  * scrolled to the viewer's own card, or to its middle when they are not in it.
  */
-function BranchCanvas({ branch, title, meId, labelFor, badgeFor, onPressPerson }: {
+function BranchCanvas({ branch, title, meId, labelFor, badgeFor, onAppFor, onPressPerson }: {
   branch: FamilyBranch;
   title: string | null;
   meId: string | null;
   labelFor: (id: string) => string | null;
   badgeFor: (id: string) => ReturnType<typeof badgeFromExpiries>;
+  onAppFor: (id: string) => boolean;
   onPressPerson: (p: KinPerson) => void;
 }) {
   const canvasRef = useRef<ScrollView>(null);
@@ -241,6 +249,7 @@ function BranchCanvas({ branch, title, meId, labelFor, badgeFor, onPressPerson }
               meId={meId}
               labelFor={labelFor}
               badgeFor={badgeFor}
+              onAppFor={onAppFor}
               onPressPerson={onPressPerson}
               measureIn={drawingRef}
               onMeLayout={(cx) => scrollOnce(space.md + cx - viewport.current / 2)}
