@@ -158,6 +158,20 @@ const pushFnJudge = (check) => ({ status, data }) => {
   if (status === 503 && data?.status === 'needs_migration') return ['skipped', 'migration 034 is not applied to DEV yet'];
   return check(status, data);
 };
+// Share links ship with migration 036 and the share function: skipped until
+// both are on DEV.
+const shareFnJudge = (check) => ({ status, data }) => {
+  if (status === 404 && !data?.status) return ['skipped', 'share is not deployed to DEV yet'];
+  if (status === 503 && data?.status === 'needs_migration') return ['skipped', 'migration 036 is not applied to DEV yet'];
+  return check(status, data);
+};
+const shareJudge = (expect, needsLink) => (outcome) => {
+  if (outcome.missing || missingTable(outcome.error) || String(outcome.error?.code) === 'PGRST202') {
+    return ['skipped', 'migration 036 is not applied to DEV yet'];
+  }
+  if (needsLink && outcome.noTarget) return ['skipped', "no link of account A's to aim at (see its control)"];
+  return typeof expect === 'function' ? expect(outcome) : judge(expect, outcome);
+};
 // A well-formed device key and secret: RFC 8291's own example.
 const PROBE_P256DH = 'BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4';
 const PROBE_AUTH = 'BTBZMqHH6r4Tts7J_aSIgg';
@@ -375,6 +389,40 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     results.add('access', 'control:push-key', 'Control — account A gets the key to turn notifications on with', state, { why });
   }
   const onPush = (run) => async () => (pushMissing ? { missing: true } : run());
+
+  // ── A share link of account A's for the link probes to aim at (036): made
+  // for the passport, opened by a logged-out visitor through `share`, and
+  // turned off after the probes — when it must stop opening.
+  let shareA = null;
+  let sharesMissing = false;
+  {
+    const { data, error } = await a.client.rpc('create_document_share', {
+      p_family_id: A.family, p_document_id: passport.id, p_days: 1, p_note: `QA probe ${cfg.runId}`,
+    });
+    if (missingTable(error) || String(error?.code) === 'PGRST202') {
+      sharesMissing = true;
+      results.add('access', 'control:share-link', 'Control — a link account A made opens its document for a logged-out visitor', 'skipped', { why: 'migration 036 is not applied to DEV yet' });
+    } else if (error) {
+      results.add('access', 'control:share-link', 'Control — a link account A made opens its document for a logged-out visitor', 'fail', { why: error.message });
+    } else {
+      shareA = { id: data.id, token: data.token };
+      const opened = await invokeFunction(cfg, anon, 'share', { token: data.token }, { timeoutMs: 30_000 });
+      const [state, why] = shareFnJudge((status, body) => (status === 200 && body?.file_name === passport.file_name && /^https:\/\//.test(body?.url ?? '')
+        ? ['pass', `opened "${body.file_name}" with a five-minute address`]
+        : ['fail', `HTTP ${status}: ${JSON.stringify(body).slice(0, 160)}`]))({ status: opened.status, data: opened.data });
+      results.add('access', 'control:share-link', 'Control — a link account A made opens its document for a logged-out visitor', state, { why });
+      // Not even the family reads a link's secret, hashed or not.
+      const { error: hashErr } = await a.client.from('document_shares').select('token_hash').eq('id', data.id);
+      results.add('access', 'control:share-hash', "Control — not even the family can read a link's hashed secret", refusedByAuth(hashErr) ? 'pass' : 'fail',
+        { why: hashErr ? short(hashErr) : 'the hash was READABLE' });
+    }
+  }
+  const onShares = (run) => async () => (sharesMissing ? { missing: true } : run());
+  const onShareA = (run) => async () => {
+    if (sharesMissing) return { missing: true };
+    if (!shareA) return { noTarget: true };
+    return run();
+  };
   const onDeviceA = (run) => async () => {
     if (pushMissing) return { missing: true };
     if (!deviceA) return { noTarget: true };
@@ -442,6 +490,20 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
       const { data: now } = await a.client.from('users').select('display_name').eq('id', A.user).single();
       if (now?.display_name !== probe) return {};
       const { error: undo } = await a.client.from('users').update({ display_name: before?.display_name }).eq('id', A.user);
+      return { allowed: true, reverted: !undo };
+    }],
+    // Birthday reminders (035): your own switch only. Before 035 the column is
+    // not there, which is a skip.
+    ['B', "switch off account A's birthday reminders", (outcome) => (outcome.missing
+      ? ['skipped', 'migration 035 is not applied to DEV yet']
+      : judgeWrite("users_update_own is what keeps 035's birthday switch to the person's own row")(outcome)), async () => {
+      const { data: before, error: readErr } = await a.client.from('users').select('birthday_reminders').eq('id', A.user).single();
+      if (readErr && /birthday_reminders/.test(String(readErr.message))) return { missing: true };
+      const { error } = await b.client.from('users').update({ birthday_reminders: !before?.birthday_reminders }).eq('id', A.user);
+      if (error) return { error };
+      const { data: now } = await a.client.from('users').select('birthday_reminders').eq('id', A.user).single();
+      if (now?.birthday_reminders === before?.birthday_reminders) return {};
+      const { error: undo } = await a.client.from('users').update({ birthday_reminders: before?.birthday_reminders }).eq('id', A.user);
       return { allowed: true, reverted: !undo };
     }],
     ['B', 'create a user row', judgeWrite('anyone can insert into public.users, and a row with a fresh id and someone else\'s email blocks their sign-up'),
@@ -538,6 +600,21 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     ['B', 'mark notifications sent and remove devices (server-only)', pushJudge('refused'), onPush(() => b.client.rpc('push_done', { p_notifications: [randomUUID()], p_gone: [randomUUID()], p_delivered: [] }))],
     ['B', "make QA Vault A's reminders (server-only)", pushJudge('refused'), onPush(() => b.client.rpc('queue_family_expiry_reminders', { p_family_id: A.family }))],
     ['B', 'run the reminder clock (server-only)', pushJudge('refused'), onPush(() => b.client.rpc('run_reminders'))],
+    ['B', "make every family's birthday reminders (server-only)", (outcome) => (String(outcome.error?.code) === 'PGRST202'
+      ? ['skipped', 'migration 035 is not applied to DEV yet']
+      : judge('refused', outcome)), rpc(b, 'queue_birthday_reminders', {})],
+
+    // Share links (036): only the family sees its links, only a member who may
+    // share makes one, and only the server opens one, by its secret.
+    ['anon', "read QA Vault A's share links", shareJudge('refused-or-empty'), onShares(() => anon.client.from('document_shares').select('id').eq('family_id', A.family))],
+    ['anon', 'make a share link', shareJudge('refused'), onShares(() => anon.client.rpc('create_document_share', { p_family_id: A.family, p_document_id: passport.id, p_days: 1 }))],
+    ['anon', 'open a link that was never made', shareFnJudge((status, data) => (status === 404 && data?.status === 'gone'
+      ? ['pass', 'HTTP 404: gone']
+      : ['fail', `HTTP ${status}: ${JSON.stringify(data).slice(0, 160)}`])), fn(anon, 'share', { token: 'f'.repeat(64) })],
+    ['B', "read QA Vault A's share links", shareJudge('refused-or-empty', true), onShareA(() => b.client.from('document_shares').select('id, note').eq('id', shareA.id))],
+    ['B', "share A's passport by link", shareJudge('refused'), onShares(() => b.client.rpc('create_document_share', { p_family_id: A.family, p_document_id: passport.id, p_days: 30 }))],
+    ['B', "turn off account A's link", shareJudge('refused', true), onShareA(() => b.client.rpc('revoke_document_share', { p_share_id: shareA.id }))],
+    ['B', 'open a link through the database (server-only)', shareJudge('refused'), onShares(() => b.client.rpc('open_document_share', { p_token_hash: '0'.repeat(64) }))],
 
     // Linking someone in the tree to an account (033): an admin's job, through
     // link-account. B's two attempts come near the end, below.
@@ -607,6 +684,15 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     results.add('access', 'control:saved-chat-intact', "Control — account A's saved chat survived every probe", intact ? 'pass' : 'fail',
       intact ? {} : { why: chatStill?.length ? 'its title was CHANGED' : 'it is GONE' });
     await a.client.from('saved_chats').delete().eq('id', chatA);
+  }
+
+  if (shareA) {
+    const { error: offErr } = await a.client.rpc('revoke_document_share', { p_share_id: shareA.id });
+    const after = await invokeFunction(cfg, anon, 'share', { token: shareA.token }, { timeoutMs: 30_000 });
+    const [state, why] = shareFnJudge((status, data) => (!offErr && status === 404 && data?.status === 'gone'
+      ? ['pass', 'HTTP 404 once turned off']
+      : ['fail', offErr ? `could not turn it off: ${offErr.message}` : `HTTP ${status}: the link STILL opens`]))({ status: after.status, data: after.data });
+    results.add('access', 'control:share-off', 'Control — a link stops opening the moment it is turned off', state, { why });
   }
 
   if (deviceA) {

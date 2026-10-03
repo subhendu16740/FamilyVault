@@ -27,7 +27,11 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'Who can see my documents?',
-    a: 'Only the people in your family. An admin adds each person by the email they sign in with; nobody can join by themselves. Settings › Privacy has more.',
+    a: 'Only the people in your family — and anyone you send a share link to, for that one document, until the link stops working. An admin adds each person by the email they sign in with; nobody can join by themselves. Settings › Privacy has more.',
+  },
+  {
+    q: 'How do I share a document with someone outside the family?',
+    a: 'Open the document, choose Share, then Make a link, and send the link by message or email. Anyone with it can open that one document, without an account, for 1, 7 or 30 days. The same screen shows every working link and how often it was opened, and turns a link off at once. A family admin, whoever added the document, or the person it belongs to can share it. For now, Share is in FamilyVault on the web.',
   },
   {
     q: 'How do I add someone to my family?',
@@ -51,7 +55,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'How do reminders work?',
-    a: 'When a document with an expiry date is added, FamilyVault reminds everyone in the family 90, 30 and 7 days before it expires, and on the day — under the bell on Home. To get them as notifications on your phone or computer, even when FamilyVault is closed, open Settings › Notifications and turn them on for that device. On iPhone, add FamilyVault to your Home Screen first. It is free.',
+    a: 'When a document with an expiry date is added, FamilyVault reminds everyone in the family 90, 30 and 7 days before it expires, and on the day — under the bell on Home. To get them as notifications on your phone or computer, even when FamilyVault is closed, open Settings › Notifications and turn them on for that device. On iPhone, add FamilyVault to your Home Screen first. Birthdays in your family tree are reminded of on the morning of the day; switch them off in Settings › Notifications if you would rather not. It is free.',
   },
   {
     q: 'What does ★ Family Plus mean?',

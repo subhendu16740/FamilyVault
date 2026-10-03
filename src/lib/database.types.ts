@@ -100,6 +100,73 @@ export type Database = {
           },
         ]
       }
+      document_shares: {
+        Row: {
+          created_at: string
+          created_by: string
+          document_id: string
+          expires_at: string
+          family_id: string
+          id: string
+          last_opened_at: string | null
+          note: string | null
+          open_count: number
+          revoked_at: string | null
+          revoked_by: string | null
+          token_hash: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          document_id: string
+          expires_at: string
+          family_id: string
+          id?: string
+          last_opened_at?: string | null
+          note?: string | null
+          open_count?: number
+          revoked_at?: string | null
+          revoked_by?: string | null
+          token_hash: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          document_id?: string
+          expires_at?: string
+          family_id?: string
+          id?: string
+          last_opened_at?: string | null
+          note?: string | null
+          open_count?: number
+          revoked_at?: string | null
+          revoked_by?: string | null
+          token_hash?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "document_shares_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "document_shares_family_id_fkey"
+            columns: ["family_id"]
+            isOneToOne: false
+            referencedRelation: "families"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "document_shares_revoked_by_fkey"
+            columns: ["revoked_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       families: {
         Row: {
           created_at: string | null
@@ -844,6 +911,7 @@ export type Database = {
           auth_provider: string
           avatar_url: string | null
           biometric_enabled: boolean | null
+          birthday_reminders: boolean
           created_at: string | null
           display_name: string
           document_languages: string[]
@@ -861,6 +929,7 @@ export type Database = {
           auth_provider?: string
           avatar_url?: string | null
           biometric_enabled?: boolean | null
+          birthday_reminders?: boolean
           created_at?: string | null
           display_name: string
           document_languages?: string[]
@@ -878,6 +947,7 @@ export type Database = {
           auth_provider?: string
           avatar_url?: string | null
           biometric_enabled?: boolean | null
+          birthday_reminders?: boolean
           created_at?: string | null
           display_name?: string
           document_languages?: string[]
@@ -953,6 +1023,15 @@ export type Database = {
           p_ocr_text: string
         }
         Returns: undefined
+      }
+      create_document_share: {
+        Args: {
+          p_days: number
+          p_document_id: string
+          p_family_id: string
+          p_note?: string
+        }
+        Returns: Json
       }
       create_expiry_alert: {
         Args: {
@@ -1112,6 +1191,16 @@ export type Database = {
       }
       purge_family: { Args: { p_family_id: string }; Returns: string }
       rag_chunk_total: { Args: { p_schema: string }; Returns: number }
+      open_document_share: {
+        Args: { p_token_hash: string }
+        Returns: {
+          expires_at: string
+          file_name: string
+          file_type: string
+          shared_by: string
+          storage_path: string
+        }[]
+      }
       push_claim_send: { Args: never; Returns: boolean }
       push_done: {
         Args: {
@@ -1159,6 +1248,7 @@ export type Database = {
           public_key: string
         }[]
       }
+      queue_birthday_reminders: { Args: { p_today?: string }; Returns: number }
       queue_expiry_reminders: { Args: { p_today?: string }; Returns: number }
       queue_family_expiry_reminders: {
         Args: { p_family_id: string; p_today?: string }
@@ -1250,6 +1340,7 @@ export type Database = {
         Args: { p_person_id: string }
         Returns: undefined
       }
+      revoke_document_share: { Args: { p_share_id: string }; Returns: undefined }
       run_reminders: { Args: never; Returns: undefined }
       save_emergency_card: {
         Args: { p_card: Json; p_person_id: string }

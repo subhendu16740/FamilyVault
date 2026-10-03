@@ -756,6 +756,135 @@ export async function getDocumentSignedUrl(
   return data.signedUrl;
 }
 
+// ─── Share links (036) ───────────────────────────────────────────
+//
+// One document, by a link that lasts 1, 7 or 30 days, for someone outside
+// the family. The link's secret is returned once, when it is made, and is
+// never stored: only its hash. The family sees every live link on the
+// document's page; whoever made it, or an admin, can turn it off.
+
+export type ShareDays = 1 | 7 | 30;
+
+export interface ShareLink {
+  id: string;
+  note: string | null;
+  expiresAt: string;
+  createdBy: string;
+  openCount: number;
+  lastOpenedAt: string | null;
+  createdAt: string;
+}
+
+export type MakeShareOutcome =
+  | { status: 'made'; link: ShareLink; token: string }
+  /** Not theirs to share, or the document is gone, in the database's own words. */
+  | { status: 'refused'; message: string }
+  /** Migration 036 is not applied here. */
+  | { status: 'unavailable' };
+
+/** The address a link opens: the web app's /s page, the secret after '#', which browsers never send to a server. */
+export function shareLinkUrl(origin: string, token: string): string {
+  return `${origin.replace(/\/+$/, '')}/s#${token}`;
+}
+
+export async function createShareLink(
+  familyId: string,
+  documentId: string,
+  days: ShareDays,
+  note?: string,
+): Promise<MakeShareOutcome> {
+  const { data, error } = await supabase.rpc('create_document_share', {
+    p_family_id: familyId,
+    p_document_id: documentId,
+    p_days: days,
+    p_note: note?.trim() || undefined,
+  });
+  if (error) {
+    if (isMissingMigration(error)) return { status: 'unavailable' };
+    if (error.code === '42501' || error.code === '22023') return { status: 'refused', message: error.message };
+    throw error;
+  }
+  const made = data as { id: string; token: string; expires_at: string };
+  const { data: auth } = await supabase.auth.getSession();
+  return {
+    status: 'made',
+    token: made.token,
+    link: {
+      id: made.id,
+      note: note?.trim() || null,
+      expiresAt: made.expires_at,
+      createdBy: auth.session?.user.id ?? '',
+      openCount: 0,
+      lastOpenedAt: null,
+      createdAt: new Date().toISOString(),
+    },
+  };
+}
+
+/** The document's links still working, newest first; 'unavailable' before 036. */
+export async function fetchShareLinks(familyId: string, documentId: string): Promise<ShareLink[] | 'unavailable'> {
+  // Named columns: clients may not read the secret's hash, so '*' is refused.
+  const { data, error } = await supabase
+    .from('document_shares')
+    .select('id, note, expires_at, created_by, open_count, last_opened_at, created_at')
+    .eq('family_id', familyId)
+    .eq('document_id', documentId)
+    .is('revoked_at', null)
+    .gt('expires_at', new Date().toISOString())
+    .order('created_at', { ascending: false });
+  if (error) {
+    if (isMissingMigration(error)) return 'unavailable';
+    throw error;
+  }
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    note: row.note,
+    expiresAt: row.expires_at,
+    createdBy: row.created_by,
+    openCount: row.open_count,
+    lastOpenedAt: row.last_opened_at,
+    createdAt: row.created_at,
+  }));
+}
+
+export async function revokeShareLink(shareId: string): Promise<void> {
+  const { error } = await supabase.rpc('revoke_document_share', { p_share_id: shareId });
+  if (error) throw error;
+}
+
+export interface SharedDocument {
+  fileName: string;
+  fileType: string;
+  expiresAt: string;
+  /** First name of whoever shared it. */
+  sharedBy: string | null;
+  /** Both work for five minutes; opening the page again asks again. */
+  url: string;
+  downloadUrl: string;
+}
+
+/** The public page's call: no account, only the link's secret. */
+export async function openSharedDocument(token: string): Promise<SharedDocument | 'gone' | 'unavailable'> {
+  if (!/^[0-9a-f]{64}$/.test(token)) return 'gone';
+  const { data, error } = await supabase.functions.invoke('share', { body: { token } });
+  if (error) {
+    const httpStatus = (error as { context?: Response })?.context?.status;
+    const body = (await readFunctionError(error)) as { status?: string } | null;
+    if (body?.status === 'gone') return 'gone';
+    // 503: 036 not applied; a bare 404: the function is not deployed here yet.
+    if (body?.status === 'needs_migration' || (httpStatus === 404 && !body?.status)) return 'unavailable';
+    throw new Error('Could not open this link. Please try again.');
+  }
+  return {
+    fileName: data.file_name,
+    fileType: data.file_type,
+    expiresAt: data.expires_at,
+    sharedBy: data.shared_by ?? null,
+    url: data.url,
+    downloadUrl: data.download_url,
+  };
+}
+
 // ─── Notifications ───────────────────────────────────────────────
 
 export async function fetchUnreadNotificationCount(userId: string): Promise<number> {

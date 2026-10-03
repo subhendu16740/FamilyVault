@@ -142,6 +142,20 @@ export async function runMemberChecks(cfg, { a, b, vaultA }, results) {
     check('viewer-cannot-rename', 'A viewer cannot rename the family', fam?.name === vaultA.name, `name is "${fam?.name}"`);
     if (fam && fam.name !== vaultA.name) await a.client.from('families').update({ name: vaultA.name }).eq('id', vaultA.id);
 
+    // Share links (036): a viewer may share only what they added or what is
+    // theirs, never an admin's document.
+    if (docs?.length) {
+      const { data: made, error: shareErr } = await b.client.rpc('create_document_share', { p_family_id: vaultA.id, p_document_id: docs[0].id, p_days: 1 });
+      if (shareErr && String(shareErr.code) === 'PGRST202') {
+        results.add('members', 'viewer-cannot-share', "A viewer cannot share someone else's document by link", 'skipped', { why: 'migration 036 is not applied to DEV yet' });
+      } else {
+        check('viewer-cannot-share', "A viewer cannot share someone else's document by link", refusedByAuth(shareErr),
+          shareErr ? short(shareErr) : 'a link was MADE');
+        // A link that should never have been made does not stay open.
+        if (!shareErr && made?.id) await a.client.rpc('revoke_document_share', { p_share_id: made.id });
+      }
+    }
+
     // ── The family tree (031): B is a person in it now.
     const { data: person, error: personErr } = await a.client.from('family_people')
       .select('id, user_id, display_name').eq('id', mine.id).maybeSingle();

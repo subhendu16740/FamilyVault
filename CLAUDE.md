@@ -48,7 +48,10 @@ Four things will mislead you if you assume otherwise:
    tree is read by members and written only through its four functions;
    032's emergency cards likewise, through `save_emergency_card`; 034's
    notification devices are their owner's, written only through
-   `save_push_subscription`).
+   `save_push_subscription`; 035 adds your own `birthday_reminders`; 036's
+   share links are read by the family, never their secret's hash, and made
+   or turned off only through `create_document_share` and
+   `revoke_document_share`).
    **A new writable
    column needs its own `GRANT` in a migration.** Membership has no
    invitations and no requests: only an admin adds a person, through the
@@ -97,12 +100,13 @@ errors**) and `npm run build` are the local gates.
 at 03:10 IST, and on pushes that change `qa/`. It uploads synthetic SPECIMEN
 documents to its own vault (QA Vault A, account A), asks questions about
 them, and checks the answers on facts and sources, never wording. It also
-runs the 023 sweep and the 024 DEV/PROD fingerprint, 97 access probes (a
+runs the 023 sweep and the 024 DEV/PROD fingerprint, 106 access probes (a
 logged-out visitor and a second account must be refused everywhere, Gmail
-import's endpoints, the family tree, emergency cards, linking and
-notification devices included),
+import's endpoints, the family tree, emergency cards, linking,
+notification devices and share links included; a share link must open
+without an account, and stop once it is turned off),
 the membership model (the second account, added as a viewer, must not be able
-to escalate, becomes a person in the family tree, writes only its own
+to escalate or share an admin's document, becomes a person in the family tree, writes only its own
 emergency card, must be able to leave, and is linked to an entry in the tree
 both ways: merged while a member, brought back as it after leaving),
 a question asked by relation ("my mother's passport"), and the full upload → ingest →
@@ -229,6 +233,7 @@ npx supabase@latest functions deploy add-member       --project-ref <ref>
 npx supabase@latest functions deploy link-account     --project-ref <ref>
 npx supabase@latest functions deploy delete-account   --project-ref <ref>
 npx supabase@latest functions deploy push             --project-ref <ref>   # reminders on devices; makes its own keys
+npx supabase@latest functions deploy share            --project-ref <ref>   # opens a share link, for anyone who has it
 npx supabase@latest functions deploy reembed-index    --project-ref <ref>
 npx supabase@latest functions deploy gmail-connect    --project-ref <ref>   # also gmail-scan, gmail-import
 npx supabase@latest functions deploy gmail-callback   --project-ref <ref> --no-verify-jwt   # Google's redirect target
@@ -396,13 +401,14 @@ src/
       profile.tsx  security.tsx  notifications.tsx  privacy.tsx   # notifications: the switch, and this device (034)
       storage.tsx  help.tsx  feedback.tsx  about.tsx
       delete-account.tsx     # Security › Delete account: shows what goes, asks for DELETE (029)
-    document/[id].tsx        # document viewer
+    document/[id].tsx        # document viewer; Share opens the share sheet (036, web only)
     gmail-import.tsx         # connect Gmail, review what it found, import (web only, ★ Family Plus)
+    s.tsx                    # what a share link opens: one document, for anyone with the link, no account (036)
     +html.tsx                # custom HTML shell, web only
     (tabs)/
       _layout.tsx            # custom tab bar (CustomTabBar)
       home.tsx  search.tsx  upload.tsx
-  components/                # shared UI, incl. ProfileDrawer
+  components/                # shared UI, incl. ProfileDrawer and ShareSheet (036)
   constants/design.ts        # the one type/size/spacing scale every screen uses
   constants/theme.ts         # create-expo-app scaffold, largely unused
   hooks/                     # use-color-scheme, use-theme
@@ -435,7 +441,7 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `auth.tsx` | `AuthProvider`: session, signIn, signUp, signInWithGoogle, signOut |
 | `family-context.tsx` | `FamilyProvider`: currentFamily, members, membership, needsFamily |
 | `drawer-context.tsx` | Profile drawer open/close state |
-| `api.ts` | **All** Supabase queries — documents, search, upload, RAG, notifications, adding and leaving families, Gmail import, saved chats, deleting your account, and the Settings screens (profile, password, storage use, expiry dates, feedback) |
+| `api.ts` | **All** Supabase queries — documents, search, upload, RAG, notifications, adding and leaving families, Gmail import, saved chats, share links, deleting your account, and the Settings screens (profile, password, storage use, expiry dates, feedback) |
 | `dates.ts` | `parseDocumentDate()`: expiry dates exactly as ingest stores them (DD/MM/YYYY and kin, YYYY-MM-DD, "19 October 2026") |
 | `emergency.ts` | The emergency card's shape, blood groups (`bloodGroupLabel()`: "A−", "Bombay (hh)"), `telHref()`, and `cardProblem()` — the same checks and messages as `save_emergency_card()`, so the form can say what is wrong before saving |
 | `family-people.ts` | Whose a document can be: everyone in the tree, you first (`useDocumentOwners()`, members only before 031), and a person's expiry badge (`badgeFromExpiries()`) |
@@ -450,7 +456,7 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `speech-text.ts` | `toSpeech()`: strips markdown and spells out ID numbers before they are read aloud |
 | `voice-languages.ts` | The language picker list and the few phrases the app itself says, per language |
 | `storage.ts` | Key-value cache: localStorage on web, AsyncStorage on native |
-| `database.types.ts` | Generated Supabase types, current to 034 (030 changed nothing in them). Regenerate after every migration and re-append the hand-written block at the bottom (see the typecheck note) |
+| `database.types.ts` | Generated Supabase types, current to 036 (030 changed nothing in them). Regenerate after every migration and re-append the hand-written block at the bottom (see the typecheck note) |
 
 ---
 
@@ -514,7 +520,8 @@ Supabase, cloud-hosted. Three layers:
 - **Layer 1 (common)** — `public` schema: users, families, family_members,
   invitations, document_categories, notifications, audit_logs, feedback,
   saved_chats, family_people, family_links, family_emergency_cards,
-  push_subscriptions, reminders_sent, push_config. RLS enabled.
+  push_subscriptions, reminders_sent, push_config, document_shares. RLS
+  enabled.
 - **Layer 2 (private)** — one isolated schema per family (`family_<short_uuid>`)
   holding documents, document_metadata, document_chunks, expiry_alerts,
   family_relationships. Created by the `public.create_family()` PG function.
@@ -610,6 +617,8 @@ so storage policies live only in `019`.
   once it is.
 - **Notifications** is `users.notifications_enabled`: off hides the bell's
   count and the list, and (034) sends nothing to that person's devices.
+  `users.birthday_reminders` (035) is the Birthdays switch beside it, read by
+  the server when it makes the day's reminders.
   Reminders are still written for every member, so switching back on shows
   them. Before 027 it is kept on the device (`preferences.tsx`'s fallback).
 - **Feedback** goes to `public.feedback`: INSERT on four columns for
@@ -896,10 +905,52 @@ so storage policies live only in `019`.
   was down is tried again, within the day.
 - **Every notification goes to devices, not only reminders** — being added
   to a family too. India time only: a family abroad hears at 9 in India.
-- **Not built yet:** birthdays from the family tree — the tree needs a way
-  to say someone has passed away first, or it would wish a late grandparent
-  happy birthday; email (needs a paid domain); notifications in the phone
+- **Birthdays (035)** ride the same clock: `queue_birthday_reminders()` tells
+  every member on the morning of a birthday in the tree ("Today is Kamala
+  Verma's 78th birthday"), once a year (`reminders_sent`), never the person
+  themselves, 29 February on the 28th in other years, nobody over 110. Each
+  person switches it off for themselves in Settings › Notifications
+  (`users.birthday_reminders`, on by default, its own column grant). The tree
+  has no "passed away" yet: for someone who has, an admin removes their date
+  of birth — the switch's text says so.
+- **Not built yet:** email (needs a paid domain); notifications in the phone
   app.
+
+### Share links — one document, for someone outside the family (036)
+
+- **For a tax accountant, a visa agent, an insurance agent**: someone who
+  needs one document, once, and has no account. The document page's Share
+  (web only) opens `share-sheet.tsx`: who it is for (optional), 1, 7 or 30
+  days, Make a link. The link is shown once, with Copy link and the
+  browser's own Send it…; under it the family sees every working link for
+  that document, who made it and how often it was opened. Whoever made a
+  link, or an admin, turns it off. Before 036 Share sent the file's raw
+  storage address, which died after an hour without saying so, could not be
+  turned off and left no trace.
+- **The secret is after `#`** (`/s#<64 hex characters>`: two v4 UUIDs, 244
+  random bits). A browser never sends that part of an address to a server,
+  so no web server's log holds it. `document_shares` keeps only its SHA-256,
+  and clients cannot read even that — their column grant leaves
+  `token_hash` out. Nothing can show a link again, so the sheet says it is
+  shown once.
+- **Who may share**: an admin, whoever added the document, or the person it
+  belongs to, through `create_document_share()` (the caller from
+  `auth.uid()`), which also checks the document is the family's own and not
+  deleted. When the document belongs to someone with an account who did not
+  make the link, they get a `share` notification: who, until when, for whom.
+  Making and turning off both write `audit_logs`.
+- **`/s` is public**: `src/app/s.tsx`, which the AuthGate leaves alone,
+  signed in or not. It calls the `share` function with the public key; the
+  function hashes the secret and asks `open_document_share()` — service role
+  only, since it hands out a storage path — which returns nothing once the
+  link has expired, been turned off or lost its document, or its maker has
+  left the family. Each open is counted and gets signed addresses that last
+  five minutes, so a forwarded download address dies quickly while the link
+  keeps working until its date.
+- **Links go with the family, and with the account that made them**
+  (cascades). A maker who only leaves keeps the row, but it no longer opens.
+- **Not built yet:** links from the phone app (a link opens the web app's
+  page, and only the web app knows its own address); a password on a link.
 
 ## Edge Functions
 
@@ -970,6 +1021,13 @@ so storage policies live only in `019`.
   `key` and `test` for a signed-in person, `send` for the hourly clock (open
   by design: it reads nothing from the request and returns only counts).
   503 `needs_migration` where 034 is not applied.
+- **`share`** — opens a share link for someone with no account (036; see
+  [Share links](#share-links--one-document-for-someone-outside-the-family-036)):
+  the link's secret in, its SHA-256 looked up by `open_document_share()`,
+  two five-minute signed addresses out (view and download). 404 `gone` for
+  a link that expired, was turned off, lost its document or its maker — or
+  never existed, so the answer tells a guesser nothing; 503
+  `needs_migration` where 036 is not applied.
 - **`delete-account`** — a person deletes their own account: `preview`
   lists what would go, `delete` with `confirm: 'DELETE'` does it; see
   [Deleting your account](#deleting-your-account--at-once-nothing-kept-029).

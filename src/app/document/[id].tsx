@@ -17,10 +17,13 @@ import {
 import { supabase } from '../../lib/supabase';
 import type { FamilyDocumentDetailRow } from '../../lib/database.types';
 import { ScreenHeader } from '../../components/screen-header';
+import { ShareSheet } from '../../components/share-sheet';
 import { color, radius, shadow, size, space, type } from '../../constants/design';
 
+// Share makes a link that expires (036) for the web app's /s page, which
+// only the web app knows the address of: not offered in the phone app yet.
 const actions = [
-  { icon: 'share-2', label: 'Share', bg: '#EFF6FF', color: '#2563EB' },
+  ...(Platform.OS === 'web' ? [{ icon: 'share-2', label: 'Share', bg: '#EFF6FF', color: '#2563EB' }] as const : []),
   { icon: 'download', label: 'Download', bg: '#F0FDF4', color: '#16A34A' },
   { icon: 'edit-3', label: 'Edit', bg: '#FFFBEB', color: '#D97706' },
   { icon: 'trash-2', label: 'Delete', bg: '#FEF2F2', color: '#DC2626' },
@@ -54,6 +57,7 @@ export default function DocumentViewerScreen() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [shareVisible, setShareVisible] = useState(false);
 
   // Edit modal state
   const [editVisible, setEditVisible] = useState(false);
@@ -84,31 +88,10 @@ export default function DocumentViewerScreen() {
 
   // ─── Action Handlers ───────────────────────────────────────────
 
-  const handleShare = useCallback(async () => {
-    if (!previewUrl || !doc) return;
-    if (Platform.OS === 'web') {
-      if (navigator.share) {
-        try {
-          await navigator.share({ title: doc.file_name, url: previewUrl });
-        } catch { /* user cancelled */ }
-      } else {
-        await navigator.clipboard.writeText(previewUrl);
-        Alert.alert('Link copied', 'Document link copied to clipboard.');
-      }
-    } else {
-      // On native, open share sheet via expo-sharing (falls back to web browser)
-      try {
-        const Sharing = await import('expo-sharing');
-        if (await Sharing.isAvailableAsync()) {
-          await Sharing.shareAsync(previewUrl);
-        } else {
-          Alert.alert('Sharing unavailable', 'Sharing is not supported on this device.');
-        }
-      } catch {
-        Alert.alert('Error', 'Could not share this document.');
-      }
-    }
-  }, [previewUrl, doc]);
+  // A link that expires, made and turned off in the sheet (036). Before it,
+  // Share sent the file's raw storage address, which died after an hour
+  // without saying so and could not be turned off.
+  const handleShare = useCallback(() => setShareVisible(true), []);
 
   const handleDownload = useCallback(async () => {
     if (!previewUrl || !doc) return;
@@ -382,6 +365,16 @@ export default function DocumentViewerScreen() {
         <View style={styles.loadingOverlay}>
           <ActivityIndicator size="large" color="#FFFFFF" />
         </View>
+      )}
+
+      {currentFamily && (
+        <ShareSheet
+          visible={shareVisible}
+          onClose={() => setShareVisible(false)}
+          familyId={currentFamily.id}
+          documentId={doc.id}
+          fileName={doc.file_name}
+        />
       )}
 
       {/* Edit Modal */}
