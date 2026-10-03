@@ -17,7 +17,6 @@ import { OCR_LANGUAGES, describeOcrLanguages } from '../../lib/ocr-languages';
 import { hasVoiceFor } from '../../lib/speech';
 import { ScreenHeader } from '../../components/screen-header';
 import { appVersion } from '../../lib/app-info';
-import { FREE_STORAGE_LABEL } from '../../lib/plans';
 import { color, radius, shadow, size, space, type } from '../../constants/design';
 
 // A row with an arrow opens a screen — every one of them. Rows that opened
@@ -79,7 +78,7 @@ export default function SettingsScreen() {
   ];
   const vaultItems: LinkItem[] = [
     { icon: 'users', label: 'Manage Families', sub: 'View and switch families', route: '/family' },
-    { icon: 'hard-drive', label: 'Storage', sub: `How much of the free ${FREE_STORAGE_LABEL} is used`, route: '/settings/storage' },
+    { icon: 'hard-drive', label: 'Storage', sub: 'Your family\'s plan, and how much of its space is used', route: '/settings/storage' },
     { icon: 'lock', label: 'Privacy', sub: 'Who can see your documents', route: '/settings/privacy' },
   ];
   const helpItems: LinkItem[] = [

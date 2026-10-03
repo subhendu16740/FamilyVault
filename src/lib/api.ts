@@ -3,6 +3,9 @@ import { parseDocumentDate } from './dates';
 import { isSaveable, mimeTypeFor, unsupportedFileMessage } from './file-types';
 import type { Gender, KinLink, KinPerson } from '../../supabase/functions/_shared/kinship';
 import { isBloodGroup, type EmergencyCard, type EmergencyCardInput, type EmergencyContact } from './emergency';
+import {
+  DEFAULT_PLAN_LIMITS, fits, localPlusPrice, storageFullMessage, type PlanLimits, type PlanName, type StorageRoom,
+} from './plans';
 import type {
   FamilyWithMembership,
   FamilyMemberWithUser,
@@ -781,6 +784,11 @@ export async function uploadDocument(params: UploadDocumentParams): Promise<stri
   // a type the database cannot hold used to fail AFTER the file was uploaded.
   if (!isSaveable(fileType)) throw new Error(unsupportedFileMessage(fileType));
 
+  // Every plan has a storage limit (038). Asked first, with this file's size,
+  // so the person hears why; the bucket refuses a full family either way.
+  const room = await fetchStorageStatus(familyId).catch(() => null);
+  if (room && !fits(room, fileSizeBytes)) throw new StorageFullError(room, fileSizeBytes);
+
   // 1. Upload to Supabase Storage
   const storagePath = `${storageNamespace}/${Date.now()}_${fileName}`;
   const mimeType = mimeTypeFor(fileType);
@@ -789,7 +797,14 @@ export async function uploadDocument(params: UploadDocumentParams): Promise<stri
     .from('documents')
     .upload(storagePath, fileBlob, { contentType: mimeType, upsert: false });
 
-  if (storageErr) throw new Error(`Storage upload failed: ${storageErr.message}`);
+  if (storageErr) {
+    // The bucket's policy refuses a family at its limit (038): say so in words.
+    if (/row-level security|policy/i.test(storageErr.message)) {
+      const now = await fetchStorageStatus(familyId).catch(() => null);
+      if (now && now.usedBytes >= now.limitBytes) throw new StorageFullError(now, fileSizeBytes);
+    }
+    throw new Error(`Storage upload failed: ${storageErr.message}`);
+  }
 
   // 2. Insert document record via RPC (into family schema)
   const { data, error: insertErr } = await supabase.rpc('insert_family_document', {
@@ -1166,9 +1181,9 @@ export interface FamilyStorage {
 }
 
 /**
- * How much each of your families stores, and how much of that you added:
- * the sizes of the files as uploaded. There is no storage limit yet, so this
- * reports use and nothing else.
+ * How many documents each of your families keeps, and how much of that you
+ * added: the sizes of the files as uploaded. A family's limit, and its use as
+ * the server counts it, come from fetchStorageStatus (038).
  */
 export async function fetchStorageUsage(
   families: { id: string; name: string }[],
@@ -1187,6 +1202,59 @@ export async function fetchStorageUsage(
       yourDocuments: yours.length,
     };
   }));
+}
+
+// ─── Plans and storage limits (038) ──────────────────────────────
+//
+// Every plan has a storage limit: Free 1 GB, Family Plus 10 GB (039;
+// public.plan_limits). The server keeps it — the documents bucket refuses a
+// new file once a family is at its limit — and these say where a family
+// stands, so the app can tell people before it refuses them. They read 038's
+// shape too (a period beside each plan), so the app works either side of 039.
+
+export interface FamilyPlanStatus extends StorageRoom {
+  /** When a Plus plan's paid time ends; null on Free. */
+  paidUntil: string | null;
+}
+
+/** A family's plan, its limit and what its files add up to; null before 038. */
+export async function fetchStorageStatus(familyId: string): Promise<FamilyPlanStatus | null> {
+  const { data, error } = await supabase.rpc('family_storage_status', { p_family_id: familyId });
+  if (error) {
+    if (isMissingMigration(error)) return null;
+    throw error;
+  }
+  const row = (data ?? [])[0];
+  if (!row) return null;
+  return {
+    plan: row.plan as PlanName,
+    paidUntil: row.paid_until ?? null,
+    limitBytes: Number(row.limit_bytes),
+    usedBytes: Number(row.used_bytes),
+  };
+}
+
+/** What each plan may keep, as the database says; 039's numbers before 038. */
+export async function fetchPlanLimits(): Promise<PlanLimits> {
+  const { data, error } = await supabase.from('plan_limits').select('plan, storage_bytes');
+  if (error || !data?.length) return DEFAULT_PLAN_LIMITS;
+  // Under 038 Plus has two rows, monthly and yearly; the larger is the offer.
+  const of = (plan: string, fallback: number) => {
+    const sizes = data.filter((r) => r.plan === plan).map((r) => Number(r.storage_bytes));
+    return sizes.length ? Math.max(...sizes) : fallback;
+  };
+  return { free: of('free', DEFAULT_PLAN_LIMITS.free), plus: of('plus', DEFAULT_PLAN_LIMITS.plus) };
+}
+
+/** The family's storage is full, in words the person can act on. */
+export class StorageFullError extends Error {
+  room: StorageRoom;
+
+  constructor(room: StorageRoom, fileBytes: number) {
+    super(storageFullMessage(room, fileBytes, DEFAULT_PLAN_LIMITS, localPlusPrice()));
+    this.name = 'StorageFullError';
+    this.room = room;
+  }
 }
 
 export interface ExpiringDocument {

@@ -1,35 +1,61 @@
-// ─── What the free plan includes ────────────────────────────────
+// ─── What each plan may keep (migrations 038, 039) ──────────────
 //
-// Every family gets FREE_STORAGE_GB for its documents, free. Family Plus,
-// the paid plan (★ in the app), will add more space; it does not exist yet,
-// so the limit is shown, never enforced: a family past it can still upload.
-// Enforcing it needs a check on the server, because a file lands in Storage
-// before any app code could refuse it, and a way to pay.
+// Every plan has a storage limit; none is unlimited:
 //
-// Counted the way Settings › Storage adds it up: the `file_size_bytes` of the
-// family's documents, the files as they were added. The text, chunks and
-// vectors kept in the database are not counted.
+//   Free           1 GB, in total — not a monthly allowance
+//   Family Plus   10 GB, ₹100 a month in India, $10 a month elsewhere
+//
+// The numbers live in the database (public.plan_limits) and the server keeps
+// them: the documents bucket refuses a new file once a family's files reach
+// its plan's limit, and Gmail import checks before it stores. The app asks
+// first, with the file's size, so it can say why (uploadDocument in api.ts).
+// The words are shared with Gmail import: supabase/functions/_shared/plan-text.ts.
+//
+// Used space is what the family's folder in the bucket holds, as the server
+// counts it (family_storage_status()). Before 038 the app adds up the
+// documents' file sizes instead and shows the free limit, unenforced.
 //
 // The Supabase project behind the app is on Supabase's Free plan, which holds
-// 1 GB of files in total, for every family together. Before this promise is
-// made to more than one family, PROD needs Supabase Pro (100 GB included).
+// 1 GB of files in total, for every family together. Before these limits are
+// promised to more than one family, PROD needs Supabase Pro (100 GB included).
 // ────────────────────────────────────────────────────────────────
 
-/** Free space per family, in gigabytes. Change it here and nowhere else. */
-export const FREE_STORAGE_GB = 1;
+import { DEFAULT_PLAN_LIMITS, formatBytes, plusPrice } from '../../supabase/functions/_shared/plan-text';
 
-export const FREE_STORAGE_BYTES = FREE_STORAGE_GB * 1024 ** 3;
+export {
+  DEFAULT_PLAN_LIMITS, PLUS_FOR_SALE, PLUS_PRICE, fits, formatBytes, planLabel, plusPrice, storageFullMessage,
+  type PlanLimits, type PlanName, type StorageRoom,
+} from '../../supabase/functions/_shared/plan-text';
+
+/** Free space per family, in bytes, when the database cannot be asked. */
+export const FREE_STORAGE_BYTES = DEFAULT_PLAN_LIMITS.free;
 
 /** "1 GB", for sentences. */
-export const FREE_STORAGE_LABEL = `${FREE_STORAGE_GB} GB`;
+export const FREE_STORAGE_LABEL = formatBytes(FREE_STORAGE_BYTES);
 
-/** From this share of the free space on, a family is told it is nearly full. */
+/**
+ * Family Plus's price as this device should show it: rupees in India,
+ * dollars elsewhere, judged by the device's time zone. Shown only — until
+ * payments exist nothing is charged, and then the payment company decides.
+ * A device that cannot say where it is sees rupees, as most families do.
+ */
+export function localPlusPrice(): string {
+  let zone = '';
+  try {
+    zone = Intl.DateTimeFormat().resolvedOptions().timeZone ?? '';
+  } catch {
+    // An engine without Intl time zones.
+  }
+  return plusPrice(zone && !/^Asia\/(Kolkata|Calcutta)$/.test(zone) ? 'usd' : 'inr');
+}
+
+/** From this share of a family's limit on, it is told it is nearly full. */
 export const NEARLY_FULL = 0.8;
 
-export type StorageLevel = 'ok' | 'nearly' | 'over';
+export type StorageLevel = 'ok' | 'nearly' | 'full';
 
-export function storageLevel(bytes: number): StorageLevel {
-  if (bytes > FREE_STORAGE_BYTES) return 'over';
-  if (bytes >= FREE_STORAGE_BYTES * NEARLY_FULL) return 'nearly';
+export function storageLevel(usedBytes: number, limitBytes: number): StorageLevel {
+  if (usedBytes >= limitBytes) return 'full';
+  if (usedBytes >= limitBytes * NEARLY_FULL) return 'nearly';
   return 'ok';
 }

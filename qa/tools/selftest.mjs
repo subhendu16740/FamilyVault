@@ -26,6 +26,7 @@ import {
 import { buildGraph, relationTo, relationLabel, relativesForPrompt, relativesNamedIn, buildForest, shortName, siblingsSharingParents } from '../../supabase/functions/_shared/kinship.ts';
 import { encryptPayload, vapidAuthorization, generateVapidKeys, isPushServiceEndpoint, MAX_PLAINTEXT } from '../../supabase/functions/_shared/webpush.ts';
 import { phoneLooksRight, cardProblem, cardIsEmpty, emptyCard, bloodGroupLabel, bloodGroupSpoken, telHref } from '../../src/lib/emergency.ts';
+import { DEFAULT_PLAN_LIMITS, PLUS_FOR_SALE, PLUS_PRICE, fits, formatBytes, plusPrice, storageFullMessage } from '../../supabase/functions/_shared/plan-text.ts';
 import { mentionsDate, mentionsAmount, mentionsPhone, mentionsText, refuses, devanagariShare, scriptShare, hasMarkdown } from '../lib/match.mjs';
 import { judgeAnswer } from '../lib/checks/ask.mjs';
 import { vehicleInsurance } from '../lib/tiny-pdf.mjs';
@@ -501,6 +502,38 @@ await test('every suite stays inside its Groq budget', () => {
   assert.equal(seen.size, groups, 'consecutive days cover every rotation group');
 });
 
+await test('plans: every limit is finite, and a full vault says why and what to do (038, 039)', () => {
+  const GB = 1024 ** 3, MB = 1024 ** 2;
+  // What 039 leaves in plan_limits: one row per plan, Plus ten times Free.
+  assert.deepEqual(DEFAULT_PLAN_LIMITS, { free: GB, plus: 10 * GB });
+  assert.deepEqual(PLUS_PRICE, { inr: 100, usd: 10 });
+  assert.equal(plusPrice('inr'), '₹100 a month');
+  assert.equal(plusPrice('usd'), '$10 a month');
+  assert.equal(formatBytes(512), '512 B');
+  assert.equal(formatBytes(2048), '2 KB');
+  assert.equal(formatBytes(1.25 * MB), '1.3 MB');
+  assert.equal(formatBytes(250 * MB), '250 MB');
+  assert.equal(formatBytes(GB), '1 GB');
+  assert.equal(formatBytes(1.5 * GB), '1.5 GB');
+  const free = { plan: 'free', limitBytes: GB, usedBytes: GB - 2 * MB };
+  assert.ok(fits(free, 2 * MB), 'a file that exactly fills the space fits');
+  assert.ok(!fits(free, 3 * MB));
+  const tooBig = storageFullMessage(free, 3 * MB);
+  assert.match(tooBig, /^This file is 3 MB, and your family has 2 MB left of 1 GB on the free plan\./);
+  assert.match(tooBig, /Delete documents you no longer need/);
+  const full = storageFullMessage({ ...free, usedBytes: GB + 10 * MB }, 0, DEFAULT_PLAN_LIMITS, plusPrice('inr'));
+  assert.match(full, /^Your family's storage is full: 1\.01 GB used of 1 GB on the free plan\./);
+  // Until Plus can be bought, nothing offers to sell it.
+  if (!PLUS_FOR_SALE) {
+    assert.match(full, /Family Plus, coming soon, gives 10 GB for ₹100 a month\.$/);
+    assert.doesNotMatch(full, /move to/);
+  }
+  // The server cannot tell where the person is, so it names no price.
+  assert.match(storageFullMessage({ ...free, usedBytes: GB }), /gives 10 GB\.$/);
+  const plus = storageFullMessage({ plan: 'plus', limitBytes: 10 * GB, usedBytes: 10 * GB }, 0, DEFAULT_PLAN_LIMITS, plusPrice('usd'));
+  assert.equal(plus, "Your family's storage is full: 10 GB used of 10 GB on Family Plus. Delete documents you no longer need to make room.");
+});
+
 await test('the languages suite: by hand only, every language, half a day at most', () => {
   const languages = selectQuestions(questions, 'languages', 1);
   assert.equal(languages.length, 12);
@@ -530,4 +563,4 @@ if (failures.length) {
   console.error(`\n${failures.length} self-test(s) failed, ${passed} passed.`);
   process.exit(1);
 }
-console.log(`✓ ${passed} self-tests passed — matchers, judge, run-time PDF, metadata, text cleaning, Gmail rules and token sealing, kinship and the family tree, emergency card checks, web push, questions and budget.`);
+console.log(`✓ ${passed} self-tests passed — matchers, judge, run-time PDF, metadata, text cleaning, Gmail rules and token sealing, kinship and the family tree, emergency card checks, web push, plan limits, questions and budget.`);

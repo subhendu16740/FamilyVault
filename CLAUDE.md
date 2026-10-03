@@ -53,7 +53,9 @@ Four things will mislead you if you assume otherwise:
    or turned off only through `create_document_share` and
    `revoke_document_share`; 037's invitations are read by the family, by
    the address asked, and answered or withdrawn only through their
-   functions).
+   functions; 038's plan limits (one row per plan since 039) are read by
+   anyone and a family's plan by its members, never its payment reference,
+   and set only through `set_family_plan`, service role only).
    **A new writable
    column needs its own `GRANT` in a migration.** Nobody joins a family
    without saying yes: only an admin asks a person in, through the
@@ -103,11 +105,12 @@ errors**) and `npm run build` are the local gates.
 at 03:10 IST, and on pushes that change `qa/`. It uploads synthetic SPECIMEN
 documents to its own vault (QA Vault A, account A), asks questions about
 them, and checks the answers on facts and sources, never wording. It also
-runs the 023 sweep and the 024 DEV/PROD fingerprint, 114 access probes (a
+runs the 023 sweep and the 024 DEV/PROD fingerprint, 122 access probes (a
 logged-out visitor and a second account must be refused everywhere, Gmail
 import's endpoints, the family tree, emergency cards, linking,
-notification devices, share links and invitations included; a share link
-must open without an account, and stop once it is turned off),
+notification devices, share links, invitations and plans included; a share
+link must open without an account, and stop once it is turned off; nobody
+can give a family Plus, raise a limit or read another family's storage),
 the membership model (the second account is invited, not added: it sees
 nothing of the vault until it says yes, the admin cannot say yes for it, a
 no removes the invitation and a yes makes it a viewer, who must not be able
@@ -392,7 +395,7 @@ src/
     onboarding.tsx           # 3-slide intro
     login.tsx                # email/password + Google OAuth
     setup-family.tsx         # first-time vault creation
-    notifications.tsx        # expiry alerts, uploads, invites
+    notifications.tsx        # expiry alerts, uploads, invites, Family Plus
     family.tsx               # Manage Family: members, invitations (Pending approval), leaving    (NOT a tab)
     family-tree.tsx          # the family tree: everyone, and how they are related (031)
     person/[id].tsx          # one person: their relation to you, emergency card, documents, expiry dates, link to their account (033)
@@ -405,7 +408,7 @@ src/
     settings/                # (NOT a tab) its own Stack, so Back returns to Settings
       index.tsx              # the list; every row opens a screen
       profile.tsx  security.tsx  notifications.tsx  privacy.tsx   # notifications: the switch, and this device (034)
-      storage.tsx  help.tsx  feedback.tsx  about.tsx
+      storage.tsx  help.tsx  feedback.tsx  about.tsx   # storage: each family's plan, and how much of its space is used (038, 039)
       delete-account.tsx     # Security › Delete account: shows what goes, asks for DELETE (029)
     document/[id].tsx        # document viewer; Share opens the share sheet (036, web only)
     gmail-import.tsx         # connect Gmail, review what it found, import (web only, ★ Family Plus)
@@ -447,11 +450,11 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `auth.tsx` | `AuthProvider`: session, signIn, signUp, signInWithGoogle, signOut |
 | `family-context.tsx` | `FamilyProvider`: currentFamily, members, membership, needsFamily |
 | `drawer-context.tsx` | Profile drawer open/close state |
-| `api.ts` | **All** Supabase queries — documents, search, upload, RAG, notifications, adding and leaving families, invitations, Gmail import, saved chats, share links, deleting your account, and the Settings screens (profile, password, storage use, expiry dates, feedback) |
+| `api.ts` | **All** Supabase queries — documents, search, upload, RAG, notifications, adding and leaving families, invitations, Gmail import, saved chats, share links, deleting your account, plans and storage limits (`fetchStorageStatus`, `fetchPlanLimits`; `uploadDocument` throws `StorageFullError` before a file that does not fit is sent), and the Settings screens (profile, password, storage use, expiry dates, feedback) |
 | `dates.ts` | `parseDocumentDate()`: expiry dates exactly as ingest stores them (DD/MM/YYYY and kin, YYYY-MM-DD, "19 October 2026") |
 | `emergency.ts` | The emergency card's shape, blood groups (`bloodGroupLabel()`: "A−", "Bombay (hh)"), `telHref()`, and `cardProblem()` — the same checks and messages as `save_emergency_card()`, so the form can say what is wrong before saving |
 | `family-people.ts` | Whose a document can be: everyone in the tree, you first (`useDocumentOwners()`, members only before 031), and a person's expiry badge (`badgeFromExpiries()`) |
-| `plans.ts` | What the free plan includes: `FREE_STORAGE_GB` per family (shown on Settings › Storage, not enforced) and `storageLevel()` |
+| `plans.ts` | What each plan may keep (038, 039): the limits as 039 sets them (`DEFAULT_PLAN_LIMITS`, used only when the database cannot be asked), Family Plus's price (`PLUS_PRICE`; `localPlusPrice()` shows rupees in India, dollars elsewhere, by the device's time zone), `storageLevel()`, and the words for a full vault (`storageFullMessage()`), which live in `supabase/functions/_shared/plan-text.ts` so Gmail import says the same. `PLUS_FOR_SALE` is false until payments exist |
 | `file-types.ts` | What a picked file is (`detectFileType()`: MIME type, then name, never a web `blob:` uri) and whether the vault can keep it (PDF, JPG, PNG) |
 | `app-info.ts` | Version, release date and commit (stamped into `extra` by `app.config.ts` at build time), and the support contact Help shows |
 | `ocr.ts` | Platform-split OCR with progress callback; reads the person's chosen languages |
@@ -462,7 +465,7 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `speech-text.ts` | `toSpeech()`: strips markdown and spells out ID numbers before they are read aloud |
 | `voice-languages.ts` | The language picker list and the few phrases the app itself says, per language |
 | `storage.ts` | Key-value cache: localStorage on web, AsyncStorage on native |
-| `database.types.ts` | Generated Supabase types, current to 037 (030 changed nothing in them). Regenerate after every migration and re-append the hand-written block at the bottom (see the typecheck note) |
+| `database.types.ts` | Generated Supabase types, current to 039 (030 changed nothing in them). Regenerate after every migration and re-append the hand-written block at the bottom (see the typecheck note) |
 
 ---
 
@@ -527,7 +530,7 @@ Supabase, cloud-hosted. Three layers:
   invitations, document_categories, notifications, audit_logs, feedback,
   saved_chats, family_people, family_links, family_emergency_cards,
   push_subscriptions, reminders_sent, push_config, document_shares,
-  family_invites. RLS enabled.
+  family_invites, plan_limits, family_plans. RLS enabled.
 - **Layer 2 (private)** — one isolated schema per family (`family_<short_uuid>`)
   holding documents, document_metadata, document_chunks, expiry_alerts,
   family_relationships. Created by the `public.create_family()` PG function.
@@ -631,17 +634,16 @@ so storage policies live only in `019`.
   `authenticated`, the sender defaulted from `auth.uid()` and checked by the
   policy, and no SELECT for any client — the team reads it in the dashboard.
   Before 027 the app says feedback is not switched on yet.
-- **Storage** adds up `file_size_bytes` from `get_family_documents`, per
-  family and for what you uploaded, and shows each family's total against
-  its free space: `FREE_STORAGE_GB` in `src/lib/plans.ts` (1 GB), amber from
-  80%, red past it. More space is ★ Family Plus, which does not exist yet,
-  so **nothing enforces the limit** — a family past it can still upload.
-  Enforcing it needs a server-side check (a file lands in Storage before any
-  app code could refuse it) and a way to pay. Mind the platform underneath:
-  the Supabase organisation is on the **Free plan, which holds 1 GB of files
-  per project in total**, all families together — PROD needs Pro (100 GB
+- **Storage** shows each family's plan, what it may keep and what its files
+  add up to (`family_storage_status()`, 038), amber from 80%, red at the
+  limit, which **the server enforces** — see
+  [Plans and storage limits](#plans-and-storage-limits--every-plan-has-a-limit-038-039).
+  Before 038 it adds up `file_size_bytes` from `get_family_documents` and
+  shows the free 1 GB, unenforced. Mind the platform underneath: the
+  Supabase organisation is on the **Free plan, which holds 1 GB of files per
+  project in total**, all families together — PROD needs Pro (100 GB
   included, then about $0.02/GB a month) before 1 GB a family can hold for
-  more than one family. **Reminders** reads each document's
+  more than one family, and before anyone is given Plus. **Reminders** reads each document's
   details for its `expiry_date` — one call per document, fine for a family's
   papers; a large vault would want one query for it.
 - **About**'s release date is stamped by `app.config.ts` when the bundle is
@@ -983,6 +985,51 @@ so storage policies live only in `019`.
 - **Not built yet:** links from the phone app (a link opens the web app's
   page, and only the web app knows its own address); a password on a link.
 
+### Plans and storage limits — every plan has a limit (038, 039)
+
+- **What a family may keep, never unlimited**: Free 1 GB in total (not a
+  monthly allowance), Family Plus 10 GB for ₹100 a month in India or $10 a
+  month elsewhere. Storage is the one cost that keeps growing after a month
+  is paid for, so no plan is open-ended. 038 had two Plus plans (5 GB
+  monthly, 10 GB yearly); 039 made them one, so how a family pays never
+  changes what it may keep. The numbers are rows in `plan_limits`, one per
+  plan (Table editor; anyone may read them, a pricing page included), and
+  change without a migration or a deploy — the app reads them
+  (`fetchPlanLimits()`); `DEFAULT_PLAN_LIMITS` in `_shared/plan-text.ts` is
+  only what it shows when the database cannot be asked. The price is shown,
+  not stored: `PLUS_PRICE` there, and the payment company's plan is what
+  will be charged.
+- **A family is on Plus while its `family_plans` row is paid up**
+  (`paid_until` in the future); otherwise, and with no row, it is on Free.
+  Members read their own family's row — never `source` or `source_ref`, the
+  payment company's reference, which the column grant leaves out — and no
+  client can write it.
+- **Plus is given by hand until payments exist**:
+  `select set_family_plan('<family id>', now() + interval '1 month');`
+  in the SQL editor (`paid_until` says how long; there is no period). Service role only; the payment webhook will call the
+  same function with `p_source` and `p_source_ref`. A new or lapsed plan
+  tells the family (a `plan` notification, which opens Settings › Storage),
+  a renewal is quiet, and every call writes `audit_logs`. To end a plan at
+  once (a refund), delete its row. `PLUS_FOR_SALE` in `plan-text.ts` turns
+  the "coming soon" words into an offer once Plus can be bought.
+- **The server keeps the limit, not the app.** The `documents` bucket's
+  upload policy (019's, plus `family_storage_has_room()`) refuses a new file
+  once the family's files reach its limit. Used space is what the family's
+  folder holds in `storage.objects` (each file's `metadata.size`), so
+  Settings, the policy and Gmail import count the same bytes. A policy
+  cannot see the size of the file arriving, so the last file may take a
+  family past its limit by that one file (the bucket refuses files over
+  50 MB). The app asks first, with the file's size (`uploadDocument` throws
+  `StorageFullError`), so the person reads what is left and what to do, not
+  a policy error. Gmail import uploads as the service role, which no policy
+  stops, so it asks `family_storage_status()` itself before storing.
+- **When Plus ends, nothing is deleted.** The family keeps, reads and
+  searches every document and only cannot add more while over the free
+  limit; Storage says so. Those files go on costing storage — at most a
+  lapsed family's 10 GB, about $0.21 a month past Pro's included 100 GB.
+- **Not built yet:** paying for Plus (a webhook calling `set_family_plan`;
+  `source` allows `razorpay` and `dodo`), and a limit on questions per plan.
+
 ## Edge Functions
 
 `supabase/functions/` — Deno, excluded from `tsconfig.json` (they use remote
@@ -1122,6 +1169,10 @@ rules sort the rest (`_shared/gmail-rules.ts`).
   sign-in never inherits the unverified status or the cap.
 - **Imported photos are OCR'd on the server** (OCR.space, English only),
   not in the browser in the family's languages as an upload is.
+- **It stops at the family's storage limit** (038). Import stores as the
+  service role, which no storage policy stops, so it asks
+  `family_storage_status()` first and refuses a file that does not fit, in
+  the same words as an upload (`_shared/plan-text.ts`).
 
 ### PDF text — read by position, not by content-stream order
 
@@ -1380,11 +1431,15 @@ rule again once pinned chunks are mixed in.
   six rows with an arrow that went nowhere, and the document viewer had a
   menu button with no menu. Add the control when its screen exists.
 - **★ Family Plus marks what the paid plan will include** (`<PlusTag />`).
-  The plan does not exist yet, so nothing is locked behind it: a starred
-  feature works for everyone and says the paid version is coming. Today that
-  is Reminders (in the drawer; since 034 they really are sent), Import from Gmail (on Upload), and space
-  beyond each family's free allotment (Settings › Storage): each shows the
-  tag where you find it, and Help's FAQ names all three.
+  Since 038 the plan exists — a family on it has 10 GB instead of 1 GB
+  (₹100 a month in India, $10 elsewhere; given by hand until payments
+  exist) — but it cannot be bought yet, so space is the only thing it
+  changes: Reminders (in the drawer;
+  since 034 they really are sent) and Import from Gmail (on Upload) work for
+  everyone and say the paid version is coming. Each shows the tag where you
+  find it, and Help's FAQ names all three. Every plan, Free included, has a
+  storage limit the server keeps (see
+  [Plans and storage limits](#plans-and-storage-limits--every-plan-has-a-limit-038-039)).
 - **Never give a web panel `flex` for its width.** On react-native-web
   `flex: 1` fills the row and `flex: 0` collapses it, whatever `width` says.
   The old profile drawer filled the whole page that way, which is why it

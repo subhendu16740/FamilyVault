@@ -12,7 +12,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useFamily } from '../../lib/family-context';
 import { useDocumentOwners } from '../../lib/family-people';
 import { useAuth } from '../../lib/auth';
-import { fetchCategories, uploadDocument } from '../../lib/api';
+import { StorageFullError, fetchCategories, uploadDocument } from '../../lib/api';
 import {
   extractTextFromImage, isImageFile, ocrLanguageGapOnThisDevice, type OcrProgress,
 } from '../../lib/ocr';
@@ -56,6 +56,8 @@ export default function UploadScreen() {
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<{ docId: string } | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // Says which wall was hit: the family's storage limit (038), or anything else.
+  const [storageFull, setStorageFull] = useState(false);
   const [ocrText, setOcrText] = useState<string | null>(null);
   const [ocrProgress, setOcrProgress] = useState<OcrProgress | null>(null);
   const [ocrRunning, setOcrRunning] = useState(false);
@@ -87,6 +89,7 @@ export default function UploadScreen() {
   ) => {
     const kind = detectFileType(picked);
     if (!isSaveable(kind)) {
+      setStorageFull(false);
       setErrorMsg(unsupportedFileMessage(kind));
       return;
     }
@@ -181,6 +184,7 @@ export default function UploadScreen() {
 
   const handleUpload = async () => {
     if (!pickedFile || !currentFamily || !user) {
+      setStorageFull(false);
       setErrorMsg('Missing file, family, or user session. Please try again.');
       return;
     }
@@ -207,6 +211,7 @@ export default function UploadScreen() {
       setUploadResult({ docId });
     } catch (err: any) {
       console.error('Upload error:', err);
+      setStorageFull(err instanceof StorageFullError);
       setErrorMsg(err.message ?? 'Something went wrong.');
     } finally {
       setUploading(false);
@@ -478,7 +483,7 @@ export default function UploadScreen() {
             <View style={styles.dialogIconWrap}>
               <Feather name="alert-circle" size={32} color="#EF4444" />
             </View>
-            <Text style={styles.dialogTitle}>Upload Failed</Text>
+            <Text style={styles.dialogTitle}>{storageFull ? 'Storage full' : 'Upload Failed'}</Text>
             <Text style={styles.dialogMsg}>{errorMsg}</Text>
             <TouchableOpacity
               style={styles.dialogBtnWide}
