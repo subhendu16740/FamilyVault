@@ -23,6 +23,7 @@ import { requireFamilyMember } from '../_shared/auth.ts';
 import { ingestDocument } from '../_shared/ingest.ts';
 import { sha256Hex } from '../_shared/gmail-crypto.ts';
 import { MAX_IMPORT_BYTES, attachmentParts, sniffType, storageFileName } from '../_shared/gmail-rules.ts';
+import { fits, storageFullMessage, type StorageRoom } from '../_shared/plan-text.ts';
 import { GmailError, accessTokenFor, getAttachment, getMessage } from '../_shared/gmail.ts';
 
 const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
@@ -102,7 +103,23 @@ Deno.serve(async (req) => {
       return json(200, { status: 'duplicate', document_id: twin.document_id });
     }
 
-    // 5. Store, record, ingest — the same three steps as an upload.
+    // 5. Room for it (038). Every plan has a storage limit, and the bucket's
+    //    policy keeps it for uploads from the app; the service role passes no
+    //    policy, so the limit is checked here. Before 038 there is nothing to
+    //    ask, and nothing is checked, as before.
+    const { data: rooms } = await supabase.rpc('family_storage_status', { p_family_id: family_id });
+    const r = (rooms as Array<{ plan: string; period: string; limit_bytes: number; used_bytes: number }> | null)?.[0];
+    if (r) {
+      const room: StorageRoom = {
+        plan: r.plan === 'plus' ? 'plus' : 'free',
+        period: r.period === 'monthly' || r.period === 'yearly' ? r.period : 'none',
+        limitBytes: Number(r.limit_bytes),
+        usedBytes: Number(r.used_bytes),
+      };
+      if (!fits(room, bytes.length)) throw new ImportProblem(storageFullMessage(room, bytes.length));
+    }
+
+    // 6. Store, record, ingest — the same three steps as an upload.
     const { data: family } = await supabase.from('families').select('storage_namespace').eq('id', family_id).single();
     if (!family?.storage_namespace) throw new ImportProblem('This family has no storage folder.');
     const storagePath = `${family.storage_namespace}/${Date.now()}_${storageFileName(item.file_name, kind)}`;

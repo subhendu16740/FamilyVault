@@ -534,6 +534,51 @@ export type Database = {
           },
         ]
       }
+      family_plans: {
+        Row: {
+          family_id: string
+          paid_until: string
+          period: string
+          plan: string
+          source: string
+          source_ref: string | null
+          updated_at: string
+        }
+        Insert: {
+          family_id: string
+          paid_until: string
+          period: string
+          plan?: string
+          source?: string
+          source_ref?: string | null
+          updated_at?: string
+        }
+        Update: {
+          family_id?: string
+          paid_until?: string
+          period?: string
+          plan?: string
+          source?: string
+          source_ref?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "family_plans_family_id_fkey"
+            columns: ["family_id"]
+            isOneToOne: true
+            referencedRelation: "families"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "family_plans_limits"
+            columns: ["plan", "period"]
+            isOneToOne: false
+            referencedRelation: "plan_limits"
+            referencedColumns: ["plan", "period"]
+          },
+        ]
+      }
       feedback: {
         Row: {
           app_version: string | null
@@ -823,6 +868,24 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      plan_limits: {
+        Row: {
+          period: string
+          plan: string
+          storage_bytes: number
+        }
+        Insert: {
+          period: string
+          plan: string
+          storage_bytes: number
+        }
+        Update: {
+          period?: string
+          plan?: string
+          storage_bytes?: number
+        }
+        Relationships: []
       }
       push_config: {
         Row: {
@@ -1130,6 +1193,17 @@ export type Database = {
       family_storage_objects: {
         Args: { p_storage_namespace: string }
         Returns: string[]
+      }
+      family_storage_has_room: { Args: { p_folder: string }; Returns: boolean }
+      family_storage_status: {
+        Args: { p_family_id: string }
+        Returns: {
+          limit_bytes: number
+          paid_until: string
+          period: string
+          plan: string
+          used_bytes: number
+        }[]
       }
       get_document_chunks: {
         Args: { p_document_id: string; p_limit?: number; p_schema: string }
@@ -1478,6 +1552,16 @@ export type Database = {
           p_description: string
           p_document_id: string
           p_family_id: string
+        }
+        Returns: undefined
+      }
+      set_family_plan: {
+        Args: {
+          p_family_id: string
+          p_paid_until: string
+          p_period: string
+          p_source?: string
+          p_source_ref?: string
         }
         Returns: undefined
       }

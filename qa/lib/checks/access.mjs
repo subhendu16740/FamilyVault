@@ -179,6 +179,13 @@ const inviteJudge = (expect) => (outcome) => {
   }
   return judge(expect, outcome);
 };
+// Plans and storage limits ship with migration 038: skipped until it is on DEV.
+const planJudge = (expect) => (outcome) => {
+  if (outcome.missing || missingTable(outcome.error) || String(outcome.error?.code) === 'PGRST202') {
+    return ['skipped', 'migration 038 is not applied to DEV yet'];
+  }
+  return typeof expect === 'function' ? expect(outcome) : judge(expect, outcome);
+};
 // A well-formed device key and secret: RFC 8291's own example.
 const PROBE_P256DH = 'BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4';
 const PROBE_AUTH = 'BTBZMqHH6r4Tts7J_aSIgg';
@@ -446,6 +453,26 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
   }
   const onInvites = (run) => async () => (invitesMissing ? { missing: true } : run());
 
+  // ── Plans and storage (038): account A reads its own family's plan and room,
+  // and its family has room — the positive control for the probes below.
+  let plansMissing = false;
+  {
+    const { data, error } = await a.client.rpc('family_storage_status', { p_family_id: A.family });
+    if (String(error?.code) === 'PGRST202' || missingTable(error)) {
+      plansMissing = true;
+      results.add('access', 'control:storage', "Control — account A reads its family's plan and storage", 'skipped', { why: 'migration 038 is not applied to DEV yet' });
+    } else {
+      const row = data?.[0];
+      const ok = !error && row && Number(row.limit_bytes) > 0 && Number(row.used_bytes) > 0 && ['free', 'plus'].includes(row.plan);
+      results.add('access', 'control:storage', "Control — account A reads its family's plan and storage", ok ? 'pass' : 'fail',
+        { why: error ? short(error) : row ? `${row.plan}: ${Math.round(Number(row.used_bytes) / 1048576)} MB of ${Math.round(Number(row.limit_bytes) / 1048576)} MB` : 'no row' });
+      const { data: room, error: roomErr } = await a.client.rpc('family_storage_has_room', { p_folder: A.ns });
+      results.add('access', 'control:storage-room', 'Control — QA Vault A has room for its uploads', !roomErr && room === true ? 'pass' : 'fail',
+        { why: roomErr ? short(roomErr) : `has room: ${room}` });
+    }
+  }
+  const onPlans = (run) => async () => (plansMissing ? { missing: true } : run());
+
   const onDeviceA = (run) => async () => {
     if (pushMissing) return { missing: true };
     if (!deviceA) return { noTarget: true };
@@ -648,6 +675,19 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     ['B', 'decline an invitation that is not its own', inviteJudge('refused'), onInvites(() => b.client.rpc('decline_family_invite', { p_invite_id: randomUUID() }))],
     ['B', "withdraw one of QA Vault A's invitations", inviteJudge('refused'), onInvites(() => b.client.rpc('cancel_family_invite', { p_invite_id: randomUUID() }))],
     ['B', 'invite into QA Vault A through the database (server-only)', inviteJudge('refused'), onInvites(() => b.client.rpc('invite_family_member', { p_family_id: A.family, p_invited_by: A.user, p_email: `qa-probe-${cfg.runId}@example.invalid` }))],
+    // Plans and storage (038): a family's plan is its members' to read and the
+    // server's to write; nobody learns another family's room or raises a limit.
+    ['anon', "read QA Vault A's plan", planJudge('refused-or-empty'), onPlans(() => anon.client.from('family_plans').select('family_id').eq('family_id', A.family))],
+    ['anon', "ask QA Vault A's storage", planJudge('refused'), onPlans(() => anon.client.rpc('family_storage_status', { p_family_id: A.family }))],
+    ['B', "ask QA Vault A's storage", planJudge('refused'), onPlans(() => b.client.rpc('family_storage_status', { p_family_id: A.family }))],
+    ['B', 'ask whether QA Vault A has room', planJudge((o) => (o.error
+      ? (refusedByAuth(o.error) ? ['pass', short(o.error)] : ['fail', `stopped for another reason (${short(o.error)})`])
+      : o.data === false ? ['pass', 'no — not its family'] : ['fail', `ANSWERED: ${JSON.stringify(o.data)}`])), onPlans(() => b.client.rpc('family_storage_has_room', { p_folder: A.ns }))],
+    ['B', "read QA Vault A's plan", planJudge('refused-or-empty'), onPlans(() => b.client.from('family_plans').select('family_id, period').eq('family_id', A.family))],
+    ['B', 'give its own family Family Plus', planJudge('refused'), onPlans(() => b.client.from('family_plans').insert({ family_id: vaultB.id, period: 'yearly', paid_until: new Date(Date.now() + 365 * 86_400_000).toISOString() }))],
+    ['B', 'give a family Family Plus through the database (server-only)', planJudge('refused'), onPlans(() => b.client.rpc('set_family_plan', { p_family_id: vaultB.id, p_period: 'yearly', p_paid_until: new Date(Date.now() + 365 * 86_400_000).toISOString() }))],
+    ['B', "raise every plan's storage limit", planJudge('refused'), onPlans(() => b.client.from('plan_limits').update({ storage_bytes: 1099511627776 }).eq('plan', 'free'))],
+
     ['B', "invite someone to be a person in A's tree through the database (server-only)", inviteJudge('refused'), onInvites(() => b.client.rpc('invite_family_person_account', { p_family_id: A.family, p_invited_by: A.user, p_person_id: randomUUID(), p_email: `qa-probe-${cfg.runId}@example.invalid` }))],
 
     // Linking someone in the tree to an account (033): an admin's job, through

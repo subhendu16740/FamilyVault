@@ -7,7 +7,7 @@ import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SUPPORT_EMAIL, SUPPORT_PHONE } from '../../lib/app-info';
-import { FREE_STORAGE_LABEL } from '../../lib/plans';
+import { DEFAULT_PLAN_LIMITS, FREE_STORAGE_LABEL, PLUS_FOR_SALE, formatBytes } from '../../lib/plans';
 import { ScreenHeader } from '../../components/screen-header';
 import { Card, CardTitle, Body, PrimaryButton, screenStyles } from '../../components/settings-ui';
 import { color, radius, shadow, space, type } from '../../constants/design';
@@ -55,7 +55,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'How much space does my family get?',
-    a: `Every family gets ${FREE_STORAGE_LABEL} free for its documents. Settings › Storage shows how much is used. More space will come with ★ Family Plus, the paid plan. Until then you can keep adding documents.`,
+    a: `Every family gets ${FREE_STORAGE_LABEL} free for its documents. ★ Family Plus gives ${formatBytes(DEFAULT_PLAN_LIMITS.monthly)} on the monthly plan or ${formatBytes(DEFAULT_PLAN_LIMITS.yearly)} on the yearly plan. Every plan has a limit: when a family's space is full, new documents can't be added until some are deleted${PLUS_FOR_SALE ? ', or the family moves to a bigger plan' : ''}. Nothing is ever deleted for you. Settings › Storage shows how much is used.`,
   },
   {
     q: 'How do reminders work?',
@@ -63,7 +63,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'What does ★ Family Plus mean?',
-    a: 'Family Plus is the paid plan, coming soon. Things marked with ★, like reminders before a document runs out, bringing documents in from Gmail and more storage space, will be part of it. Until then they work for everyone.',
+    a: 'Family Plus is the paid plan for the whole family, monthly or yearly, coming soon. It gives more storage space, and things marked with ★, like the reminders page and bringing documents in from Gmail, are part of it; until it can be bought, those work for everyone.',
   },
   {
     q: 'How do I delete my account?',
