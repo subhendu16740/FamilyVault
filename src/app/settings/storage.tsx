@@ -14,8 +14,8 @@ import {
   fetchPlanLimits, fetchStorageStatus, fetchStorageUsage, type FamilyPlanStatus, type FamilyStorage,
 } from '../../lib/api';
 import {
-  DEFAULT_PLAN_LIMITS, FREE_STORAGE_BYTES, PLUS_FOR_SALE, formatBytes, storageFullMessage, storageLevel,
-  type PlanLimits, type StorageLevel,
+  DEFAULT_PLAN_LIMITS, FREE_STORAGE_BYTES, PLUS_FOR_SALE, formatBytes, localPlusPrice, storageFullMessage,
+  storageLevel, type PlanLimits, type StorageLevel,
 } from '../../lib/plans';
 import { longDate } from '../../lib/dates';
 import { ScreenHeader, PlusTag } from '../../components/screen-header';
@@ -27,8 +27,7 @@ const documents = (n: number) => `${n} ${n === 1 ? 'document' : 'documents'}`;
 const BAR: Record<StorageLevel, string> = { ok: color.secondary, nearly: '#D97706', full: color.danger };
 
 function planName(status: FamilyPlanStatus | null): string {
-  if (!status || status.plan === 'free') return 'Free';
-  return status.period === 'monthly' ? 'Family Plus · monthly' : 'Family Plus · yearly';
+  return status?.plan === 'plus' ? 'Family Plus' : 'Free';
 }
 
 export default function StorageScreen() {
@@ -61,6 +60,7 @@ export default function StorageScreen() {
     return () => { cancelled = true; };
   }, [user?.id, familyKey]));
 
+  const price = localPlusPrice();
   const yourBytes = usage?.reduce((sum, f) => sum + f.yourBytes, 0) ?? 0;
   const yourDocs = usage?.reduce((sum, f) => sum + f.yourDocuments, 0) ?? 0;
 
@@ -86,12 +86,11 @@ export default function StorageScreen() {
                   <Text style={styles.planRowSize}>{formatBytes(limits.free)}</Text>
                 </View>
                 <View style={styles.planRow}>
-                  <Text style={styles.planRowName}>Family Plus · monthly</Text>
-                  <Text style={styles.planRowSize}>{formatBytes(limits.monthly)}</Text>
-                </View>
-                <View style={styles.planRow}>
-                  <Text style={styles.planRowName}>Family Plus · yearly</Text>
-                  <Text style={styles.planRowSize}>{formatBytes(limits.yearly)}</Text>
+                  <View style={styles.planRowText}>
+                    <Text style={styles.planRowName}>★ Family Plus</Text>
+                    <Text style={styles.planRowPrice}>{price}</Text>
+                  </View>
+                  <Text style={styles.planRowSize}>{formatBytes(limits.plus)}</Text>
                 </View>
               </View>
               {!PLUS_FOR_SALE && (
@@ -158,7 +157,7 @@ export default function StorageScreen() {
                           // Before 038: said, not kept.
                           ? `This family has used ${level === 'full' ? 'all of' : 'most of'} its free ${formatBytes(limit)}.`
                           : level === 'full'
-                            ? storageFullMessage(status, 0, limits)
+                            ? storageFullMessage(status, 0, limits, price)
                             : `Nearly full: ${formatBytes(limit - used)} left. When it is full, new documents can't be added.`}
                       </Text>
                     </View>
@@ -187,7 +186,9 @@ const styles = StyleSheet.create({
   center: { alignItems: 'center', gap: space.sm, paddingVertical: 40 },
   planRows: { gap: space.xs },
   planRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', minHeight: 28 },
+  planRowText: { flex: 1 },
   planRowName: type.label,
+  planRowPrice: type.caption,
   planRowSize: { ...type.label, color: color.primary, fontWeight: '600' },
   plusRow: { flexDirection: 'row', alignItems: 'flex-start', gap: space.sm },
   plusText: { ...type.caption, flex: 1, color: color.textBody, marginTop: 2 },

@@ -683,9 +683,16 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     ['B', 'ask whether QA Vault A has room', planJudge((o) => (o.error
       ? (refusedByAuth(o.error) ? ['pass', short(o.error)] : ['fail', `stopped for another reason (${short(o.error)})`])
       : o.data === false ? ['pass', 'no — not its family'] : ['fail', `ANSWERED: ${JSON.stringify(o.data)}`])), onPlans(() => b.client.rpc('family_storage_has_room', { p_folder: A.ns }))],
-    ['B', "read QA Vault A's plan", planJudge('refused-or-empty'), onPlans(() => b.client.from('family_plans').select('family_id, period').eq('family_id', A.family))],
-    ['B', 'give its own family Family Plus', planJudge('refused'), onPlans(() => b.client.from('family_plans').insert({ family_id: vaultB.id, period: 'yearly', paid_until: new Date(Date.now() + 365 * 86_400_000).toISOString() }))],
-    ['B', 'give a family Family Plus through the database (server-only)', planJudge('refused'), onPlans(() => b.client.rpc('set_family_plan', { p_family_id: vaultB.id, p_period: 'yearly', p_paid_until: new Date(Date.now() + 365 * 86_400_000).toISOString() }))],
+    ['B', "read QA Vault A's plan", planJudge('refused-or-empty'), onPlans(() => b.client.from('family_plans').select('family_id, paid_until').eq('family_id', A.family))],
+    ['B', 'give its own family Family Plus', planJudge('refused'), onPlans(() => b.client.from('family_plans').insert({ family_id: vaultB.id, paid_until: new Date(Date.now() + 31 * 86_400_000).toISOString() }))],
+    ['B', 'give a family Family Plus through the database (server-only)', planJudge('refused'), onPlans(async () => {
+      // 039's arguments, then 038's (with a period) on a project without 039.
+      const until = new Date(Date.now() + 31 * 86_400_000).toISOString();
+      const now = await b.client.rpc('set_family_plan', { p_family_id: vaultB.id, p_paid_until: until });
+      return String(now.error?.code) === 'PGRST202'
+        ? b.client.rpc('set_family_plan', { p_family_id: vaultB.id, p_period: 'monthly', p_paid_until: until })
+        : now;
+    })],
     ['B', "raise every plan's storage limit", planJudge('refused'), onPlans(() => b.client.from('plan_limits').update({ storage_bytes: 1099511627776 }).eq('plan', 'free'))],
 
     ['B', "invite someone to be a person in A's tree through the database (server-only)", inviteJudge('refused'), onInvites(() => b.client.rpc('invite_family_person_account', { p_family_id: A.family, p_invited_by: A.user, p_person_id: randomUUID(), p_email: `qa-probe-${cfg.runId}@example.invalid` }))],

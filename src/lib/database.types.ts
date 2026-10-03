@@ -538,7 +538,6 @@ export type Database = {
         Row: {
           family_id: string
           paid_until: string
-          period: string
           plan: string
           source: string
           source_ref: string | null
@@ -547,7 +546,6 @@ export type Database = {
         Insert: {
           family_id: string
           paid_until: string
-          period: string
           plan?: string
           source?: string
           source_ref?: string | null
@@ -556,7 +554,6 @@ export type Database = {
         Update: {
           family_id?: string
           paid_until?: string
-          period?: string
           plan?: string
           source?: string
           source_ref?: string | null
@@ -571,11 +568,11 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "family_plans_limits"
-            columns: ["plan", "period"]
+            foreignKeyName: "family_plans_plan"
+            columns: ["plan"]
             isOneToOne: false
             referencedRelation: "plan_limits"
-            referencedColumns: ["plan", "period"]
+            referencedColumns: ["plan"]
           },
         ]
       }
@@ -871,17 +868,14 @@ export type Database = {
       }
       plan_limits: {
         Row: {
-          period: string
           plan: string
           storage_bytes: number
         }
         Insert: {
-          period: string
           plan: string
           storage_bytes: number
         }
         Update: {
-          period?: string
           plan?: string
           storage_bytes?: number
         }
@@ -1200,7 +1194,6 @@ export type Database = {
         Returns: {
           limit_bytes: number
           paid_until: string
-          period: string
           plan: string
           used_bytes: number
         }[]
@@ -1559,7 +1552,6 @@ export type Database = {
         Args: {
           p_family_id: string
           p_paid_until: string
-          p_period: string
           p_source?: string
           p_source_ref?: string
         }

@@ -1,6 +1,10 @@
 -- ============================================================================
 -- 038: Family Plus, and a storage limit on every plan
 --
+-- 039 changed this to ONE Plus plan (10 GB, paid monthly): one plan_limits
+-- row per plan, no period, and set_family_plan(family, paid_until). After
+-- 039, run 039 again rather than this file.
+--
 -- What a family may keep, by plan — never unlimited:
 --
 --   Free                    1 GB

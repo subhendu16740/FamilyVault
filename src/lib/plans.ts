@@ -1,10 +1,9 @@
-// ─── What each plan may keep (migration 038) ────────────────────
+// ─── What each plan may keep (migrations 038, 039) ──────────────
 //
 // Every plan has a storage limit; none is unlimited:
 //
-//   Free                    1 GB
-//   Family Plus, monthly    5 GB
-//   Family Plus, yearly    10 GB
+//   Free           1 GB, in total — not a monthly allowance
+//   Family Plus   10 GB, ₹100 a month in India, $10 a month elsewhere
 //
 // The numbers live in the database (public.plan_limits) and the server keeps
 // them: the documents bucket refuses a new file once a family's files reach
@@ -21,11 +20,11 @@
 // promised to more than one family, PROD needs Supabase Pro (100 GB included).
 // ────────────────────────────────────────────────────────────────
 
-import { DEFAULT_PLAN_LIMITS, formatBytes } from '../../supabase/functions/_shared/plan-text';
+import { DEFAULT_PLAN_LIMITS, formatBytes, plusPrice } from '../../supabase/functions/_shared/plan-text';
 
 export {
-  DEFAULT_PLAN_LIMITS, PLUS_FOR_SALE, fits, formatBytes, planLabel, storageFullMessage,
-  type PlanLimits, type PlanName, type PlanPeriod, type StorageRoom,
+  DEFAULT_PLAN_LIMITS, PLUS_FOR_SALE, PLUS_PRICE, fits, formatBytes, planLabel, plusPrice, storageFullMessage,
+  type PlanLimits, type PlanName, type StorageRoom,
 } from '../../supabase/functions/_shared/plan-text';
 
 /** Free space per family, in bytes, when the database cannot be asked. */
@@ -33,6 +32,22 @@ export const FREE_STORAGE_BYTES = DEFAULT_PLAN_LIMITS.free;
 
 /** "1 GB", for sentences. */
 export const FREE_STORAGE_LABEL = formatBytes(FREE_STORAGE_BYTES);
+
+/**
+ * Family Plus's price as this device should show it: rupees in India,
+ * dollars elsewhere, judged by the device's time zone. Shown only — until
+ * payments exist nothing is charged, and then the payment company decides.
+ * A device that cannot say where it is sees rupees, as most families do.
+ */
+export function localPlusPrice(): string {
+  let zone = '';
+  try {
+    zone = Intl.DateTimeFormat().resolvedOptions().timeZone ?? '';
+  } catch {
+    // An engine without Intl time zones.
+  }
+  return plusPrice(zone && !/^Asia\/(Kolkata|Calcutta)$/.test(zone) ? 'usd' : 'inr');
+}
 
 /** From this share of a family's limit on, it is told it is nearly full. */
 export const NEARLY_FULL = 0.8;

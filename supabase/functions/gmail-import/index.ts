@@ -108,11 +108,10 @@ Deno.serve(async (req) => {
     //    policy, so the limit is checked here. Before 038 there is nothing to
     //    ask, and nothing is checked, as before.
     const { data: rooms } = await supabase.rpc('family_storage_status', { p_family_id: family_id });
-    const r = (rooms as Array<{ plan: string; period: string; limit_bytes: number; used_bytes: number }> | null)?.[0];
+    const r = (rooms as Array<{ plan: string; limit_bytes: number; used_bytes: number }> | null)?.[0];
     if (r) {
       const room: StorageRoom = {
         plan: r.plan === 'plus' ? 'plus' : 'free',
-        period: r.period === 'monthly' || r.period === 'yearly' ? r.period : 'none',
         limitBytes: Number(r.limit_bytes),
         usedBytes: Number(r.used_bytes),
       };
