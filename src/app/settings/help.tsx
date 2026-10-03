@@ -27,11 +27,19 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'Who can see my documents?',
-    a: 'Only the people in your family. An admin adds each person by the email they sign in with; nobody can join by themselves. Settings › Privacy has more.',
+    a: 'Only the people in your family — and anyone you send a share link to, for that one document, until the link stops working. An admin invites each person by the email they sign in with, and they join only if they accept; nobody can join by themselves. Settings › Privacy has more.',
+  },
+  {
+    q: 'How do I share a document with someone outside the family?',
+    a: 'Open the document, choose Share, then Make a link, and send the link by message or email. Anyone with it can open that one document, without an account, for 1, 7 or 30 days. The same screen shows every working link and how often it was opened, and turns a link off at once. A family admin, whoever added the document, or the person it belongs to can share it. For now, Share is in FamilyVault on the web.',
   },
   {
     q: 'How do I add someone to my family?',
-    a: 'If you are an admin, open Manage Family and choose Add Member, then type the email they use for FamilyVault. They need to have signed up first.',
+    a: 'If you are an admin, open Manage Family and choose Add, then type the email they use for FamilyVault. They need to have signed up first. They get an invitation and join once they accept — until then they show in Manage Family as Pending approval, and you can withdraw it.',
+  },
+  {
+    q: 'Someone invited me to their family. What do I do?',
+    a: 'The invitation is on Home and in Manage Family. Choose Accept to join and see the family\'s documents, or Decline to say no. Nobody is added to a family without saying yes, and you can leave a family at any time from Manage Family.',
   },
   {
     q: 'Who is in the family tree?',
@@ -39,7 +47,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'Someone in our tree has just signed up. How do I connect them?',
-    a: 'If you are an admin, open them in the family tree and choose Link to their FamilyVault account, then type the email they sign in with. They join the family as a viewer and keep their place in the tree, their documents and their emergency card. If you already added them in Manage Family and they now appear twice, linking makes the two one.',
+    a: 'If you are an admin, open them in the family tree and choose Link to their FamilyVault account, then type the email they sign in with. They get an invitation, and once they accept they join the family as a viewer and keep their place in the tree, their documents and their emergency card. If you already added them in Manage Family and they now appear twice, linking makes the two one.',
   },
   {
     q: 'What is an emergency card?',
@@ -51,7 +59,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'How do reminders work?',
-    a: 'When a document with an expiry date is added, FamilyVault reminds everyone in the family 90, 30 and 7 days before it expires, and on the day — under the bell on Home. To get them as notifications on your phone or computer, even when FamilyVault is closed, open Settings › Notifications and turn them on for that device. On iPhone, add FamilyVault to your Home Screen first. It is free.',
+    a: 'When a document with an expiry date is added, FamilyVault reminds everyone in the family 90, 30 and 7 days before it expires, and on the day — under the bell on Home. To get them as notifications on your phone or computer, even when FamilyVault is closed, open Settings › Notifications and turn them on for that device. On iPhone, add FamilyVault to your Home Screen first. Birthdays in your family tree are reminded of on the morning of the day; switch them off in Settings › Notifications if you would rather not. It is free.',
   },
   {
     q: 'What does ★ Family Plus mean?',

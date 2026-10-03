@@ -1,11 +1,19 @@
-// ─── Members: only an admin adds, anyone can leave (migration 025) ─
+// ─── Members: only an admin invites, only a yes joins, anyone can leave ─
 //
-// There are no invitations and no requests to join: a family admin adds a
-// person who already has an account, through the add-member Edge Function,
-// and they are in at once. This walks that path with the two QA accounts:
+// Only a family admin asks someone in (025), through the add-member Edge
+// Function, and since 037 they join only when they accept. This walks that
+// path with the two QA accounts:
 //
 //   B, a stranger, cannot add itself through add-member
-//   A adds B as a viewer          → B sees the vault, and was notified
+//   A invites B (037)             → B is not a member yet, sees nothing of the
+//                                   vault, was told by an 'invite'
+//                                   notification and sees the invitation;
+//                                   A sees it as Pending approval; asking
+//                                   again says so; A cannot accept for B
+//   B declines                    → the invitation goes, and A is told
+//   A invites B again, B accepts  → B is a viewer, sees the vault, A is told
+//   (an add-member deployed before 037 adds at once: the invitation checks
+//   skip, saying so, and the rest runs as before)
 //   adding B again                → "already a member", nothing duplicated
 //   an email with no account      → "no account", nothing created
 //   B — now an insider, but a viewer — cannot make itself admin, give itself
@@ -21,11 +29,12 @@
 //   cannot change the admin's, and its card goes when it leaves.
 //   linking (033): an entry A added by name is linked to B's account — B, a
 //   viewer, cannot do it itself; while B is a member the two become one
-//   person, and once B has left, linking B's old person brings B back as it,
-//   under the same id.
+//   person at once, and once B has left, linking B's old person invites B to
+//   be it (037), and B's yes brings B back as it, under the same id.
 //
-// Skipped, with the reason, until add-member is deployed to DEV and 025 is
-// applied there. B is removed again however the checks end.
+// Skipped, with the reason, until add-member is deployed to DEV and its
+// migration applied there. B is removed again, and any invitation to B
+// withdrawn, however the checks end.
 // ────────────────────────────────────────────────────────────────
 
 import { randomUUID } from 'node:crypto';
@@ -47,8 +56,22 @@ export async function runMemberChecks(cfg, { a, b, vaultA }, results) {
   const check = (id, title, ok, why) => results.add('members', id, title, ok ? 'pass' : 'fail', { why });
   const link = (actor, personId) =>
     invokeFunction(cfg, actor, 'link-account', { family_id: vaultA.id, person_id: personId, email: cfg.b.email }, { timeoutMs: 30_000 });
+  // The invitation to B waiting in vault A (037), as the family sees it: by the
+  // address it asked. Nothing before 037.
+  const inviteToB = async () => {
+    const { data } = await a.client.from('family_invites').select('id, email, person_id').eq('family_id', vaultA.id);
+    return (data ?? []).find((i) => i.email === cfg.b.email.trim().toLowerCase()) ?? null;
+  };
+  const inboxOf = async (actor) => {
+    const { data } = await actor.client.rpc('get_user_notifications', { p_user_id: actor.user.id, p_limit: 50, p_offset: 0 });
+    return data ?? [];
+  };
+  const recent = (n) => Date.now() - Date.parse(n.created_at) < RECENT_MS;
 
-  // B starts outside vault A; the access checks leave it that way.
+  // B starts outside vault A, with nothing waiting; the access checks leave it
+  // that way, and so does a run that ended early.
+  const stale = await inviteToB();
+  if (stale) await a.client.rpc('cancel_family_invite', { p_invite_id: stale.id });
   if (await memberRow(b.user.id)) {
     await b.client.from('family_members').delete().eq('family_id', vaultA.id).eq('user_id', b.user.id);
     if (await memberRow(b.user.id)) {
@@ -56,6 +79,68 @@ export async function runMemberChecks(cfg, { a, b, vaultA }, results) {
       return;
     }
   }
+
+  // ── The invitation (037): B is asked, says no, is asked again, says yes.
+  // Returns whether B ended up a member, for the checks that follow.
+  let seenByB = new Set();            // B's notices before it was asked
+  const runInviteChecks = async () => {
+    const invite = await inviteToB();
+    check('invite-pending', 'The family sees the invitation as Pending approval', !!invite,
+      invite ? `waiting for ${invite.email}` : 'no invitation in family_invites');
+    if (!invite) return false;
+
+    const { data: early, error: earlyErr } = await b.client.rpc('get_family_documents', { p_family_id: vaultA.id, p_limit: 5, p_offset: 0 });
+    check('invitee-cannot-see', 'Someone invited sees none of the vault before saying yes', !!earlyErr || (early ?? []).length === 0,
+      earlyErr ? short(earlyErr) : `${early?.length ?? 0} document(s)`);
+
+    const { data: peek } = await b.client.from('family_invites').select('id').eq('family_id', vaultA.id);
+    check('invitee-not-family', "Someone invited does not read the family's invitations, theirs included", (peek ?? []).length === 0,
+      `${peek?.length ?? 0} row(s)`);
+
+    const told = (await inboxOf(b)).find((n) => !seenByB.has(n.id) && n.type === 'invite' && n.family_id === vaultA.id);
+    check('invite-notified', 'Someone invited is told, by an "invite" notification', !!told, told ? `"${told.title}"` : 'no "invite" notification in the last 10 minutes');
+
+    const { data: mine, error: mineErr } = await b.client.rpc('get_my_invitations');
+    const listed = (mine ?? []).find((i) => i.id === invite.id);
+    check('invitee-sees-invitation', 'Someone invited sees which family asked, and who', !mineErr && listed?.family_name === vaultA.name,
+      mineErr ? short(mineErr) : listed ? `"${listed.family_name}", from ${listed.invited_by_name ?? 'an admin'}` : 'not listed');
+
+    const again = await add(a, cfg.b.email);
+    check('invite-again', 'Inviting the same person again says so and sends nothing new', again.status === 409 && again.data?.status === 'already_invited', http(again));
+
+    const { error: forErr } = await a.client.rpc('accept_family_invite', { p_invite_id: invite.id });
+    check('admin-cannot-accept', 'An admin cannot say yes for the person invited', refusedByAuth(forErr) && !(await memberRow(b.user.id)),
+      forErr ? short(forErr) : 'the admin ACCEPTED it');
+
+    // No: the invitation goes, nobody joins, and A hears it — in a notice new
+    // in this run, not one an earlier run left.
+    const seenByA = new Set((await inboxOf(a)).map((n) => n.id));
+    const newForA = async (pattern) => (await inboxOf(a))
+      .find((n) => !seenByA.has(n.id) && n.type === 'member' && n.family_id === vaultA.id && pattern.test(n.title));
+    const { error: noErr } = await b.client.rpc('decline_family_invite', { p_invite_id: invite.id });
+    const afterNo = await inviteToB();
+    const heardNo = await newForA(/said no/i);
+    check('invitee-declines', 'Saying no removes the invitation, nobody joins, and the admin is told',
+      !noErr && !afterNo && !(await memberRow(b.user.id)) && !!heardNo,
+      noErr ? short(noErr) : afterNo ? 'the invitation is STILL there' : heardNo ? `"${heardNo.title}"` : 'the admin was not told');
+    if (heardNo) await a.client.rpc('mark_notification_read', { p_notification_id: heardNo.id, p_user_id: a.user.id });
+
+    // Asked again; yes this time.
+    const asked = await add(a, cfg.b.email, { relationship: 'Other', alias: 'QA insider' });
+    const second = asked.status === 200 && asked.data?.status === 'invited' ? await inviteToB() : null;
+    if (!second) {
+      check('invitee-accepts', 'Saying yes makes them a member, and the admin is told', false, `could not invite again: ${http(asked)}`);
+      return false;
+    }
+    const { data: yes, error: yesErr } = await b.client.rpc('accept_family_invite', { p_invite_id: second.id });
+    const heardYes = await newForA(/joined/i);
+    const joinedRow = await memberRow(b.user.id);
+    check('invitee-accepts', 'Saying yes makes them a member, the invitation goes, and the admin is told',
+      !yesErr && yes?.status === 'joined' && !!joinedRow && !(await inviteToB()) && !!heardYes,
+      yesErr ? short(yesErr) : !joinedRow ? 'NOT a member' : heardYes ? `"${heardYes.title}"` : 'the admin was not told');
+    if (heardYes) await a.client.rpc('mark_notification_read', { p_notification_id: heardYes.id, p_user_id: a.user.id });
+    return !!joinedRow;
+  };
 
   // ── A stranger cannot use the endpoint to get in.
   const self = await add(b, cfg.b.email);
@@ -65,16 +150,25 @@ export async function runMemberChecks(cfg, { a, b, vaultA }, results) {
   }
   check('stranger-cannot-add', 'Account B cannot add itself to QA Vault A through add-member', self.status === 403, http(self));
 
-  // ── A adds B.
+  // ── A asks B in. Since 037 that is an invitation, and B joins on a yes.
+  seenByB = new Set((await inboxOf(b)).map((n) => n.id));
   const added = await add(a, cfg.b.email, { relationship: 'Other', alias: 'QA insider' });
   if (added.status === 503 && added.data?.status === 'needs_migration') {
-    results.add('members', 'add', 'An admin adds an existing account by email', 'skipped', { why: 'migration 025 is not applied to DEV yet' });
+    results.add('members', 'add', 'An admin invites an existing account by email', 'skipped', { why: `add-member's migration is not applied to DEV yet: ${added.data?.error ?? ''}` });
     return;
   }
-  const isAdded = added.status === 200 && added.data?.status === 'added';
-  check('add', 'An admin adds an existing account by email (add-member)', isAdded,
-    isAdded ? `added ${added.data.display_name} as ${added.data.role}` : http(added));
-  if (!isAdded) return;
+  const addedAtOnce = added.status === 200 && added.data?.status === 'added';
+  if (addedAtOnce) {
+    results.add('members', 'invite', 'An admin invites by email, and the person joins only on a yes', 'skipped',
+      { why: 'add-member on DEV still adds at once — it invites once this is merged to dev and migration 037 is applied' });
+  } else {
+    const isInvited = added.status === 200 && added.data?.status === 'invited';
+    check('invite', 'An admin invites an existing account by email (add-member), and nobody joins yet', isInvited && !(await memberRow(b.user.id)),
+      isInvited ? `invited ${added.data.email}` : http(added));
+    if (!isInvited) return;
+    const ok = await runInviteChecks();
+    if (!ok) return;
+  }
 
   let sacrificialId = null;
   let treePerson = null;              // B's person in A's tree, removed at the end
@@ -97,11 +191,13 @@ export async function runMemberChecks(cfg, { a, b, vaultA }, results) {
     check('member-sees-vault', 'The new member sees the family\'s documents', !docsErr && (docs?.length ?? 0) > 0,
       docsErr ? docsErr.message : `${docs?.length ?? 0} document(s)`);
 
-    const { data: inbox, error: inboxErr } = await b.client.rpc('get_user_notifications', { p_user_id: b.user.id, p_limit: 20, p_offset: 0 });
-    const told = (inbox ?? []).find((n) => n.type === 'member' && n.family_id === vaultA.id && Date.now() - Date.parse(n.created_at) < RECENT_MS);
-    check('member-notified', 'The new member was told, by a notification', !inboxErr && !!told,
-      inboxErr ? inboxErr.message : told ? `"${told.title}"` : 'no "member" notification in the last 10 minutes');
-    if (told) await b.client.rpc('mark_notification_read', { p_notification_id: told.id, p_user_id: b.user.id });
+    if (addedAtOnce) {
+      const { data: inbox, error: inboxErr } = await b.client.rpc('get_user_notifications', { p_user_id: b.user.id, p_limit: 20, p_offset: 0 });
+      const told = (inbox ?? []).find((n) => n.type === 'member' && n.family_id === vaultA.id && recent(n));
+      check('member-notified', 'The new member was told, by a notification', !inboxErr && !!told,
+        inboxErr ? inboxErr.message : told ? `"${told.title}"` : 'no "member" notification in the last 10 minutes');
+      if (told) await b.client.rpc('mark_notification_read', { p_notification_id: told.id, p_user_id: b.user.id });
+    }
 
     // ── The insider probes. B is a member now, so RLS lets it SEE these rows;
     // only the admin checks stand between it and changing them.
@@ -141,6 +237,20 @@ export async function runMemberChecks(cfg, { a, b, vaultA }, results) {
     const { data: fam } = await a.client.from('families').select('name').eq('id', vaultA.id).single();
     check('viewer-cannot-rename', 'A viewer cannot rename the family', fam?.name === vaultA.name, `name is "${fam?.name}"`);
     if (fam && fam.name !== vaultA.name) await a.client.from('families').update({ name: vaultA.name }).eq('id', vaultA.id);
+
+    // Share links (036): a viewer may share only what they added or what is
+    // theirs, never an admin's document.
+    if (docs?.length) {
+      const { data: made, error: shareErr } = await b.client.rpc('create_document_share', { p_family_id: vaultA.id, p_document_id: docs[0].id, p_days: 1 });
+      if (shareErr && String(shareErr.code) === 'PGRST202') {
+        results.add('members', 'viewer-cannot-share', "A viewer cannot share someone else's document by link", 'skipped', { why: 'migration 036 is not applied to DEV yet' });
+      } else {
+        check('viewer-cannot-share', "A viewer cannot share someone else's document by link", refusedByAuth(shareErr),
+          shareErr ? short(shareErr) : 'a link was MADE');
+        // A link that should never have been made does not stay open.
+        if (!shareErr && made?.id) await a.client.rpc('revoke_document_share', { p_share_id: made.id });
+      }
+    }
 
     // ── The family tree (031): B is a person in it now.
     const { data: person, error: personErr } = await a.client.from('family_people')
@@ -238,24 +348,41 @@ export async function runMemberChecks(cfg, { a, b, vaultA }, results) {
     // behind in the tree, is linked to B's account again. B comes back as a
     // viewer under the same id, is told so, and then leaves again.
     if (treePerson && gone && linkReady) {
-      const inbox = async () => {
-        const { data } = await b.client.rpc('get_user_notifications', { p_user_id: b.user.id, p_limit: 50, p_offset: 0 });
-        return data ?? [];
-      };
-      const before = new Set((await inbox()).map((n) => n.id));
+      const before = new Set((await inboxOf(b)).map((n) => n.id));
       const joined = await link(a, treePerson);
-      const back = await memberRow(b.user.id);
-      check('link-joins', 'Linking someone in the tree to an account that is not a member brings them in as that person, a viewer',
-        joined.status === 200 && joined.data?.status === 'linked' && back?.id === treePerson && back?.role === 'viewer',
-        joined.status !== 200 ? http(joined) : !back ? 'not a member' : `${back.id === treePerson ? 'under the same id' : 'under a NEW id'}, ${back.role}`);
-      if (back) {
-        const told = (await inbox()).find((n) => n.type === 'member' && n.family_id === vaultA.id && !before.has(n.id));
-        check('link-notified', 'Someone linked into a family is told, by a notification', !!told, told ? `"${told.title}"` : 'no new "member" notification');
-        if (told) await b.client.rpc('mark_notification_read', { p_notification_id: told.id, p_user_id: b.user.id });
-        await b.client.from('family_members').delete().eq('family_id', vaultA.id).eq('user_id', b.user.id);
+      let back = null;
+      if (joined.status === 200 && joined.data?.status === 'invited') {
+        // Since 037: an invitation to be that person, and B's yes.
+        const waiting = await inviteToB();
+        check('link-invites', 'Linking someone in the tree to an account that is not a member invites them to be that person, and nobody joins yet',
+          waiting?.person_id === treePerson && !(await memberRow(b.user.id)),
+          !waiting ? 'no invitation' : waiting.person_id === treePerson ? 'invited as that person' : 'invited as someone ELSE');
+        const told = (await inboxOf(b)).find((n) => n.type === 'invite' && n.family_id === vaultA.id && !before.has(n.id));
+        check('link-notified', 'Someone invited from the tree is told, by a notification', !!told, told ? `"${told.title}"` : 'no new "invite" notification');
+        if (waiting) {
+          const { data: accepted, error: acceptErr } = await b.client.rpc('accept_family_invite', { p_invite_id: waiting.id });
+          back = await memberRow(b.user.id);
+          check('link-joins', 'Accepting brings them in as that person, a viewer, under the same id',
+            !acceptErr && accepted?.status === 'joined' && back?.id === treePerson && back?.role === 'viewer',
+            acceptErr ? short(acceptErr) : !back ? 'not a member' : `${back.id === treePerson ? 'under the same id' : 'under a NEW id'}, ${back.role}`);
+        }
+      } else {
+        // link-account as deployed before 037 brings them in at once.
+        back = await memberRow(b.user.id);
+        check('link-joins', 'Linking someone in the tree to an account that is not a member brings them in as that person, a viewer',
+          joined.status === 200 && joined.data?.status === 'linked' && back?.id === treePerson && back?.role === 'viewer',
+          joined.status !== 200 ? http(joined) : !back ? 'not a member' : `${back.id === treePerson ? 'under the same id' : 'under a NEW id'}, ${back.role}`);
+        if (back) {
+          const told = (await inboxOf(b)).find((n) => n.type === 'member' && n.family_id === vaultA.id && !before.has(n.id));
+          check('link-notified', 'Someone linked into a family is told, by a notification', !!told, told ? `"${told.title}"` : 'no new "member" notification');
+          if (told) await b.client.rpc('mark_notification_read', { p_notification_id: told.id, p_user_id: b.user.id });
+        }
       }
+      if (back) await b.client.from('family_members').delete().eq('family_id', vaultA.id).eq('user_id', b.user.id);
     }
   } finally {
+    const waiting = await inviteToB();
+    if (waiting) await a.client.rpc('cancel_family_invite', { p_invite_id: waiting.id });
     if (await memberRow(b.user.id)) await a.client.from('family_members').delete().eq('family_id', vaultA.id).eq('user_id', b.user.id);
     if (sacrificialId) await a.client.rpc('delete_family_document', { p_family_id: vaultA.id, p_document_id: sacrificialId, p_user_id: a.user.id });
     if (linkEntry) await a.client.rpc('remove_family_person', { p_person_id: linkEntry });

@@ -100,6 +100,73 @@ export type Database = {
           },
         ]
       }
+      document_shares: {
+        Row: {
+          created_at: string
+          created_by: string
+          document_id: string
+          expires_at: string
+          family_id: string
+          id: string
+          last_opened_at: string | null
+          note: string | null
+          open_count: number
+          revoked_at: string | null
+          revoked_by: string | null
+          token_hash: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          document_id: string
+          expires_at: string
+          family_id: string
+          id?: string
+          last_opened_at?: string | null
+          note?: string | null
+          open_count?: number
+          revoked_at?: string | null
+          revoked_by?: string | null
+          token_hash: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          document_id?: string
+          expires_at?: string
+          family_id?: string
+          id?: string
+          last_opened_at?: string | null
+          note?: string | null
+          open_count?: number
+          revoked_at?: string | null
+          revoked_by?: string | null
+          token_hash?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "document_shares_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "document_shares_family_id_fkey"
+            columns: ["family_id"]
+            isOneToOne: false
+            referencedRelation: "families"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "document_shares_revoked_by_fkey"
+            columns: ["revoked_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       families: {
         Row: {
           created_at: string | null
@@ -252,6 +319,74 @@ export type Database = {
             isOneToOne: true
             referencedRelation: "family_people"
             referencedColumns: ["family_id", "id"]
+          },
+        ]
+      }
+      family_invites: {
+        Row: {
+          alias: string | null
+          created_at: string
+          email: string
+          family_id: string
+          id: string
+          invited_by: string | null
+          person_id: string | null
+          relationship: string | null
+          role: string
+          user_id: string
+        }
+        Insert: {
+          alias?: string | null
+          created_at?: string
+          email: string
+          family_id: string
+          id?: string
+          invited_by?: string | null
+          person_id?: string | null
+          relationship?: string | null
+          role?: string
+          user_id: string
+        }
+        Update: {
+          alias?: string | null
+          created_at?: string
+          email?: string
+          family_id?: string
+          id?: string
+          invited_by?: string | null
+          person_id?: string | null
+          relationship?: string | null
+          role?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "family_invites_family_id_fkey"
+            columns: ["family_id"]
+            isOneToOne: false
+            referencedRelation: "families"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "family_invites_invited_by_fkey"
+            columns: ["invited_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "family_invites_person"
+            columns: ["family_id", "person_id"]
+            isOneToOne: false
+            referencedRelation: "family_people"
+            referencedColumns: ["family_id", "id"]
+          },
+          {
+            foreignKeyName: "family_invites_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -844,6 +979,7 @@ export type Database = {
           auth_provider: string
           avatar_url: string | null
           biometric_enabled: boolean | null
+          birthday_reminders: boolean
           created_at: string | null
           display_name: string
           document_languages: string[]
@@ -861,6 +997,7 @@ export type Database = {
           auth_provider?: string
           avatar_url?: string | null
           biometric_enabled?: boolean | null
+          birthday_reminders?: boolean
           created_at?: string | null
           display_name: string
           document_languages?: string[]
@@ -878,6 +1015,7 @@ export type Database = {
           auth_provider?: string
           avatar_url?: string | null
           biometric_enabled?: boolean | null
+          birthday_reminders?: boolean
           created_at?: string | null
           display_name?: string
           document_languages?: string[]
@@ -898,6 +1036,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      accept_family_invite: { Args: { p_invite_id: string }; Returns: Json }
       account_deletion_plan: {
         Args: { p_user_id: string }
         Returns: {
@@ -940,6 +1079,7 @@ export type Database = {
         Returns: undefined
       }
       assert_caller_is: { Args: { p_user_id: string }; Returns: undefined }
+      cancel_family_invite: { Args: { p_invite_id: string }; Returns: undefined }
       check_expiry_notifications: {
         Args: { p_family_id: string }
         Returns: number
@@ -953,6 +1093,15 @@ export type Database = {
           p_ocr_text: string
         }
         Returns: undefined
+      }
+      create_document_share: {
+        Args: {
+          p_days: number
+          p_document_id: string
+          p_family_id: string
+          p_note?: string
+        }
+        Returns: Json
       }
       create_expiry_alert: {
         Args: {
@@ -972,6 +1121,7 @@ export type Database = {
         }
         Returns: string
       }
+      decline_family_invite: { Args: { p_invite_id: string }; Returns: undefined }
       delete_account_data: { Args: { p_user_id: string }; Returns: Json }
       delete_family_document: {
         Args: { p_document_id: string; p_family_id: string; p_user_id: string }
@@ -1037,6 +1187,18 @@ export type Database = {
         }[]
       }
       get_my_family_ids: { Args: never; Returns: string[] }
+      get_my_invitations: {
+        Args: never
+        Returns: {
+          created_at: string
+          family_id: string
+          family_name: string
+          id: string
+          invited_by_name: string
+          person_name: string
+          role: string
+        }[]
+      }
       get_user_notifications: {
         Args: { p_limit?: number; p_offset?: number; p_user_id: string }
         Returns: {
@@ -1085,6 +1247,26 @@ export type Database = {
         }
         Returns: string
       }
+      invite_family_member: {
+        Args: {
+          p_alias?: string
+          p_email: string
+          p_family_id: string
+          p_invited_by: string
+          p_relationship?: string
+          p_role?: string
+        }
+        Returns: Json
+      }
+      invite_family_person_account: {
+        Args: {
+          p_email: string
+          p_family_id: string
+          p_invited_by: string
+          p_person_id: string
+        }
+        Returns: Json
+      }
       is_family_admin: { Args: { p_family_id: string }; Returns: boolean }
       is_superuser: { Args: never; Returns: boolean }
       link_family_people: {
@@ -1112,6 +1294,16 @@ export type Database = {
       }
       purge_family: { Args: { p_family_id: string }; Returns: string }
       rag_chunk_total: { Args: { p_schema: string }; Returns: number }
+      open_document_share: {
+        Args: { p_token_hash: string }
+        Returns: {
+          expires_at: string
+          file_name: string
+          file_type: string
+          shared_by: string
+          storage_path: string
+        }[]
+      }
       push_claim_send: { Args: never; Returns: boolean }
       push_done: {
         Args: {
@@ -1159,6 +1351,7 @@ export type Database = {
           public_key: string
         }[]
       }
+      queue_birthday_reminders: { Args: { p_today?: string }; Returns: number }
       queue_expiry_reminders: { Args: { p_today?: string }; Returns: number }
       queue_family_expiry_reminders: {
         Args: { p_family_id: string; p_today?: string }
@@ -1250,6 +1443,7 @@ export type Database = {
         Args: { p_person_id: string }
         Returns: undefined
       }
+      revoke_document_share: { Args: { p_share_id: string }; Returns: undefined }
       run_reminders: { Args: never; Returns: undefined }
       save_emergency_card: {
         Args: { p_card: Json; p_person_id: string }

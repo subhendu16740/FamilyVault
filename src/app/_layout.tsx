@@ -17,6 +17,9 @@ function AuthGate() {
     if (authLoading) return;
 
     const seg = segments[0] as string | undefined;
+    // A shared document (036) is for anyone with the link, signed in or not:
+    // neither sent to sign in nor sent Home.
+    if (seg === 's') return;
     // A route missing here sends a signed-in person to /home — which, for
     // gmail-import, would throw away the code Google just sent back.
     const inProtectedRoute = seg === '(tabs)' || seg === 'document' || seg === 'family' || seg === 'settings' || seg === 'setup-family' || seg === 'notifications' || seg === 'gmail-import' || seg === 'reminders' || seg === 'saved-chats' || seg === 'family-tree' || seg === 'person' || seg === 'emergency';

@@ -15,9 +15,14 @@ import { usePreferences } from '../lib/preferences';
 const typeConfig: Record<string, { icon: string; bg: string; color: string }> = {
   expiry: { icon: 'clock', bg: '#FEF2F2', color: '#DC2626' },
   upload: { icon: 'upload', bg: '#EFF6FF', color: '#2563EB' },
-  invite: { icon: 'user-plus', bg: '#F0FDF4', color: '#16A34A' },
-  // "You were added to <family>" — migration 025's add_family_member().
+  // "Rohan invited you to join Verma Family" — migration 037; answered in Manage Family.
+  invite: { icon: 'mail', bg: '#EFF6FF', color: '#2563EB' },
+  // "Priya joined Verma Family" / "… said no" (037), or "You were added to <family>" (025).
   member: { icon: 'user-plus', bg: '#F0FDF4', color: '#16A34A' },
+  // "Today is Kamala Verma's 78th birthday" — migration 035.
+  birthday: { icon: 'gift', bg: '#FDF2F8', color: '#DB2777' },
+  // "Rohan shared your PAN by link" — migration 036; opens the document.
+  share: { icon: 'link', bg: '#EFF6FF', color: '#2563EB' },
   system: { icon: 'info', bg: '#F3F4F6', color: '#6B7280' },
 };
 
@@ -66,7 +71,7 @@ export default function NotificationsScreen() {
     // so a tap that opens something opens it in the notification's own. (A
     // family the person has since left falls back to their default, as any
     // stale choice does.)
-    const opens = !!notif.document_ref || notif.type === 'member';
+    const opens = !!notif.document_ref || notif.type === 'member' || notif.type === 'birthday';
     if (opens && notif.family_id && notif.family_id !== currentFamily?.id) {
       switchFamily(notif.family_id);
     }
@@ -75,6 +80,11 @@ export default function NotificationsScreen() {
       router.push(`/document/${notif.document_ref}` as any);
     } else if (notif.type === 'member') {
       // Where the new family can be switched to, or left.
+      router.push('/family' as any);
+    } else if (notif.type === 'birthday') {
+      router.push('/family-tree' as any);
+    } else if (notif.type === 'invite') {
+      // Not their family yet, so no switching: the invitation is answered there.
       router.push('/family' as any);
     }
   }, [user, currentFamily?.id, switchFamily]);

@@ -6,6 +6,9 @@
 //
 // Off hides the bell's count and the list, and sends nothing to devices;
 // nothing is deleted, so switching back on shows them again.
+//
+// Birthdays (035) is its own switch: on the morning of a birthday in the
+// family tree, the server reminds everyone who has it on.
 
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, Platform, ScrollView, View, StyleSheet } from 'react-native';
@@ -28,7 +31,7 @@ const DEVICE_TEXT: Record<Exclude<PushStatus, 'on' | 'off'>, string> = {
 };
 
 export default function NotificationSettingsScreen() {
-  const { notificationsEnabled, setNotificationsEnabled } = usePreferences();
+  const { notificationsEnabled, setNotificationsEnabled, birthdayReminders, setBirthdayReminders, birthdaysAvailable } = usePreferences();
   const onWeb = Platform.OS === 'web';
   const [device, setDevice] = useState<PushStatus | null>(null);
   const [busy, setBusy] = useState<'on' | 'off' | 'test' | null>(null);
@@ -120,8 +123,29 @@ export default function NotificationSettingsScreen() {
         )}
 
         <Card>
+          <CardTitle icon="gift">Birthdays</CardTitle>
+          {birthdaysAvailable ? (
+            <>
+              <OnOff value={birthdayReminders} onChange={setBirthdayReminders} label="Birthday reminders" />
+              <Body>
+                {birthdayReminders
+                  ? 'On the morning of a birthday in your family tree, you get a reminder.'
+                  : 'You are not reminded of birthdays.'}
+              </Body>
+              <Muted>
+                Only for people with a date of birth in the family tree. If someone there has passed away, an admin can
+                remove their date of birth from their page.
+              </Muted>
+            </>
+          ) : (
+            <Muted>Birthday reminders are not switched on yet.</Muted>
+          )}
+        </Card>
+
+        <Card>
           <CardTitle icon="info">What you are told about</CardTitle>
           <Body>• A document of your family's is about to expire: 90, 30 and 7 days before, and on the day.</Body>
+          <Body>• Someone's birthday in your family tree, if Birthdays is on.</Body>
           <Body>• Someone adds you to a family.</Body>
           <Muted>
             Everyone in the family is told. Phones and computers are told between 8 in the morning and 10 at night,

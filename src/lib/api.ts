@@ -359,15 +359,20 @@ export async function fetchCategories(): Promise<DocumentCategory[]> {
 
 // ─── Adding members (admin only) ─────────────────────────────────
 //
-// There are no invitations and no requests to join (migration 025): a family
-// admin adds a person who already has an account, by the email they sign in
-// with, and they are a member at once — and are told so by a notification.
+// Nobody joins a family without saying yes (migration 037): a family admin
+// invites a person who already has an account, by the email they sign in
+// with. They are told by a notification and join only when they accept;
+// until then the family sees them as Pending approval (fetchFamilyInvites).
 // It goes through the add-member Edge Function because only the server may
 // look an account up by email.
 
 export type AddMemberOutcome =
+  /** Invited: they join when they accept. */
+  | { status: 'invited'; email: string }
+  /** An add-member deployed before 037 adds at once. */
   | { status: 'added'; displayName: string }
   | { status: 'already_member'; displayName: string }
+  | { status: 'already_invited' }
   | { status: 'no_account' }
   | { status: 'invalid_email' }
   /** The server is not ready for this yet (function or migration missing). */
@@ -386,13 +391,19 @@ export async function addFamilyMember(
       ...(details.relationship ? { relationship: details.relationship } : {}),
     },
   });
-  if (!error) return { status: 'added', displayName: data?.display_name || email };
+  if (!error) {
+    return data?.status === 'invited'
+      ? { status: 'invited', email: data.email || email.trim().toLowerCase() }
+      : { status: 'added', displayName: data?.display_name || email };
+  }
 
   const httpStatus = (error as { context?: Response })?.context?.status;
   const body = (await readFunctionError(error)) as { status?: string; error?: string; display_name?: string } | null;
   switch (body?.status) {
     case 'already_member':
       return { status: 'already_member', displayName: body.display_name || email };
+    case 'already_invited':
+      return { status: 'already_invited' };
     case 'no_account':
       return { status: 'no_account' };
     case 'invalid_email':
@@ -409,11 +420,14 @@ export async function addFamilyMember(
 
 // Someone added to the family tree by name who has since signed up: link the
 // entry to their account rather than adding them again (migration 033). Not
-// yet a member, they join as a viewer AS that person, keeping their links,
-// documents and emergency card; already a member, their two entries become
-// one. Through link-account, which checks the caller is an admin.
+// yet a member, they are invited (037), and join as a viewer AS that person
+// when they accept, keeping their links, documents and emergency card;
+// already a member, their two entries become one at once. Through
+// link-account, which checks the caller is an admin.
 export type LinkAccountOutcome =
-  /** `memberId` is who they are in the tree now: the same person when linked, their member person when merged. */
+  /** Invited to be this person: Pending approval until they accept. */
+  | { status: 'invited'; displayName: string; email: string }
+  /** `memberId` is who they are in the tree now: the same person when linked (before 037), their member person when merged. */
   | { status: 'linked' | 'merged'; displayName: string; memberId: string }
   | { status: 'no_account' }
   | { status: 'invalid_email' }
@@ -427,6 +441,9 @@ export async function linkPersonToAccount(familyId: string, personId: string, em
     body: { family_id: familyId, person_id: personId, email: email.trim() },
   });
   if (!error) {
+    if (data?.status === 'invited') {
+      return { status: 'invited', displayName: data.display_name || email, email: data.email || email.trim().toLowerCase() };
+    }
     return {
       status: data?.status === 'merged' ? 'merged' : 'linked',
       displayName: data?.display_name || email,
@@ -450,6 +467,7 @@ export async function linkPersonToAccount(familyId: string, personId: string, em
     }
     case 'already_linked':
     case 'already_member':
+    case 'already_invited':
     case 'no_person':
       return { status: 'refused', message: body.error ?? 'This person could not be linked.' };
   }
@@ -458,6 +476,113 @@ export async function linkPersonToAccount(familyId: string, personId: string, em
     return { status: 'unavailable', message: 'Linking someone to their account is not switched on yet.' };
   }
   throw new Error(body?.error ?? error.message);
+}
+
+// ─── Invitations (037) ───────────────────────────────────────────
+//
+// What add-member and link-account make now: the person answers, and only a
+// yes makes them a member. They see which family asked and who; the family
+// sees the address it asked, as Pending approval, until they answer. Before
+// 037 there are none, and every read here comes back empty.
+
+export interface Invitation {
+  id: string;
+  familyId: string;
+  familyName: string;
+  invitedByName: string | null;
+  /** The tree entry they would be, when the invitation came from a link. */
+  personName: string | null;
+  role: string;
+  createdAt: string;
+}
+
+/** The invitations waiting for the signed-in person, oldest first. */
+export async function fetchMyInvitations(): Promise<Invitation[]> {
+  const { data, error } = await supabase.rpc('get_my_invitations');
+  if (error) {
+    if (isMissingMigration(error)) return [];
+    throw error;
+  }
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    familyId: row.family_id,
+    familyName: row.family_name,
+    invitedByName: row.invited_by_name ?? null,
+    personName: row.person_name ?? null,
+    role: row.role,
+    createdAt: row.created_at,
+  }));
+}
+
+export type AcceptOutcome =
+  | { status: 'joined'; familyId: string; familyName: string }
+  /** Withdrawn, or someone else is that person now: nothing to accept. */
+  | { status: 'gone' };
+
+export async function acceptInvitation(inviteId: string): Promise<AcceptOutcome> {
+  const { data, error } = await supabase.rpc('accept_family_invite', { p_invite_id: inviteId });
+  if (error) {
+    if (error.code === '42501') return { status: 'gone' };
+    throw error;
+  }
+  const result = data as { status?: string; family_id?: string; family_name?: string } | null;
+  return result?.status === 'joined' && result.family_id
+    ? { status: 'joined', familyId: result.family_id, familyName: result.family_name ?? '' }
+    : { status: 'gone' };
+}
+
+export async function declineInvitation(inviteId: string): Promise<void> {
+  const { error } = await supabase.rpc('decline_family_invite', { p_invite_id: inviteId });
+  // 42501: withdrawn already — there is nothing left to say no to.
+  if (error && error.code !== '42501') throw error;
+}
+
+export interface PendingInvite {
+  id: string;
+  /** The address the admin asked: the family does not see the account behind it until they accept. */
+  email: string;
+  /** The tree entry they were asked to be, when the invitation came from a link, and its name. */
+  personId: string | null;
+  personName: string | null;
+  role: string;
+  invitedBy: string | null;
+  createdAt: string;
+}
+
+/** Who this family has asked and not heard from yet: Pending approval. */
+export async function fetchFamilyInvites(familyId: string): Promise<PendingInvite[]> {
+  const columns = 'id, email, person_id, role, invited_by, created_at';
+  const query = (select: string) => supabase
+    .from('family_invites')
+    .select(select)
+    .eq('family_id', familyId)
+    .order('created_at', { ascending: true });
+  // With the tree entry's name; without it if the embed is refused, rather
+  // than showing nobody as pending.
+  let { data, error } = await query(`${columns}, family_people!family_invites_person(display_name)`);
+  if (error && !isMissingMigration(error)) ({ data, error } = await query(columns));
+  if (error) {
+    if (isMissingMigration(error)) return [];
+    throw error;
+  }
+  return ((data ?? []) as unknown as Array<{
+    id: string; email: string; person_id: string | null; role: string; invited_by: string | null; created_at: string;
+    family_people?: { display_name: string } | null;
+  }>).map((row) => ({
+    id: row.id,
+    email: row.email,
+    personId: row.person_id,
+    personName: row.family_people?.display_name ?? null,
+    role: row.role,
+    invitedBy: row.invited_by,
+    createdAt: row.created_at,
+  }));
+}
+
+/** An admin withdraws an invitation; the notice of it goes too. */
+export async function cancelInvitation(inviteId: string): Promise<void> {
+  const { error } = await supabase.rpc('cancel_family_invite', { p_invite_id: inviteId });
+  if (error) throw error;
 }
 
 // ─── Gmail import ────────────────────────────────────────────────
@@ -616,8 +741,8 @@ export async function updateMemberRole(memberId: string, role: string): Promise<
 }
 
 /**
- * Leave a family. Anyone may leave any family they are in — being added needs
- * no consent, so leaving must need no permission (family_members_delete_self).
+ * Leave a family. Anyone may leave any family they are in, at any time, with
+ * nobody's permission (family_members_delete_self).
  */
 export async function leaveFamily(familyId: string, userId: string): Promise<void> {
   const { data, error } = await supabase
@@ -754,6 +879,135 @@ export async function getDocumentSignedUrl(
 
   if (error) throw new Error(`Signed URL failed: ${error.message}`);
   return data.signedUrl;
+}
+
+// ─── Share links (036) ───────────────────────────────────────────
+//
+// One document, by a link that lasts 1, 7 or 30 days, for someone outside
+// the family. The link's secret is returned once, when it is made, and is
+// never stored: only its hash. The family sees every live link on the
+// document's page; whoever made it, or an admin, can turn it off.
+
+export type ShareDays = 1 | 7 | 30;
+
+export interface ShareLink {
+  id: string;
+  note: string | null;
+  expiresAt: string;
+  createdBy: string;
+  openCount: number;
+  lastOpenedAt: string | null;
+  createdAt: string;
+}
+
+export type MakeShareOutcome =
+  | { status: 'made'; link: ShareLink; token: string }
+  /** Not theirs to share, or the document is gone, in the database's own words. */
+  | { status: 'refused'; message: string }
+  /** Migration 036 is not applied here. */
+  | { status: 'unavailable' };
+
+/** The address a link opens: the web app's /s page, the secret after '#', which browsers never send to a server. */
+export function shareLinkUrl(origin: string, token: string): string {
+  return `${origin.replace(/\/+$/, '')}/s#${token}`;
+}
+
+export async function createShareLink(
+  familyId: string,
+  documentId: string,
+  days: ShareDays,
+  note?: string,
+): Promise<MakeShareOutcome> {
+  const { data, error } = await supabase.rpc('create_document_share', {
+    p_family_id: familyId,
+    p_document_id: documentId,
+    p_days: days,
+    p_note: note?.trim() || undefined,
+  });
+  if (error) {
+    if (isMissingMigration(error)) return { status: 'unavailable' };
+    if (error.code === '42501' || error.code === '22023') return { status: 'refused', message: error.message };
+    throw error;
+  }
+  const made = data as { id: string; token: string; expires_at: string };
+  const { data: auth } = await supabase.auth.getSession();
+  return {
+    status: 'made',
+    token: made.token,
+    link: {
+      id: made.id,
+      note: note?.trim() || null,
+      expiresAt: made.expires_at,
+      createdBy: auth.session?.user.id ?? '',
+      openCount: 0,
+      lastOpenedAt: null,
+      createdAt: new Date().toISOString(),
+    },
+  };
+}
+
+/** The document's links still working, newest first; 'unavailable' before 036. */
+export async function fetchShareLinks(familyId: string, documentId: string): Promise<ShareLink[] | 'unavailable'> {
+  // Named columns: clients may not read the secret's hash, so '*' is refused.
+  const { data, error } = await supabase
+    .from('document_shares')
+    .select('id, note, expires_at, created_by, open_count, last_opened_at, created_at')
+    .eq('family_id', familyId)
+    .eq('document_id', documentId)
+    .is('revoked_at', null)
+    .gt('expires_at', new Date().toISOString())
+    .order('created_at', { ascending: false });
+  if (error) {
+    if (isMissingMigration(error)) return 'unavailable';
+    throw error;
+  }
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    note: row.note,
+    expiresAt: row.expires_at,
+    createdBy: row.created_by,
+    openCount: row.open_count,
+    lastOpenedAt: row.last_opened_at,
+    createdAt: row.created_at,
+  }));
+}
+
+export async function revokeShareLink(shareId: string): Promise<void> {
+  const { error } = await supabase.rpc('revoke_document_share', { p_share_id: shareId });
+  if (error) throw error;
+}
+
+export interface SharedDocument {
+  fileName: string;
+  fileType: string;
+  expiresAt: string;
+  /** First name of whoever shared it. */
+  sharedBy: string | null;
+  /** Both work for five minutes; opening the page again asks again. */
+  url: string;
+  downloadUrl: string;
+}
+
+/** The public page's call: no account, only the link's secret. */
+export async function openSharedDocument(token: string): Promise<SharedDocument | 'gone' | 'unavailable'> {
+  if (!/^[0-9a-f]{64}$/.test(token)) return 'gone';
+  const { data, error } = await supabase.functions.invoke('share', { body: { token } });
+  if (error) {
+    const httpStatus = (error as { context?: Response })?.context?.status;
+    const body = (await readFunctionError(error)) as { status?: string } | null;
+    if (body?.status === 'gone') return 'gone';
+    // 503: 036 not applied; a bare 404: the function is not deployed here yet.
+    if (body?.status === 'needs_migration' || (httpStatus === 404 && !body?.status)) return 'unavailable';
+    throw new Error('Could not open this link. Please try again.');
+  }
+  return {
+    fileName: data.file_name,
+    fileType: data.file_type,
+    expiresAt: data.expires_at,
+    sharedBy: data.shared_by ?? null,
+    url: data.url,
+    downloadUrl: data.download_url,
+  };
 }
 
 // ─── Notifications ───────────────────────────────────────────────

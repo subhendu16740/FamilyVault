@@ -5,27 +5,30 @@
 // second entry beside the one with their links, documents and emergency card.
 // An admin links the existing entry to the account instead (migration 033):
 //
-//   • not yet a member: they join as a viewer, under that person's id, so
-//     everything already theirs stays theirs, and they are told by a
-//     notification, as when added by email;
-//   • already a member: their two entries become one.
+//   • not yet a member: they are invited (migration 037), and when they
+//     accept they join as a viewer under that person's id, so everything
+//     already theirs stays theirs. Until then the family sees Pending
+//     approval on the person's page;
+//   • already a member: their two entries become one, at once — they are in
+//     the family already, and nothing new opens up to them.
 //
 // A function of its own, not an option on add-member, on purpose: an app
 // that asked an older add-member to link would have it ADD the person again,
 // the very duplicate this prevents. A missing link-account answers the
 // gateway's 404 instead, which the app reads as "not switched on yet".
 //
-// link_family_person_account() does either in one transaction. It takes the
-// admin's user id, so it is callable by the service role only; the caller is
-// verified here first, and the database function checks again.
+// invite_family_person_account() does either in one transaction. It takes
+// the admin's user id, so it is callable by the service role only; the caller
+// is verified here first, and the database function checks again.
 //
 // Answers:
-//   200 { success, status: 'linked' | 'merged', display_name, member_id, ... }
+//   200 { success, status: 'invited', email, display_name }
+//   200 { success, status: 'merged', display_name, member_id }
 //   404 { status: 'no_account' }       400 { status: 'invalid_email' }
-//   404 { status: 'no_person' }        409 { status: 'already_linked' | 'already_member' }
+//   404 { status: 'no_person' }        409 { status: 'already_linked' | 'already_member' | 'already_invited' }
 //   409 { status: 'tree_rule' }        the join would break a rule of the tree
 //                                      (two parents at most, nobody their own ancestor)
-//   403 caller is not an admin         503 { status: 'needs_migration' } 033 is not applied
+//   403 caller is not an admin         503 { status: 'needs_migration' } 037 is not applied
 // ────────────────────────────────────────────────────────────────
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -56,7 +59,7 @@ Deno.serve(async (req) => {
     }
 
     // Service role: looking an account up by email is something no client
-    // may do, and link_family_person_account() is granted to nobody else.
+    // may do, and invite_family_person_account() is granted to nobody else.
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
@@ -65,9 +68,9 @@ Deno.serve(async (req) => {
     const auth = await requireFamilyMember(req, supabase, family_id, { admin: true });
     if (!auth.ok) return auth.response;
 
-    const { data, error } = await supabase.rpc("link_family_person_account", {
+    const { data, error } = await supabase.rpc("invite_family_person_account", {
       p_family_id: family_id,
-      p_linked_by: auth.member.userId,
+      p_invited_by: auth.member.userId,
       p_person_id: person_id,
       p_email: email,
     });
@@ -76,7 +79,7 @@ Deno.serve(async (req) => {
       if (error.code === "PGRST202" || /could not find the function/i.test(error.message)) {
         return json(503, {
           status: "needs_migration",
-          error: "Linking someone to their account needs a database update that has not been applied here yet (migration 033).",
+          error: "Linking someone to their account needs a database update that has not been applied here yet (migration 037).",
         });
       }
       if (error.code === "42501") {
@@ -87,15 +90,17 @@ Deno.serve(async (req) => {
       if (error.code === "23505" || error.code === "23514" || error.code === "22023") {
         return json(409, { status: "tree_rule", error: error.message });
       }
-      console.error("[link-account] link_family_person_account failed:", error.code, error.message);
+      console.error("[link-account] invite_family_person_account failed:", error.code, error.message);
       return json(500, { error: "Could not link this person. Please try again." });
     }
 
     const result = (data ?? {}) as Record<string, unknown> & { status?: string; display_name?: string };
     switch (result.status) {
-      case "linked":
+      case "invited":
       case "merged":
         return json(200, { success: true, ...result });
+      case "already_invited":
+        return json(409, { ...result, error: `${result.email ?? "Someone"} has been invited to be this person already. Withdraw that invitation first.` });
       case "already_linked":
         return json(409, { ...result, error: `${result.display_name ?? "This person"} is already linked to an account.` });
       case "already_member":
