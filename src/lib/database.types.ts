@@ -322,6 +322,74 @@ export type Database = {
           },
         ]
       }
+      family_invites: {
+        Row: {
+          alias: string | null
+          created_at: string
+          email: string
+          family_id: string
+          id: string
+          invited_by: string | null
+          person_id: string | null
+          relationship: string | null
+          role: string
+          user_id: string
+        }
+        Insert: {
+          alias?: string | null
+          created_at?: string
+          email: string
+          family_id: string
+          id?: string
+          invited_by?: string | null
+          person_id?: string | null
+          relationship?: string | null
+          role?: string
+          user_id: string
+        }
+        Update: {
+          alias?: string | null
+          created_at?: string
+          email?: string
+          family_id?: string
+          id?: string
+          invited_by?: string | null
+          person_id?: string | null
+          relationship?: string | null
+          role?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "family_invites_family_id_fkey"
+            columns: ["family_id"]
+            isOneToOne: false
+            referencedRelation: "families"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "family_invites_invited_by_fkey"
+            columns: ["invited_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "family_invites_person"
+            columns: ["family_id", "person_id"]
+            isOneToOne: false
+            referencedRelation: "family_people"
+            referencedColumns: ["family_id", "id"]
+          },
+          {
+            foreignKeyName: "family_invites_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       family_links: {
         Row: {
           created_at: string
@@ -968,6 +1036,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      accept_family_invite: { Args: { p_invite_id: string }; Returns: Json }
       account_deletion_plan: {
         Args: { p_user_id: string }
         Returns: {
@@ -1010,6 +1079,7 @@ export type Database = {
         Returns: undefined
       }
       assert_caller_is: { Args: { p_user_id: string }; Returns: undefined }
+      cancel_family_invite: { Args: { p_invite_id: string }; Returns: undefined }
       check_expiry_notifications: {
         Args: { p_family_id: string }
         Returns: number
@@ -1051,6 +1121,7 @@ export type Database = {
         }
         Returns: string
       }
+      decline_family_invite: { Args: { p_invite_id: string }; Returns: undefined }
       delete_account_data: { Args: { p_user_id: string }; Returns: Json }
       delete_family_document: {
         Args: { p_document_id: string; p_family_id: string; p_user_id: string }
@@ -1116,6 +1187,18 @@ export type Database = {
         }[]
       }
       get_my_family_ids: { Args: never; Returns: string[] }
+      get_my_invitations: {
+        Args: never
+        Returns: {
+          created_at: string
+          family_id: string
+          family_name: string
+          id: string
+          invited_by_name: string
+          person_name: string
+          role: string
+        }[]
+      }
       get_user_notifications: {
         Args: { p_limit?: number; p_offset?: number; p_user_id: string }
         Returns: {
@@ -1163,6 +1246,26 @@ export type Database = {
           p_uploaded_by: string
         }
         Returns: string
+      }
+      invite_family_member: {
+        Args: {
+          p_alias?: string
+          p_email: string
+          p_family_id: string
+          p_invited_by: string
+          p_relationship?: string
+          p_role?: string
+        }
+        Returns: Json
+      }
+      invite_family_person_account: {
+        Args: {
+          p_email: string
+          p_family_id: string
+          p_invited_by: string
+          p_person_id: string
+        }
+        Returns: Json
       }
       is_family_admin: { Args: { p_family_id: string }; Returns: boolean }
       is_superuser: { Args: never; Returns: boolean }

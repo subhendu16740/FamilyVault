@@ -27,7 +27,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'Who can see my documents?',
-    a: 'Only the people in your family — and anyone you send a share link to, for that one document, until the link stops working. An admin adds each person by the email they sign in with; nobody can join by themselves. Settings › Privacy has more.',
+    a: 'Only the people in your family — and anyone you send a share link to, for that one document, until the link stops working. An admin invites each person by the email they sign in with, and they join only if they accept; nobody can join by themselves. Settings › Privacy has more.',
   },
   {
     q: 'How do I share a document with someone outside the family?',
@@ -35,7 +35,11 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'How do I add someone to my family?',
-    a: 'If you are an admin, open Manage Family and choose Add Member, then type the email they use for FamilyVault. They need to have signed up first.',
+    a: 'If you are an admin, open Manage Family and choose Add, then type the email they use for FamilyVault. They need to have signed up first. They get an invitation and join once they accept — until then they show in Manage Family as Pending approval, and you can withdraw it.',
+  },
+  {
+    q: 'Someone invited me to their family. What do I do?',
+    a: 'The invitation is on Home and in Manage Family. Choose Accept to join and see the family\'s documents, or Decline to say no. Nobody is added to a family without saying yes, and you can leave a family at any time from Manage Family.',
   },
   {
     q: 'Who is in the family tree?',
@@ -43,7 +47,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'Someone in our tree has just signed up. How do I connect them?',
-    a: 'If you are an admin, open them in the family tree and choose Link to their FamilyVault account, then type the email they sign in with. They join the family as a viewer and keep their place in the tree, their documents and their emergency card. If you already added them in Manage Family and they now appear twice, linking makes the two one.',
+    a: 'If you are an admin, open them in the family tree and choose Link to their FamilyVault account, then type the email they sign in with. They get an invitation, and once they accept they join the family as a viewer and keep their place in the tree, their documents and their emergency card. If you already added them in Manage Family and they now appear twice, linking makes the two one.',
   },
   {
     q: 'What is an emergency card?',

@@ -51,13 +51,16 @@ Four things will mislead you if you assume otherwise:
    `save_push_subscription`; 035 adds your own `birthday_reminders`; 036's
    share links are read by the family, never their secret's hash, and made
    or turned off only through `create_document_share` and
-   `revoke_document_share`).
+   `revoke_document_share`; 037's invitations are read by the family, by
+   the address asked, and answered or withdrawn only through their
+   functions).
    **A new writable
-   column needs its own `GRANT` in a migration.** Membership has no
-   invitations and no requests: only an admin adds a person, through the
-   `add-member` Edge Function (or links someone already in the family tree
-   to their account, through `link-account`, 033), and clients cannot insert
-   a membership row at all. See [Membership](#membership--an-admin-adds-nobody-requests-025).
+   column needs its own `GRANT` in a migration.** Nobody joins a family
+   without saying yes: only an admin asks a person in, through the
+   `add-member` Edge Function (or asks someone already in the family tree to
+   be that person, through `link-account`, 033), the person joins only by
+   accepting (037), and clients cannot insert a membership row at all. See
+   [Membership](#membership--an-admin-invites-only-a-yes-joins-025-037).
 4. **This app targets both native and web from one codebase.** Day-to-day
    review happens on the web build (deployed to Vercel), but native
    Android/iOS is a real target with platform-specific code paths. A change
@@ -100,15 +103,18 @@ errors**) and `npm run build` are the local gates.
 at 03:10 IST, and on pushes that change `qa/`. It uploads synthetic SPECIMEN
 documents to its own vault (QA Vault A, account A), asks questions about
 them, and checks the answers on facts and sources, never wording. It also
-runs the 023 sweep and the 024 DEV/PROD fingerprint, 106 access probes (a
+runs the 023 sweep and the 024 DEV/PROD fingerprint, 114 access probes (a
 logged-out visitor and a second account must be refused everywhere, Gmail
 import's endpoints, the family tree, emergency cards, linking,
-notification devices and share links included; a share link must open
-without an account, and stop once it is turned off),
-the membership model (the second account, added as a viewer, must not be able
-to escalate or share an admin's document, becomes a person in the family tree, writes only its own
-emergency card, must be able to leave, and is linked to an entry in the tree
-both ways: merged while a member, brought back as it after leaving),
+notification devices, share links and invitations included; a share link
+must open without an account, and stop once it is turned off),
+the membership model (the second account is invited, not added: it sees
+nothing of the vault until it says yes, the admin cannot say yes for it, a
+no removes the invitation and a yes makes it a viewer, who must not be able
+to escalate or share an admin's document, becomes a person in the family
+tree, writes only its own emergency card, must be able to leave, and is
+linked to an entry in the tree both ways: merged at once while a member,
+invited back as it after leaving),
 a question asked by relation ("my mother's passport"), and the full upload → ingest →
 expiry-notification pipeline, the reminder made once however often Home asks. By hand only, suite `languages` asks 12
 questions about documents in eight more Indian languages — two of them
@@ -387,7 +393,7 @@ src/
     login.tsx                # email/password + Google OAuth
     setup-family.tsx         # first-time vault creation
     notifications.tsx        # expiry alerts, uploads, invites
-    family.tsx               # Manage Family: members, adding, leaving    (NOT a tab)
+    family.tsx               # Manage Family: members, invitations (Pending approval), leaving    (NOT a tab)
     family-tree.tsx          # the family tree: everyone, and how they are related (031)
     person/[id].tsx          # one person: their relation to you, emergency card, documents, expiry dates, link to their account (033)
     emergency/               # emergency cards (032), in the drawer
@@ -408,7 +414,7 @@ src/
     (tabs)/
       _layout.tsx            # custom tab bar (CustomTabBar)
       home.tsx  search.tsx  upload.tsx
-  components/                # shared UI, incl. ProfileDrawer and ShareSheet (036)
+  components/                # shared UI, incl. ProfileDrawer, ShareSheet (036) and InvitationCards (037)
   constants/design.ts        # the one type/size/spacing scale every screen uses
   constants/theme.ts         # create-expo-app scaffold, largely unused
   hooks/                     # use-color-scheme, use-theme
@@ -441,7 +447,7 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `auth.tsx` | `AuthProvider`: session, signIn, signUp, signInWithGoogle, signOut |
 | `family-context.tsx` | `FamilyProvider`: currentFamily, members, membership, needsFamily |
 | `drawer-context.tsx` | Profile drawer open/close state |
-| `api.ts` | **All** Supabase queries — documents, search, upload, RAG, notifications, adding and leaving families, Gmail import, saved chats, share links, deleting your account, and the Settings screens (profile, password, storage use, expiry dates, feedback) |
+| `api.ts` | **All** Supabase queries — documents, search, upload, RAG, notifications, adding and leaving families, invitations, Gmail import, saved chats, share links, deleting your account, and the Settings screens (profile, password, storage use, expiry dates, feedback) |
 | `dates.ts` | `parseDocumentDate()`: expiry dates exactly as ingest stores them (DD/MM/YYYY and kin, YYYY-MM-DD, "19 October 2026") |
 | `emergency.ts` | The emergency card's shape, blood groups (`bloodGroupLabel()`: "A−", "Bombay (hh)"), `telHref()`, and `cardProblem()` — the same checks and messages as `save_emergency_card()`, so the form can say what is wrong before saving |
 | `family-people.ts` | Whose a document can be: everyone in the tree, you first (`useDocumentOwners()`, members only before 031), and a person's expiry badge (`badgeFromExpiries()`) |
@@ -456,7 +462,7 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `speech-text.ts` | `toSpeech()`: strips markdown and spells out ID numbers before they are read aloud |
 | `voice-languages.ts` | The language picker list and the few phrases the app itself says, per language |
 | `storage.ts` | Key-value cache: localStorage on web, AsyncStorage on native |
-| `database.types.ts` | Generated Supabase types, current to 036 (030 changed nothing in them). Regenerate after every migration and re-append the hand-written block at the bottom (see the typecheck note) |
+| `database.types.ts` | Generated Supabase types, current to 037 (030 changed nothing in them). Regenerate after every migration and re-append the hand-written block at the bottom (see the typecheck note) |
 
 ---
 
@@ -520,8 +526,8 @@ Supabase, cloud-hosted. Three layers:
 - **Layer 1 (common)** — `public` schema: users, families, family_members,
   invitations, document_categories, notifications, audit_logs, feedback,
   saved_chats, family_people, family_links, family_emergency_cards,
-  push_subscriptions, reminders_sent, push_config, document_shares. RLS
-  enabled.
+  push_subscriptions, reminders_sent, push_config, document_shares,
+  family_invites. RLS enabled.
 - **Layer 2 (private)** — one isolated schema per family (`family_<short_uuid>`)
   holding documents, document_metadata, document_chunks, expiry_alerts,
   family_relationships. Created by the `public.create_family()` PG function.
@@ -715,31 +721,54 @@ so storage policies live only in `019`.
   a missing account. All read zero on DEV after the first real deletion
   (30 September 2026), apart from the two March profiles 030 removes.
 
-### Membership — an admin adds, nobody requests (025)
+### Membership — an admin invites, only a yes joins (025, 037)
 
-- **There are no invitations.** The old flow wrote an `invitations` row and
-  sent a sign-up email, and nothing ever accepted one, so invited people never
-  joined. Meanwhile the `family_members` INSERT policy ended `OR user_id =
-  auth.uid()`: anyone could add THEMSELVES to any family, as admin.
-- **Now:** `add-member` → `add_family_member()` (service role only) finds the
-  person in `auth.users` by the email they sign in with — confirmed, not
-  deleted, not anonymous — and adds them as a viewer, with a `member`
-  notification and an audit row, in one transaction. No such account → the
-  admin is told to ask them to sign up, and nothing is created.
-- **Someone already in the family tree is linked, not added** (033). Adding
-  by email gives a person added by name a second entry beside the one with
-  their links, documents and card, so their page has **Link to their
-  FamilyVault account** for admins: `link-account` →
-  `link_family_person_account()`, service role only like 025's. See
+- **Before 025** the flow wrote an `invitations` row and sent a sign-up
+  email, and nothing ever accepted one, so invited people never joined.
+  Meanwhile the `family_members` INSERT policy ended `OR user_id =
+  auth.uid()`: anyone could add THEMSELVES to any family, as admin. 025 made
+  adding an admin's job, done at once; 037 makes it an invitation.
+- **Asking:** `add-member` → `invite_family_member()` (service role only)
+  finds the person in `auth.users` by the email they sign in with —
+  confirmed, not deleted, not anonymous — and writes a `family_invites` row,
+  an `invite` notification (on their devices too, 034) and an audit row, in
+  one transaction. No such account → the admin is told to ask them to sign
+  up, and nothing is created.
+- **Answering:** the person sees which family asked and who
+  (`get_my_invitations()`), on Home and in Manage Family
+  (`invitation-cards.tsx`), and nothing of its documents. Accept
+  (`accept_family_invite()`, the caller from `auth.uid()`) makes the
+  membership as adding used to — a viewer, or under the tree entry's id
+  when the invitation came from a link — and shows that family. Decline
+  (`decline_family_invite()`) deletes the invitation. The family's admins
+  are told either way, a no in the words they used: the address they typed.
+- **Until then the family sees Pending approval** — in Manage Family, and on
+  the person's page for a link — by the address it asked: the column grant
+  on `family_invites` leaves out the account id, which is theirs to show by
+  accepting. Any admin can withdraw it (`cancel_family_invite()`), and its
+  notification goes with it. One invitation per account per family, and
+  per tree entry. A membership made any other way deletes the invitation to
+  it (a trigger), so nobody stays pending in a family they are in.
+- **Someone already in the family tree is linked, not invited by email**
+  (033). Inviting by email gives a person added by name a second entry
+  beside the one with their links, documents and card, so their page has
+  **Link to their FamilyVault account** for admins: `link-account` →
+  `invite_family_person_account()`, service role only. See
   [Family tree](#family-tree--people-not-accounts-031).
-- **Being added needs no consent, so it must be visible and reversible.** The
-  person is notified, sees every family they are in under Manage Family, and
-  can leave any of them (`family_members_delete_self`). The last admin cannot
-  leave.
+- **Leaving needs nobody's permission.** The person sees every family they
+  are in under Manage Family and can leave any of them
+  (`family_members_delete_self`). The last admin cannot leave.
 - **The default family never changes by itself.** `fetchUserFamilies()` is
   oldest membership first and the chosen family is remembered per device
-  (`switchFamily()`), so being added somewhere never swaps the vault a person
-  sees — and uploads into — for one picked by whoever added them.
+  (`switchFamily()`), so joining somewhere never swaps the vault a person
+  sees — and uploads into — behind their back. Accepting is the one switch,
+  because it is their own yes.
+- **Kept for the old functions:** `add_family_member()` (025) and the join
+  branch of `link_family_person_account()` (033) still add at once, for the
+  add-member and link-account deployed before 037, so a project whose
+  functions are older keeps adding instead of failing. Nothing calls
+  `add_family_member()` once both projects run this release: drop it then,
+  with that branch.
 - `invitations` is kept, write-locked, because the app still on PROD reads
   it. Drop it once PROD runs this release.
 
@@ -813,11 +842,13 @@ so storage policies live only in `019`.
   their page's **Link to their FamilyVault account**, admins only, by the
   email they sign in with, through `link-account` →
   `link_family_person_account()` (service role only; it takes the admin's
-  user id). Not yet a member, they join as a viewer and the membership takes
-  the ENTRY's id — the rule above — so links, documents and card stay put,
-  nothing rewritten; they get the same `member` notification as when added.
-  Already a member (added in Manage Family, so in the tree twice), the two
-  become one: the member's person keeps its id and takes the entry's name
+  user id; since 037 through `invite_family_person_account()`). Not yet a
+  member, they are invited to be that entry, and when they accept they join
+  as a viewer and the membership takes the ENTRY's id — the rule above — so
+  links, documents and card stay put, nothing rewritten; until then the page
+  shows Pending approval. Already a member (added in Manage Family, so in
+  the tree twice), the two become one at once — nothing new opens up to
+  them: the member's person keeps its id and takes the entry's name
   (the one the family uses), a gender or birth date it lacks, the entry's
   links — re-made through `tree_add_parent`/`tree_add_pair`, so a third
   parent or a cycle refuses the whole join with that rule's message —, the
@@ -903,8 +934,8 @@ so storage policies live only in `019`.
   lease that keeps runs a minute apart. A device the push service calls gone
   (404/410) is forgotten; a notification that met only a push service that
   was down is tried again, within the day.
-- **Every notification goes to devices, not only reminders** — being added
-  to a family too. India time only: a family abroad hears at 9 in India.
+- **Every notification goes to devices, not only reminders** — an
+  invitation to a family too. India time only: a family abroad hears at 9 in India.
 - **Birthdays (035)** ride the same clock: `queue_birthday_reminders()` tells
   every member on the morning of a birthday in the tree ("Today is Kamala
   Verma's 78th birthday"), once a year (`reminders_sent`), never the person
@@ -1003,19 +1034,24 @@ so storage policies live only in `019`.
   retrieval (the index is English) and the answer is written in the person's
   language; `voice` asks for short spoken sentences with no markdown. The
   response echoes `answer_language`.
-- **`add-member`** — a family admin adds a person who already has an
+- **`add-member`** — a family admin invites a person who already has an
   account, by email: checks the caller is an admin, then calls
-  `add_family_member()` (025) as the service role. Answers 404 `no_account`,
-  409 `already_member`, and 503 `needs_migration` where 025 is not applied.
+  `invite_family_member()` (037) as the service role. Answers 200 `invited`,
+  404 `no_account`, 409 `already_member` or `already_invited`, and 503
+  `needs_migration` where 037 is not applied; see
+  [Membership](#membership--an-admin-invites-only-a-yes-joins-025-037).
   It replaced `invite-member`, which the deploy workflow deletes from each
   project it deploys to — a function removed from the repo otherwise stays
   live, running its old code.
 - **`link-account`** — a family admin links someone already in the family
   tree to the account they have since made, by email (033; see
-  [Family tree](#family-tree--people-not-accounts-031)). Answers 200 `linked`
-  or `merged`, 404 `no_account`/`no_person`, 409 `already_linked`,
-  `already_member` or `tree_rule` (with the rule's own words), and 503
-  `needs_migration` where 033 is not applied.
+  [Family tree](#family-tree--people-not-accounts-031)), through
+  `invite_family_person_account()` (037). Answers 200 `invited` (not yet a
+  member: an invitation to be that person) or `merged` (already a member:
+  the two entries are one now), 404 `no_account`/`no_person`, 409
+  `already_linked`, `already_member`, `already_invited` (someone else is
+  asked to be that person) or `tree_rule` (with the rule's own words), and
+  503 `needs_migration` where 037 is not applied.
 - **`push`** — notifications on devices (034; see
   [Reminders](#reminders--once-per-stage-on-every-device-that-asks-034)):
   `key` and `test` for a signed-in person, `send` for the hourly clock (open

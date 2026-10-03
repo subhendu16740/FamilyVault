@@ -2,9 +2,10 @@
 // their close family, the documents marked as theirs and when those run out.
 //
 // Anyone in the family can look. An admin can edit, add a relative, link
-// someone added by name to their FamilyVault account (033) or take them out
-// of the tree; people can edit their own details. Confirmation is on screen,
-// never Alert.alert, which does nothing on the web.
+// someone added by name to their FamilyVault account (033) — which invites
+// them, Pending approval until they accept (037) — or take them out of the
+// tree; people can edit their own details. Confirmation is on screen, never
+// Alert.alert, which does nothing on the web.
 
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Modal, Pressable, KeyboardAvoidingView, Platform, StyleSheet } from 'react-native';
@@ -15,7 +16,7 @@ import { useAuth } from '../../lib/auth';
 import { useFamily } from '../../lib/family-context';
 import {
   fetchFamilyTree, fetchPersonDocuments, fetchExpiringDocuments, fetchEmergencyCard, removeFamilyPerson, linkPersonToAccount,
-  isMissingMigration, type FamilyTree, type ExpiringDocument,
+  fetchFamilyInvites, cancelInvitation, isMissingMigration, type FamilyTree, type ExpiringDocument, type PendingInvite,
 } from '../../lib/api';
 import type { EmergencyCard } from '../../lib/emergency';
 import type { FamilyDocumentRow } from '../../lib/database.types';
@@ -53,6 +54,9 @@ export default function PersonScreen() {
   const [linking, setLinking] = useState(false);
   const [linkError, setLinkError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(joined ? 'Their two entries are one now: everything that was marked as either is theirs.' : null);
+  // Asked to be this person, not answered yet (037).
+  const [invite, setInvite] = useState<PendingInvite | null>(null);
+  const [withdrawing, setWithdrawing] = useState(false);
   const scroll = useRef<ScrollView>(null);
 
   const load = useCallback(() => {
@@ -75,6 +79,9 @@ export default function PersonScreen() {
     fetchEmergencyCard(currentFamily.id, id)
       .then((c) => { if (!cancelled) setCard(c); })
       .catch((err) => { if (!cancelled) setCard(isMissingMigration(err) ? 'off' : null); });
+    fetchFamilyInvites(currentFamily.id)
+      .then((list) => { if (!cancelled) setInvite(list.find((i) => i.personId === id) ?? null); })
+      .catch(() => { if (!cancelled) setInvite(null); });
     return () => { cancelled = true; };
   }, [currentFamily?.id, id]);
 
@@ -120,9 +127,9 @@ export default function PersonScreen() {
   };
 
   // Someone added by name has signed up: link this entry to their account.
-  // Not yet a member, they join as a viewer AS this person; already added in
-  // Manage Family, their two entries become one and this page is gone, so
-  // the joined person's opens instead.
+  // Not yet a member, they are invited, and join as a viewer AS this person
+  // when they accept; already added in Manage Family, their two entries
+  // become one and this page is gone, so the joined person's opens instead.
   const link = async () => {
     if (!currentFamily || !person) return;
     const address = linkEmail.trim().toLowerCase();
@@ -135,9 +142,12 @@ export default function PersonScreen() {
     try {
       const outcome = await linkPersonToAccount(currentFamily.id, person.id, address);
       switch (outcome.status) {
+        case 'invited':
         case 'linked':
           setLinkOpen(false);
-          setNotice(`${first(person.name)} is on FamilyVault now, in this family as a viewer, and got a notification.`);
+          setNotice(outcome.status === 'invited'
+            ? `Invitation sent to ${outcome.email}. ${first(person.name)} joins this family as this person once they accept — until then: Pending approval.`
+            : `${first(person.name)} is on FamilyVault now, in this family as a viewer, and got a notification.`);
           scroll.current?.scrollTo({ y: 0, animated: true });   // the news is at the top; the button was at the bottom
           load();
           break;
@@ -160,6 +170,20 @@ export default function PersonScreen() {
       setLinkError(err?.message || 'Could not link them. Please try again.');
     } finally {
       setLinking(false);
+    }
+  };
+
+  const withdraw = async () => {
+    if (!invite) return;
+    setWithdrawing(true);
+    try {
+      await cancelInvitation(invite.id);
+      setInvite(null);
+      setNotice('Invitation withdrawn.');
+    } catch (err: any) {
+      setProblem(err?.message || 'Could not withdraw the invitation.');
+    } finally {
+      setWithdrawing(false);
     }
   };
 
@@ -195,6 +219,15 @@ export default function PersonScreen() {
                   <Feather name="smartphone" size={12} color={color.primary} />
                   <Text style={styles.accountText}>{isMe ? 'You are on FamilyVault' : 'On FamilyVault (has an account)'}</Text>
                 </View>
+              )}
+              {!person.userId && !!invite && (
+                <>
+                  <View style={styles.pendingPill}>
+                    <Feather name="clock" size={12} color="#B45309" />
+                    <Text style={styles.pendingText}>Pending approval</Text>
+                  </View>
+                  <Muted>Invited as {invite.email}. Waiting for {first(person.name)} to accept.</Muted>
+                </>
               )}
             </Card>
 
@@ -325,8 +358,11 @@ export default function PersonScreen() {
                   icon="link"
                   onPress={() => setSheet({ mode: 'connect', personId: person.id })}
                 />
-                {!person.userId && (
+                {!person.userId && !invite && (
                   <SecondaryButton label="Link to their FamilyVault account" icon="smartphone" onPress={openLink} />
+                )}
+                {!person.userId && !!invite && (
+                  <SecondaryButton label="Withdraw the invitation" icon="x-circle" onPress={withdraw} disabled={withdrawing} />
                 )}
                 {!person.userId && (
                   <DangerButton label="Take out of the tree" icon="user-minus" onPress={() => setConfirmRemove(true)} />
@@ -357,8 +393,8 @@ export default function PersonScreen() {
               <Text style={styles.dialogTitle}>Link {person ? first(person.name) : 'them'} to their account</Text>
               <Text style={styles.dialogText}>
                 If {person ? first(person.name) : 'they'} has signed up for FamilyVault, enter the email they sign in with. They
-                join this family as a viewer and keep everything here: their place in the tree, their documents and their
-                emergency card.
+                get an invitation, and once they accept they join this family as a viewer and keep everything here: their
+                place in the tree, their documents and their emergency card.
               </Text>
               <Muted>Already added in Manage Family? Linking makes the two entries one.</Muted>
               <Field
@@ -378,8 +414,8 @@ export default function PersonScreen() {
                 <TouchableOpacity style={styles.cancelBtn} onPress={() => setLinkOpen(false)} disabled={linking} accessibilityRole="button">
                   <Text style={styles.cancelText}>Cancel</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.linkBtn} onPress={link} disabled={linking} accessibilityRole="button" accessibilityLabel="Link">
-                  {linking ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Text style={styles.confirmText}>Link</Text>}
+                <TouchableOpacity style={styles.linkBtn} onPress={link} disabled={linking} accessibilityRole="button" accessibilityLabel="Send invitation">
+                  {linking ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Text style={styles.confirmText}>Send invitation</Text>}
                 </TouchableOpacity>
               </View>
             </Pressable>
@@ -420,6 +456,11 @@ const styles = StyleSheet.create({
     backgroundColor: color.tint, borderRadius: radius.pill, paddingHorizontal: space.md, paddingVertical: space.xs,
   },
   accountText: { ...type.meta, color: color.primary },
+  pendingPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#FEF3C7', borderRadius: radius.pill, paddingHorizontal: space.md, paddingVertical: space.xs,
+  },
+  pendingText: { ...type.meta, color: '#B45309', fontWeight: '600' },
   group: { gap: space.sm },
   groupTitle: type.overline,
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },

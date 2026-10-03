@@ -20,8 +20,9 @@ export default function PrivacyScreen() {
             family can open them — apart from a single document someone in the family shares by link (below).
           </Body>
           <Body>
-            Nobody can join a family by themselves: an admin adds each person, by the email they sign in with. Viewers
-            can look at documents but cannot delete other people's.
+            Nobody can join a family by themselves, and nobody is added without saying yes: an admin invites each
+            person, by the email they sign in with, and they join only if they accept. Until then the family sees only
+            that email, as Pending approval. Viewers can look at documents but cannot delete other people's.
           </Body>
         </Card>
 

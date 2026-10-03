@@ -9,15 +9,21 @@ import { router, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../lib/auth';
 import { useFamily } from '../lib/family-context';
-import { addFamilyMember, leaveFamily, removeFamilyMember, updateMemberRole } from '../lib/api';
+import {
+  addFamilyMember, cancelInvitation, fetchFamilyInvites, leaveFamily, removeFamilyMember, updateMemberRole, type PendingInvite,
+} from '../lib/api';
 import { ScreenHeader, HeaderButton } from '../components/screen-header';
+import { InvitationCards } from '../components/invitation-cards';
+import { longDate } from '../lib/dates';
 import { color, radius, shadow, size, space, type } from '../constants/design';
 
 const relations = ['Father', 'Mother', 'Spouse', 'Son', 'Daughter', 'Brother', 'Sister', 'Other'];
 
-// Membership has no invitations and no requests (migration 025): an admin
-// adds a person who already has an account, and they are in straight away —
-// and notified. Anyone can leave any family they are in.
+// Nobody joins a family without saying yes (migration 037): an admin invites
+// a person who already has an account, and they join when they accept — until
+// then they show here as Pending approval, and any admin can withdraw it. The
+// invitations waiting for YOU are at the top. Anyone can leave any family
+// they are in.
 //
 // Results are shown on the screen, never with Alert.alert: react-native-web's
 // Alert is an empty function, so on the web build it would show nothing.
@@ -32,6 +38,7 @@ export default function FamilyScreen() {
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [pending, setPending] = useState<PendingInvite[]>([]);
   const [confirmDialog, setConfirmDialog] = useState<{
     title: string; message: string; confirmLabel: string; destructive?: boolean; onConfirm: () => void;
   } | null>(null);
@@ -41,12 +48,18 @@ export default function FamilyScreen() {
   // The last admin cannot leave: nobody would be left to manage the family.
   const canLeave = !!currentFamily && !(isAdmin && adminCount <= 1);
 
-  // Someone may have added this person to a family since the app opened.
+  const loadPending = useCallback(() => {
+    if (!currentFamily) { setPending([]); return; }
+    fetchFamilyInvites(currentFamily.id).then(setPending).catch(() => setPending([]));
+  }, [currentFamily?.id]);
+
+  // Someone may have joined, or answered, since the app opened.
   useFocusEffect(
     useCallback(() => {
       refreshFamilies().catch(() => {});
       refreshMembers().catch(() => {});
-    }, [refreshFamilies, refreshMembers])
+      loadPending();
+    }, [refreshFamilies, refreshMembers, loadPending])
   );
 
   const showConfirm = (title: string, message: string, onConfirm: () => void, destructive = true, confirmLabel = destructive ? 'Remove' : 'Confirm') => {
@@ -77,9 +90,21 @@ export default function FamilyScreen() {
     }, false);
   };
 
+  const handleWithdraw = (invite: PendingInvite) => {
+    const who = invite.personName ? `${invite.personName} (${invite.email})` : invite.email;
+    showConfirm('Withdraw invitation', `Withdraw the invitation to ${who}? They will not be able to join ${familyName} with it.`, async () => {
+      try {
+        await cancelInvitation(invite.id);
+        loadPending();
+      } catch (err: any) {
+        setNotice(err.message || 'Could not withdraw the invitation.');
+      }
+    }, true, 'Withdraw');
+  };
+
   const handleLeave = () => {
     if (!currentFamily || !user) return;
-    showConfirm('Leave Family', `Leave ${familyName} Vault? You will no longer see its documents. An admin can add you again.`, async () => {
+    showConfirm('Leave Family', `Leave ${familyName} Vault? You will no longer see its documents. An admin can invite you again.`, async () => {
       try {
         await leaveFamily(currentFamily.id, user.id);
         await refreshFamilies();
@@ -110,16 +135,23 @@ export default function FamilyScreen() {
         relationship: selectedRelation || undefined,
       });
       switch (outcome.status) {
+        case 'invited':
         case 'added':
-          setNotice(`${outcome.displayName} was added to ${familyName} and can now see its documents.`);
+          setNotice(outcome.status === 'invited'
+            ? `Invitation sent to ${outcome.email}. They join ${familyName} once they accept — until then they show here as Pending approval.`
+            : `${outcome.displayName} was added to ${familyName} and can now see its documents.`);
           setShowAddMember(false);
           setEmail('');
           setSelectedRelation('');
           setAlias('');
           refreshMembers().catch(() => {});
+          loadPending();
           break;
         case 'already_member':
           setAddError(`${outcome.displayName} is already in this family.`);
+          break;
+        case 'already_invited':
+          setAddError(`${address} has been invited already. They join once they accept.`);
           break;
         case 'no_account':
           setAddError(`No FamilyVault account uses ${address} yet. Ask them to sign up with this email, then add them again.`);
@@ -142,11 +174,12 @@ export default function FamilyScreen() {
     return (
       <SafeAreaView style={styles.safe} edges={['top']}>
         <ScreenHeader title="Manage Family" />
+        <InvitationCards style={styles.invites} />
         <View style={styles.noFamilyWrap}>
           <Feather name="users" size={32} color="#D1D5DB" />
           <Text style={styles.noFamilyTitle}>No Family Yet</Text>
           <Text style={styles.noFamilySub}>
-            Create a family to share and manage documents together — or ask your family's admin to add you, using the email you sign in with.
+            Create a family to share and manage documents together — or ask your family's admin to invite you, using the email you sign in with. An invitation shows here, and on Home.
           </Text>
           <TouchableOpacity
             onPress={() => router.push('/setup-family' as any)}
@@ -177,6 +210,9 @@ export default function FamilyScreen() {
       />
 
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
+        {/* Invitations waiting for you, to this family or another */}
+        <InvitationCards style={styles.invites} />
+
         {notice && (
           <TouchableOpacity style={styles.notice} onPress={() => setNotice(null)} activeOpacity={0.8}>
             <Feather name="info" size={16} color="#2A3D66" />
@@ -298,6 +334,49 @@ export default function FamilyScreen() {
           </View>
         )}
 
+        {/* Asked, not answered yet (037) */}
+        {pending.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>Pending approval</Text>
+            <View style={styles.memberList}>
+              {pending.map((invite) => {
+                const asker = members.find((m) => m.user_id === invite.invitedBy);
+                const askerName = invite.invitedBy === user?.id ? 'you' : asker ? (asker.alias || asker.users.display_name) : null;
+                return (
+                  <View key={invite.id} style={styles.memberCard}>
+                    <View style={styles.pendingAvatar}>
+                      <Feather name="clock" size={16} color="#B45309" />
+                    </View>
+                    <View style={styles.memberInfo}>
+                      <View style={styles.memberNameRow}>
+                        <Text style={styles.memberName} numberOfLines={1}>{invite.personName || invite.email}</Text>
+                        <View style={styles.pendingBadge}>
+                          <Text style={styles.pendingBadgeText}>Pending approval</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.pendingSub} numberOfLines={2}>
+                        {invite.personName ? `${invite.email} · ` : ''}Invited {longDate(new Date(invite.createdAt))}
+                        {askerName ? ` by ${askerName}` : ''}
+                      </Text>
+                    </View>
+                    {isAdmin && (
+                      <TouchableOpacity
+                        onPress={() => handleWithdraw(invite)}
+                        style={styles.actionBtnDanger}
+                        hitSlop={4}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Withdraw the invitation to ${invite.personName || invite.email}`}
+                      >
+                        <Feather name="x" size={16} color="#EF4444" />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        )}
+
         {/* Empty state */}
         {members.length === 0 && (
           <View style={styles.emptyState}>
@@ -337,7 +416,7 @@ export default function FamilyScreen() {
             </View>
 
             <Text style={styles.sheetIntro}>
-              They need a FamilyVault account. Enter the email they sign in with: they're added straight away as a viewer, and get a notification.
+              They need a FamilyVault account. Enter the email they sign in with: they get an invitation, and join as a viewer once they accept. Until then they show here as Pending approval.
             </Text>
             <Text style={styles.sheetIntro}>
               Already in the family tree? Open them there and choose Link to their FamilyVault account instead, so they keep their place in the tree, their documents and their emergency card.
@@ -417,7 +496,7 @@ export default function FamilyScreen() {
                 {adding ? (
                   <ActivityIndicator size="small" color="#FFFFFF" />
                 ) : (
-                  <Text style={styles.addMemberBtnText}>Add Member</Text>
+                  <Text style={styles.addMemberBtnText}>Send invitation</Text>
                 )}
               </LinearGradient>
             </TouchableOpacity>
@@ -515,6 +594,23 @@ const styles = StyleSheet.create({
   },
   adminBadgeText: { fontSize: 12, lineHeight: 16, fontWeight: '600', color: '#7C3AED' },
   actionRow: { flexDirection: 'row', gap: space.sm },
+  invites: { paddingHorizontal: space.lg, paddingTop: space.lg },
+  pendingAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FEF3C7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pendingBadge: {
+    backgroundColor: '#FEF3C7',
+    borderRadius: radius.pill,
+    paddingHorizontal: 8,
+    paddingVertical: 1,
+  },
+  pendingBadgeText: { fontSize: 12, lineHeight: 16, fontWeight: '600', color: '#B45309' },
+  pendingSub: type.caption,
   actionBtn: {
     width: 36,
     height: 36,

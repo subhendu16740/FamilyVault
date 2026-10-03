@@ -15,8 +15,9 @@ import { usePreferences } from '../lib/preferences';
 const typeConfig: Record<string, { icon: string; bg: string; color: string }> = {
   expiry: { icon: 'clock', bg: '#FEF2F2', color: '#DC2626' },
   upload: { icon: 'upload', bg: '#EFF6FF', color: '#2563EB' },
-  invite: { icon: 'user-plus', bg: '#F0FDF4', color: '#16A34A' },
-  // "You were added to <family>" — migration 025's add_family_member().
+  // "Rohan invited you to join Verma Family" — migration 037; answered in Manage Family.
+  invite: { icon: 'mail', bg: '#EFF6FF', color: '#2563EB' },
+  // "Priya joined Verma Family" / "… said no" (037), or "You were added to <family>" (025).
   member: { icon: 'user-plus', bg: '#F0FDF4', color: '#16A34A' },
   // "Today is Kamala Verma's 78th birthday" — migration 035.
   birthday: { icon: 'gift', bg: '#FDF2F8', color: '#DB2777' },
@@ -82,6 +83,9 @@ export default function NotificationsScreen() {
       router.push('/family' as any);
     } else if (notif.type === 'birthday') {
       router.push('/family-tree' as any);
+    } else if (notif.type === 'invite') {
+      // Not their family yet, so no switching: the invitation is answered there.
+      router.push('/family' as any);
     }
   }, [user, currentFamily?.id, switchFamily]);
 

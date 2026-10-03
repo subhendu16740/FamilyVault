@@ -172,6 +172,13 @@ const shareJudge = (expect, needsLink) => (outcome) => {
   if (needsLink && outcome.noTarget) return ['skipped', "no link of account A's to aim at (see its control)"];
   return typeof expect === 'function' ? expect(outcome) : judge(expect, outcome);
 };
+// Invitations ship with migration 037: skipped until it is on DEV.
+const inviteJudge = (expect) => (outcome) => {
+  if (outcome.missing || missingTable(outcome.error) || String(outcome.error?.code) === 'PGRST202') {
+    return ['skipped', 'migration 037 is not applied to DEV yet'];
+  }
+  return judge(expect, outcome);
+};
 // A well-formed device key and secret: RFC 8291's own example.
 const PROBE_P256DH = 'BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4';
 const PROBE_AUTH = 'BTBZMqHH6r4Tts7J_aSIgg';
@@ -423,6 +430,22 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     if (!shareA) return { noTarget: true };
     return run();
   };
+  // ── Invitations (037): a signed-in person lists their own — the positive
+  // control for the probes below, which aim at invitations that are not
+  // theirs (or do not exist), and at the server-only functions that ask.
+  let invitesMissing = false;
+  {
+    const { data, error } = await a.client.rpc('get_my_invitations');
+    if (String(error?.code) === 'PGRST202' || missingTable(error)) {
+      invitesMissing = true;
+      results.add('access', 'control:invitations', 'Control — account A lists its own invitations', 'skipped', { why: 'migration 037 is not applied to DEV yet' });
+    } else {
+      results.add('access', 'control:invitations', 'Control — account A lists its own invitations', error ? 'fail' : 'pass',
+        { why: error ? short(error) : `${data?.length ?? 0} waiting` });
+    }
+  }
+  const onInvites = (run) => async () => (invitesMissing ? { missing: true } : run());
+
   const onDeviceA = (run) => async () => {
     if (pushMissing) return { missing: true };
     if (!deviceA) return { noTarget: true };
@@ -615,6 +638,17 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     ['B', "share A's passport by link", shareJudge('refused'), onShares(() => b.client.rpc('create_document_share', { p_family_id: A.family, p_document_id: passport.id, p_days: 30 }))],
     ['B', "turn off account A's link", shareJudge('refused', true), onShareA(() => b.client.rpc('revoke_document_share', { p_share_id: shareA.id }))],
     ['B', 'open a link through the database (server-only)', shareJudge('refused'), onShares(() => b.client.rpc('open_document_share', { p_token_hash: '0'.repeat(64) }))],
+
+    // Invitations (037): only the person asked answers, only an admin of the
+    // family withdraws, only the server asks, and only the family sees them.
+    ['anon', "read QA Vault A's invitations", inviteJudge('refused-or-empty'), onInvites(() => anon.client.from('family_invites').select('id, email').eq('family_id', A.family))],
+    ['anon', 'list invitations', inviteJudge('refused'), onInvites(() => anon.client.rpc('get_my_invitations'))],
+    ['anon', 'accept an invitation', inviteJudge('refused'), onInvites(() => anon.client.rpc('accept_family_invite', { p_invite_id: randomUUID() }))],
+    ['B', 'accept an invitation that is not its own', inviteJudge('refused'), onInvites(() => b.client.rpc('accept_family_invite', { p_invite_id: randomUUID() }))],
+    ['B', 'decline an invitation that is not its own', inviteJudge('refused'), onInvites(() => b.client.rpc('decline_family_invite', { p_invite_id: randomUUID() }))],
+    ['B', "withdraw one of QA Vault A's invitations", inviteJudge('refused'), onInvites(() => b.client.rpc('cancel_family_invite', { p_invite_id: randomUUID() }))],
+    ['B', 'invite into QA Vault A through the database (server-only)', inviteJudge('refused'), onInvites(() => b.client.rpc('invite_family_member', { p_family_id: A.family, p_invited_by: A.user, p_email: `qa-probe-${cfg.runId}@example.invalid` }))],
+    ['B', "invite someone to be a person in A's tree through the database (server-only)", inviteJudge('refused'), onInvites(() => b.client.rpc('invite_family_person_account', { p_family_id: A.family, p_invited_by: A.user, p_person_id: randomUUID(), p_email: `qa-probe-${cfg.runId}@example.invalid` }))],
 
     // Linking someone in the tree to an account (033): an admin's job, through
     // link-account. B's two attempts come near the end, below.

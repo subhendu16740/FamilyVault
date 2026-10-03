@@ -12,6 +12,7 @@ import { useFamily } from '../../lib/family-context';
 import { useDrawer } from '../../lib/drawer-context';
 import { fetchRecentDocuments, fetchFamilyStats, fetchUnreadNotificationCount, checkExpiryNotifications } from '../../lib/api';
 import { usePreferences } from '../../lib/preferences';
+import { InvitationCards } from '../../components/invitation-cards';
 import type { FamilyDocumentRow } from '../../lib/database.types';
 import { color, radius, shadow, size, space, type } from '../../constants/design';
 
@@ -73,8 +74,12 @@ export default function HomeScreen() {
 
   const loadData = useCallback(() => {
     if (!currentFamily || !user) {
-      // No family yet: an admin may have added this person since sign-in.
-      if (user) refreshFamilies().catch(() => {});
+      // No family yet: they may have joined one since sign-in — and the bell
+      // still counts, since an invitation to join one is a notification.
+      if (user) {
+        refreshFamilies().catch(() => {});
+        fetchUnreadNotificationCount(user.id).then(setUnreadCount).catch(() => {});
+      }
       setLoading(false);
       return;
     }
@@ -149,6 +154,9 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </SafeAreaView>
         </LinearGradient>
+
+        {/* Invitations to join a family (037): answered here, the first place anyone looks */}
+        <InvitationCards style={styles.invites} />
 
         {/* Stats Bar */}
         <View style={styles.section}>
@@ -296,6 +304,7 @@ const styles = StyleSheet.create({
   },
   searchPlaceholder: { ...type.body, flex: 1, color: 'rgba(255,255,255,0.75)' },
   section: { paddingHorizontal: space.lg, marginTop: space.lg },
+  invites: { paddingHorizontal: space.lg, marginTop: space.lg },
   sectionBottom: { marginBottom: space.xl },
   sectionTitle: { ...type.overline, marginBottom: space.sm, marginLeft: space.xs },
   statsBar: {
