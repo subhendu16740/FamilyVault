@@ -45,7 +45,8 @@ Four things will mislead you if you assume otherwise:
    `display_name`, `phone` and `notifications_enabled`, and a write-only
    `feedback` table; 028 adds `saved_chats`, which only its owner reads;
    029's account-deletion functions are service role only; 031's family
-   tree is read by members and written only through its four functions).
+   tree is read by members and written only through its four functions;
+   032's emergency cards likewise, through `save_emergency_card`).
    **A new writable
    column needs its own `GRANT` in a migration.** Membership has no
    invitations and no requests: only an admin adds a person, through the
@@ -93,11 +94,12 @@ errors**) and `npm run build` are the local gates.
 at 03:10 IST, and on pushes that change `qa/`. It uploads synthetic SPECIMEN
 documents to its own vault (QA Vault A, account A), asks questions about
 them, and checks the answers on facts and sources, never wording. It also
-runs the 023 sweep and the 024 DEV/PROD fingerprint, 74 access probes (a
+runs the 023 sweep and the 024 DEV/PROD fingerprint, 80 access probes (a
 logged-out visitor and a second account must be refused everywhere, Gmail
-import's endpoints and the family tree included), the
+import's endpoints, the family tree and emergency cards included), the
 membership model (the second account, added as a viewer, must not be able to
-escalate, becomes a person in the family tree, and must be able to leave),
+escalate, becomes a person in the family tree, writes only its own emergency
+card, and must be able to leave),
 a question asked by relation ("my mother's passport"), and the full upload → ingest →
 expiry-notification pipeline. By hand only, suite `languages` asks 12
 questions about documents in eight more Indian languages — two of them
@@ -375,7 +377,11 @@ src/
     notifications.tsx        # expiry alerts, uploads, invites
     family.tsx               # Manage Family: members, adding, leaving    (NOT a tab)
     family-tree.tsx          # the family tree: everyone, and how they are related (031)
-    person/[id].tsx          # one person: their relation to you, documents, expiry dates
+    person/[id].tsx          # one person: their relation to you, emergency card, documents, expiry dates
+    emergency/               # emergency cards (032), in the drawer
+      index.tsx              # everyone in the tree, blood group at a glance
+      [id].tsx               # one card, full screen, every number one tap from the dialler
+      edit/[id].tsx          # add or edit a card: an admin, or the person themselves
     reminders.tsx            # expiry dates, soonest first (★ Family Plus, in the drawer)
     saved-chats.tsx          # behind the clock on Ask: chats kept with Save chat (028)
     settings/                # (NOT a tab) its own Stack, so Back returns to Settings
@@ -423,6 +429,7 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `drawer-context.tsx` | Profile drawer open/close state |
 | `api.ts` | **All** Supabase queries — documents, search, upload, RAG, notifications, adding and leaving families, Gmail import, saved chats, deleting your account, and the Settings screens (profile, password, storage use, expiry dates, feedback) |
 | `dates.ts` | `parseDocumentDate()`: expiry dates exactly as ingest stores them (DD/MM/YYYY and kin, YYYY-MM-DD, "19 October 2026") |
+| `emergency.ts` | The emergency card's shape, blood groups (`bloodGroupLabel()`: "A−", "Bombay (hh)"), `telHref()`, and `cardProblem()` — the same checks and messages as `save_emergency_card()`, so the form can say what is wrong before saving |
 | `family-people.ts` | Whose a document can be: everyone in the tree, you first (`useDocumentOwners()`, members only before 031), and a person's expiry badge (`badgeFromExpiries()`) |
 | `plans.ts` | What the free plan includes: `FREE_STORAGE_GB` per family (shown on Settings › Storage, not enforced) and `storageLevel()` |
 | `file-types.ts` | What a picked file is (`detectFileType()`: MIME type, then name, never a web `blob:` uri) and whether the vault can keep it (PDF, JPG, PNG) |
@@ -434,7 +441,7 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `speech-text.ts` | `toSpeech()`: strips markdown and spells out ID numbers before they are read aloud |
 | `voice-languages.ts` | The language picker list and the few phrases the app itself says, per language |
 | `storage.ts` | Key-value cache: localStorage on web, AsyncStorage on native |
-| `database.types.ts` | Generated Supabase types, current to 031 (030 changed nothing in them). Regenerate after every migration and re-append the hand-written block at the bottom (see the typecheck note) |
+| `database.types.ts` | Generated Supabase types, current to 032 (030 changed nothing in them). Regenerate after every migration and re-append the hand-written block at the bottom (see the typecheck note) |
 
 ---
 
@@ -495,7 +502,8 @@ Supabase, cloud-hosted. Three layers:
 
 - **Layer 1 (common)** — `public` schema: users, families, family_members,
   invitations, document_categories, notifications, audit_logs, feedback,
-  saved_chats, family_people, family_links. RLS enabled.
+  saved_chats, family_people, family_links, family_emergency_cards. RLS
+  enabled.
 - **Layer 2 (private)** — one isolated schema per family (`family_<short_uuid>`)
   holding documents, document_metadata, document_chunks, expiry_alerts,
   family_relationships. Created by the `public.create_family()` PG function.
@@ -773,6 +781,33 @@ so storage policies live only in `019`.
 - **Not built yet:** merging two people. Someone added to the tree without an
   account and later added as a member appears twice; an admin removes the
   one without the account (its links go with it).
+
+### Emergency cards — one per person, for whoever is there (032)
+
+- **What a doctor needs first**: blood group (the eight, and Bombay `hh` —
+  rare, mostly Indian, often mistyped as O), allergies (shown on red),
+  conditions, medicines, the doctor, health insurance and up to three people
+  to call, each number one tap from the dialler. One card per person in the
+  tree, account or not. Drawer › Emergency cards lists everyone; a person's
+  page shows a summary; the full card is large on purpose — the one screen
+  whose text runs past `design.ts`'s scale.
+- **Every member reads every card** (RLS through `get_my_family_ids()`): in
+  an emergency, whoever is there needs it. Clients write nothing directly;
+  `save_emergency_card(p_person_id, p_card jsonb)` takes the caller from
+  `auth.uid()` and lets an admin, or the person themselves, write — 031's rule,
+  spelled out the same way. It checks every field with a message the app
+  shows as it comes, and `emergency.ts` repeats the checks in the form (the
+  QA self-test pins them). Blank fields are cleared; an empty card is deleted.
+- **A card is about one person's health, so it goes with them**: a trigger on
+  `family_members` deletes the card of whoever leaves, is removed or deletes
+  their account. The family keeps the person in the tree, not their medical
+  details. Taking someone out of the tree, or deleting the family, takes the
+  card by cascade (a composite key to `family_people`, so a card can never
+  name another family's person).
+- **Not sent anywhere.** Ask does not read the cards, so no card reaches the
+  AI service; answering "Dadi's blood group" from them would change that and
+  needs saying in Settings › Privacy first. `users.emergency_info` (024) is
+  unused and left alone.
 
 ## Edge Functions
 

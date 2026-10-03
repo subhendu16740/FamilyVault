@@ -3,8 +3,8 @@
 // A drawer, not a screen: it slides in from the left over the page, the page
 // stays visible behind it, and it closes with the ✕, a tap outside it, or the
 // back button. Layout from the v4 design (who you are on top, then Home,
-// Family tree, Manage Family, Reminders and Settings, Sign Out at the bottom), in the
-// app's own colours.
+// Family tree, Emergency cards, Manage Family, Reminders and Settings, Sign Out
+// at the bottom), in the app's own colours.
 // ────────────────────────────────────────────────────────────────
 
 import { useEffect, useRef, useState } from 'react';
@@ -25,6 +25,7 @@ import { color, radius, size, space, type } from '../constants/design';
 const menuItems: { icon: string; label: string; route: string; plus?: boolean }[] = [
   { icon: 'home', label: 'Home', route: '/home' },
   { icon: 'git-branch', label: 'Family tree', route: '/family-tree' },
+  { icon: 'plus-square', label: 'Emergency cards', route: '/emergency' },
   { icon: 'users', label: 'Manage Family', route: '/family' },
   // ★: part of Family Plus, the paid plan. The screen works for everyone.
   { icon: 'clock', label: 'Reminders', route: '/reminders', plus: true },

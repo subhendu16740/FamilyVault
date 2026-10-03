@@ -189,6 +189,72 @@ export type Database = {
         }
         Relationships: []
       }
+      family_emergency_cards: {
+        Row: {
+          allergies: string | null
+          blood_group: string | null
+          conditions: string | null
+          contacts: Json
+          doctor_name: string | null
+          doctor_phone: string | null
+          family_id: string
+          insurer: string | null
+          medicines: string | null
+          notes: string | null
+          person_id: string
+          policy_number: string | null
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          allergies?: string | null
+          blood_group?: string | null
+          conditions?: string | null
+          contacts?: Json
+          doctor_name?: string | null
+          doctor_phone?: string | null
+          family_id: string
+          insurer?: string | null
+          medicines?: string | null
+          notes?: string | null
+          person_id: string
+          policy_number?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          allergies?: string | null
+          blood_group?: string | null
+          conditions?: string | null
+          contacts?: Json
+          doctor_name?: string | null
+          doctor_phone?: string | null
+          family_id?: string
+          insurer?: string | null
+          medicines?: string | null
+          notes?: string | null
+          person_id?: string
+          policy_number?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "family_emergency_cards_family_id_fkey"
+            columns: ["family_id"]
+            isOneToOne: false
+            referencedRelation: "families"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "family_emergency_cards_person_fkey"
+            columns: ["family_id", "person_id"]
+            isOneToOne: true
+            referencedRelation: "family_people"
+            referencedColumns: ["family_id", "id"]
+          },
+        ]
+      }
       family_links: {
         Row: {
           created_at: string
@@ -1006,6 +1072,10 @@ export type Database = {
       }
       remove_family_person: {
         Args: { p_person_id: string }
+        Returns: undefined
+      }
+      save_emergency_card: {
+        Args: { p_card: Json; p_person_id: string }
         Returns: undefined
       }
       search_family_documents: {
