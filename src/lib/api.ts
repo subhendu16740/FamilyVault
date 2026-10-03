@@ -407,6 +407,59 @@ export async function addFamilyMember(
   throw new Error(body?.error ?? error.message);
 }
 
+// Someone added to the family tree by name who has since signed up: link the
+// entry to their account rather than adding them again (migration 033). Not
+// yet a member, they join as a viewer AS that person, keeping their links,
+// documents and emergency card; already a member, their two entries become
+// one. Through link-account, which checks the caller is an admin.
+export type LinkAccountOutcome =
+  /** `memberId` is who they are in the tree now: the same person when linked, their member person when merged. */
+  | { status: 'linked' | 'merged'; displayName: string; memberId: string }
+  | { status: 'no_account' }
+  | { status: 'invalid_email' }
+  /** Linking was refused, with the reason to show as it comes. */
+  | { status: 'refused'; message: string }
+  /** The server is not ready for this yet (migration 033 missing). */
+  | { status: 'unavailable'; message: string };
+
+export async function linkPersonToAccount(familyId: string, personId: string, email: string): Promise<LinkAccountOutcome> {
+  const { data, error } = await supabase.functions.invoke('link-account', {
+    body: { family_id: familyId, person_id: personId, email: email.trim() },
+  });
+  if (!error) {
+    return {
+      status: data?.status === 'merged' ? 'merged' : 'linked',
+      displayName: data?.display_name || email,
+      memberId: data?.member_id || personId,
+    };
+  }
+
+  const httpStatus = (error as { context?: Response })?.context?.status;
+  const body = (await readFunctionError(error)) as { status?: string; error?: string } | null;
+  switch (body?.status) {
+    case 'no_account':
+      return { status: 'no_account' };
+    case 'invalid_email':
+      return { status: 'invalid_email' };
+    case 'needs_migration':
+      return { status: 'unavailable', message: 'Linking someone to their account is not switched on yet.' };
+    case 'tree_rule': {
+      // The tree's own rule, as the database words it: "Someone can have at most two parents in the tree."
+      const rule = body.error ?? 'the family tree does not allow it.';
+      return { status: 'refused', message: `These two can't be joined into one: ${rule.charAt(0).toLowerCase()}${rule.slice(1)}` };
+    }
+    case 'already_linked':
+    case 'already_member':
+    case 'no_person':
+      return { status: 'refused', message: body.error ?? 'This person could not be linked.' };
+  }
+  // The gateway's own 404: this project does not have link-account yet.
+  if (httpStatus === 404) {
+    return { status: 'unavailable', message: 'Linking someone to their account is not switched on yet.' };
+  }
+  throw new Error(body?.error ?? error.message);
+}
+
 // ─── Gmail import ────────────────────────────────────────────────
 //
 // A person connects their OWN Gmail account; the server lists attachments
@@ -807,8 +860,17 @@ export async function changePassword(newPassword: string): Promise<void> {
   if (error) throw error;
 }
 
-/** Ends every session this account has, on every device, this one included. */
+/**
+ * Ends every session this account has, on every device, this one included —
+ * and their notifications with them (034): a lost phone must not go on
+ * showing the family's reminders. Before 034 there are none to remove.
+ */
 export async function signOutEverywhere(): Promise<void> {
+  const { data } = await supabase.auth.getUser();
+  if (data.user) {
+    const { error: pushErr } = await supabase.from('push_subscriptions').delete().eq('user_id', data.user.id);
+    if (pushErr && !isMissingMigration(pushErr)) throw pushErr;
+  }
   const { error } = await supabase.auth.signOut({ scope: 'global' });
   if (error) throw error;
 }

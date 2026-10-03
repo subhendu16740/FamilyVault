@@ -643,6 +643,7 @@ export type Database = {
           id: string
           is_read: boolean | null
           message: string | null
+          pushed_at: string | null
           title: string
           type: string
           user_id: string
@@ -654,6 +655,7 @@ export type Database = {
           id?: string
           is_read?: boolean | null
           message?: string | null
+          pushed_at?: string | null
           title: string
           type: string
           user_id: string
@@ -665,6 +667,7 @@ export type Database = {
           id?: string
           is_read?: boolean | null
           message?: string | null
+          pushed_at?: string | null
           title?: string
           type?: string
           user_id?: string
@@ -682,6 +685,118 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      push_config: {
+        Row: {
+          anon_key: string | null
+          created_at: string
+          functions_url: string | null
+          id: boolean
+          send_lease: string | null
+          subject: string
+          updated_at: string
+          vapid_private: string
+          vapid_public: string
+        }
+        Insert: {
+          anon_key?: string | null
+          created_at?: string
+          functions_url?: string | null
+          id?: boolean
+          send_lease?: string | null
+          subject: string
+          updated_at?: string
+          vapid_private: string
+          vapid_public: string
+        }
+        Update: {
+          anon_key?: string | null
+          created_at?: string
+          functions_url?: string | null
+          id?: boolean
+          send_lease?: string | null
+          subject?: string
+          updated_at?: string
+          vapid_private?: string
+          vapid_public?: string
+        }
+        Relationships: []
+      }
+      push_subscriptions: {
+        Row: {
+          auth: string
+          created_at: string
+          endpoint: string
+          id: string
+          label: string | null
+          last_used_at: string | null
+          p256dh: string
+          user_id: string
+        }
+        Insert: {
+          auth: string
+          created_at?: string
+          endpoint: string
+          id?: string
+          label?: string | null
+          last_used_at?: string | null
+          p256dh: string
+          user_id: string
+        }
+        Update: {
+          auth?: string
+          created_at?: string
+          endpoint?: string
+          id?: string
+          label?: string | null
+          last_used_at?: string | null
+          p256dh?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "push_subscriptions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reminders_sent: {
+        Row: {
+          due_on: string
+          family_id: string
+          kind: string
+          ref_id: string
+          sent_at: string
+          stage: number
+        }
+        Insert: {
+          due_on: string
+          family_id: string
+          kind: string
+          ref_id: string
+          sent_at?: string
+          stage: number
+        }
+        Update: {
+          due_on?: string
+          family_id?: string
+          kind?: string
+          ref_id?: string
+          sent_at?: string
+          stage?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reminders_sent_family_id_fkey"
+            columns: ["family_id"]
+            isOneToOne: false
+            referencedRelation: "families"
             referencedColumns: ["id"]
           },
         ]
@@ -982,12 +1097,73 @@ export type Database = {
         }
         Returns: undefined
       }
+      link_family_person_account: {
+        Args: {
+          p_email: string
+          p_family_id: string
+          p_linked_by: string
+          p_person_id: string
+        }
+        Returns: Json
+      }
       mark_notification_read: {
         Args: { p_notification_id: string; p_user_id: string }
         Returns: undefined
       }
       purge_family: { Args: { p_family_id: string }; Returns: string }
       rag_chunk_total: { Args: { p_schema: string }; Returns: number }
+      push_claim_send: { Args: never; Returns: boolean }
+      push_done: {
+        Args: {
+          p_delivered?: string[]
+          p_gone?: string[]
+          p_notifications: string[]
+        }
+        Returns: undefined
+      }
+      push_keys: {
+        Args: never
+        Returns: {
+          contact: string
+          has_address: boolean
+          private_key: string
+          public_key: string
+        }[]
+      }
+      push_pending: {
+        Args: { p_limit?: number }
+        Returns: {
+          auth: string
+          document_ref: string
+          endpoint: string
+          family_id: string
+          kind: string
+          message: string
+          notification_id: string
+          p256dh: string
+          subscription_id: string
+          title: string
+        }[]
+      }
+      push_setup: {
+        Args: {
+          p_anon_key: string
+          p_functions_url: string
+          p_subject: string
+          p_vapid_private: string
+          p_vapid_public: string
+        }
+        Returns: {
+          contact: string
+          private_key: string
+          public_key: string
+        }[]
+      }
+      queue_expiry_reminders: { Args: { p_today?: string }; Returns: number }
+      queue_family_expiry_reminders: {
+        Args: { p_family_id: string; p_today?: string }
+        Returns: number
+      }
       rag_chunks_to_embed: {
         Args: { p_after?: string; p_limit?: number; p_schema: string }
         Returns: {
@@ -1074,8 +1250,18 @@ export type Database = {
         Args: { p_person_id: string }
         Returns: undefined
       }
+      run_reminders: { Args: never; Returns: undefined }
       save_emergency_card: {
         Args: { p_card: Json; p_person_id: string }
+        Returns: undefined
+      }
+      save_push_subscription: {
+        Args: {
+          p_auth: string
+          p_endpoint: string
+          p_label?: string
+          p_p256dh: string
+        }
         Returns: undefined
       }
       search_family_documents: {

@@ -40,6 +40,23 @@ export default function RootLayout() {
       .catch(() => setFontsLoaded(true));
   }, []);
 
+  // Web: what makes FamilyVault installable (public/manifest.json) — an
+  // iPhone shows notifications only to a web app added to its Home Screen
+  // (034). Added here because the single-page export never uses +html.tsx.
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+    const add = (tag: 'link' | 'meta', attrs: Record<string, string>) => {
+      const selector = tag === 'link' ? `link[rel="${attrs.rel}"]` : `meta[name="${attrs.name}"]`;
+      if (document.head.querySelector(selector)) return;
+      const el = document.createElement(tag);
+      for (const [name, value] of Object.entries(attrs)) el.setAttribute(name, value);
+      document.head.appendChild(el);
+    };
+    add('link', { rel: 'manifest', href: '/manifest.json' });
+    add('link', { rel: 'apple-touch-icon', href: '/icon-192.png' });
+    add('meta', { name: 'theme-color', content: '#2A3D66' });
+  }, []);
+
   if (!fontsLoaded) {
     return (
       <View style={styles.loader}>

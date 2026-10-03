@@ -19,6 +19,10 @@
 //   runs do not pile up.
 //   emergency cards (032): B writes its own card and reads the family's,
 //   cannot change the admin's, and its card goes when it leaves.
+//   linking (033): an entry A added by name is linked to B's account — B, a
+//   viewer, cannot do it itself; while B is a member the two become one
+//   person, and once B has left, linking B's old person brings B back as it,
+//   under the same id.
 //
 // Skipped, with the reason, until add-member is deployed to DEV and 025 is
 // applied there. B is removed again however the checks end.
@@ -41,6 +45,8 @@ export async function runMemberChecks(cfg, { a, b, vaultA }, results) {
   };
   const memberRow = async (userId) => (await roster()).find((m) => m.user_id === userId) ?? null;
   const check = (id, title, ok, why) => results.add('members', id, title, ok ? 'pass' : 'fail', { why });
+  const link = (actor, personId) =>
+    invokeFunction(cfg, actor, 'link-account', { family_id: vaultA.id, person_id: personId, email: cfg.b.email }, { timeoutMs: 30_000 });
 
   // B starts outside vault A; the access checks leave it that way.
   if (await memberRow(b.user.id)) {
@@ -73,6 +79,8 @@ export async function runMemberChecks(cfg, { a, b, vaultA }, results) {
   let sacrificialId = null;
   let treePerson = null;              // B's person in A's tree, removed at the end
   let cardChecked = false;            // B saved an emergency card (032)
+  let linkEntry = null;               // the entry linked to B (033), removed at the end if still there
+  let linkReady = false;              // link-account is deployed and 033 applied
   try {
     const mine = await memberRow(b.user.id);
     check('added-as-viewer', 'The new member is a viewer who cannot delete', mine?.role === 'viewer' && mine?.can_delete === false,
@@ -176,6 +184,36 @@ export async function runMemberChecks(cfg, { a, b, vaultA }, results) {
         check('viewer-cannot-change-card', "A viewer cannot change someone else's emergency card", refusedByAuth(otherErr),
           otherErr ? short(otherErr) : 'the card was CHANGED (and cleared again)');
       }
+
+      // ── Linking (033): A added B to the tree by name before B joined; that
+      // entry and B's own person become one. A viewer cannot do it: merging an
+      // entry into itself would take over that person's documents and card.
+      const entryName = `QA entry ${cfg.runId}`;
+      const { data: entry, error: entryErr } = await a.client.rpc('add_family_person', { p_family_id: vaultA.id, p_display_name: entryName });
+      if (entryErr) {
+        results.add('members', 'link', 'Linking someone in the tree to their account', 'fail', { why: `could not add the entry: ${short(entryErr)}` });
+      } else {
+        linkEntry = entry;
+        const byViewer = await link(b, entry);
+        if (byViewer.status === 404 && !byViewer.data?.status) {
+          results.add('members', 'link', 'Linking someone in the tree to their account', 'skipped', { why: 'link-account is not deployed to DEV yet' });
+        } else {
+          check('viewer-cannot-link', 'A viewer cannot link someone in the tree to an account, its own included', byViewer.status === 403, http(byViewer));
+          const merged = await link(a, entry);
+          if (merged.status === 503 && merged.data?.status === 'needs_migration') {
+            results.add('members', 'link', 'Linking someone in the tree to their account', 'skipped', { why: 'migration 033 is not applied to DEV yet' });
+          } else {
+            linkReady = true;
+            const { data: entryLeft } = await a.client.from('family_people').select('id').eq('id', entry);
+            const { data: one } = await a.client.from('family_people').select('display_name, user_id').eq('id', mine.id).maybeSingle();
+            if (!entryLeft?.length) linkEntry = null;
+            check('link-merges', 'Linking an entry to someone already in the family makes the two one person',
+              merged.status === 200 && merged.data?.status === 'merged' && merged.data?.member_id === mine.id
+                && !entryLeft?.length && one?.display_name === entryName && one?.user_id === b.user.id,
+              merged.status !== 200 ? http(merged) : entryLeft?.length ? 'the entry is STILL there' : `one person, "${one?.display_name}"`);
+          }
+        }
+      }
     }
 
     // ── And anyone can leave.
@@ -195,9 +233,32 @@ export async function runMemberChecks(cfg, { a, b, vaultA }, results) {
       check('leaver-card-deleted', 'Someone who leaves takes their emergency card with them', (leftCard?.length ?? 0) === 0,
         leftCard?.length ? 'the card is STILL there' : 'deleted');
     }
+
+    // ── Linking someone who is not a member (033): B's old person, left
+    // behind in the tree, is linked to B's account again. B comes back as a
+    // viewer under the same id, is told so, and then leaves again.
+    if (treePerson && gone && linkReady) {
+      const inbox = async () => {
+        const { data } = await b.client.rpc('get_user_notifications', { p_user_id: b.user.id, p_limit: 50, p_offset: 0 });
+        return data ?? [];
+      };
+      const before = new Set((await inbox()).map((n) => n.id));
+      const joined = await link(a, treePerson);
+      const back = await memberRow(b.user.id);
+      check('link-joins', 'Linking someone in the tree to an account that is not a member brings them in as that person, a viewer',
+        joined.status === 200 && joined.data?.status === 'linked' && back?.id === treePerson && back?.role === 'viewer',
+        joined.status !== 200 ? http(joined) : !back ? 'not a member' : `${back.id === treePerson ? 'under the same id' : 'under a NEW id'}, ${back.role}`);
+      if (back) {
+        const told = (await inbox()).find((n) => n.type === 'member' && n.family_id === vaultA.id && !before.has(n.id));
+        check('link-notified', 'Someone linked into a family is told, by a notification', !!told, told ? `"${told.title}"` : 'no new "member" notification');
+        if (told) await b.client.rpc('mark_notification_read', { p_notification_id: told.id, p_user_id: b.user.id });
+        await b.client.from('family_members').delete().eq('family_id', vaultA.id).eq('user_id', b.user.id);
+      }
+    }
   } finally {
     if (await memberRow(b.user.id)) await a.client.from('family_members').delete().eq('family_id', vaultA.id).eq('user_id', b.user.id);
     if (sacrificialId) await a.client.rpc('delete_family_document', { p_family_id: vaultA.id, p_document_id: sacrificialId, p_user_id: a.user.id });
+    if (linkEntry) await a.client.rpc('remove_family_person', { p_person_id: linkEntry });
     // B's person stays in the tree after leaving, by design; a QA run should not.
     if (treePerson && !(await memberRow(b.user.id))) {
       const { error: rmErr } = await a.client.rpc('remove_family_person', { p_person_id: treePerson });

@@ -46,12 +46,15 @@ Four things will mislead you if you assume otherwise:
    `feedback` table; 028 adds `saved_chats`, which only its owner reads;
    029's account-deletion functions are service role only; 031's family
    tree is read by members and written only through its four functions;
-   032's emergency cards likewise, through `save_emergency_card`).
+   032's emergency cards likewise, through `save_emergency_card`; 034's
+   notification devices are their owner's, written only through
+   `save_push_subscription`).
    **A new writable
    column needs its own `GRANT` in a migration.** Membership has no
    invitations and no requests: only an admin adds a person, through the
-   `add-member` Edge Function, and clients cannot insert a membership row at
-   all. See [Membership](#membership--an-admin-adds-nobody-requests-025).
+   `add-member` Edge Function (or links someone already in the family tree
+   to their account, through `link-account`, 033), and clients cannot insert
+   a membership row at all. See [Membership](#membership--an-admin-adds-nobody-requests-025).
 4. **This app targets both native and web from one codebase.** Day-to-day
    review happens on the web build (deployed to Vercel), but native
    Android/iOS is a real target with platform-specific code paths. A change
@@ -94,14 +97,16 @@ errors**) and `npm run build` are the local gates.
 at 03:10 IST, and on pushes that change `qa/`. It uploads synthetic SPECIMEN
 documents to its own vault (QA Vault A, account A), asks questions about
 them, and checks the answers on facts and sources, never wording. It also
-runs the 023 sweep and the 024 DEV/PROD fingerprint, 80 access probes (a
+runs the 023 sweep and the 024 DEV/PROD fingerprint, 97 access probes (a
 logged-out visitor and a second account must be refused everywhere, Gmail
-import's endpoints, the family tree and emergency cards included), the
-membership model (the second account, added as a viewer, must not be able to
-escalate, becomes a person in the family tree, writes only its own emergency
-card, and must be able to leave),
+import's endpoints, the family tree, emergency cards, linking and
+notification devices included),
+the membership model (the second account, added as a viewer, must not be able
+to escalate, becomes a person in the family tree, writes only its own
+emergency card, must be able to leave, and is linked to an entry in the tree
+both ways: merged while a member, brought back as it after leaving),
 a question asked by relation ("my mother's passport"), and the full upload → ingest →
-expiry-notification pipeline. By hand only, suite `languages` asks 12
+expiry-notification pipeline, the reminder made once however often Home asks. By hand only, suite `languages` asks 12
 questions about documents in eight more Indian languages — two of them
 photos OCR'd the way the web app does it, with Tesseract — which is about
 43% of the free Groq day on its own. See `qa/README.md`.
@@ -221,7 +226,9 @@ npx supabase@latest login
 npx supabase@latest functions deploy rag-search       --project-ref <ref>
 npx supabase@latest functions deploy ingest-document  --project-ref <ref>
 npx supabase@latest functions deploy add-member       --project-ref <ref>
+npx supabase@latest functions deploy link-account     --project-ref <ref>
 npx supabase@latest functions deploy delete-account   --project-ref <ref>
+npx supabase@latest functions deploy push             --project-ref <ref>   # reminders on devices; makes its own keys
 npx supabase@latest functions deploy reembed-index    --project-ref <ref>
 npx supabase@latest functions deploy gmail-connect    --project-ref <ref>   # also gmail-scan, gmail-import
 npx supabase@latest functions deploy gmail-callback   --project-ref <ref> --no-verify-jwt   # Google's redirect target
@@ -377,16 +384,16 @@ src/
     notifications.tsx        # expiry alerts, uploads, invites
     family.tsx               # Manage Family: members, adding, leaving    (NOT a tab)
     family-tree.tsx          # the family tree: everyone, and how they are related (031)
-    person/[id].tsx          # one person: their relation to you, emergency card, documents, expiry dates
+    person/[id].tsx          # one person: their relation to you, emergency card, documents, expiry dates, link to their account (033)
     emergency/               # emergency cards (032), in the drawer
       index.tsx              # everyone in the tree, blood group at a glance
       [id].tsx               # one card, full screen, every number one tap from the dialler
       edit/[id].tsx          # add or edit a card: an admin, or the person themselves
-    reminders.tsx            # expiry dates, soonest first (★ Family Plus, in the drawer)
+    reminders.tsx            # expiry dates, soonest first, and how reminders reach you (★ Family Plus, in the drawer)
     saved-chats.tsx          # behind the clock on Ask: chats kept with Save chat (028)
     settings/                # (NOT a tab) its own Stack, so Back returns to Settings
       index.tsx              # the list; every row opens a screen
-      profile.tsx  security.tsx  notifications.tsx  privacy.tsx
+      profile.tsx  security.tsx  notifications.tsx  privacy.tsx   # notifications: the switch, and this device (034)
       storage.tsx  help.tsx  feedback.tsx  about.tsx
       delete-account.tsx     # Security › Delete account: shows what goes, asks for DELETE (029)
     document/[id].tsx        # document viewer
@@ -406,6 +413,7 @@ supabase/
   functions/                 # Deno Edge Functions (NOT typechecked by tsconfig)
   migrations/                # SQL — incomplete, see Database
 
+public/                      # copied to the web build's root: sw.js (shows notifications), manifest, icons
 qa/                          # end-to-end QA against DEV (own package.json)
   run.mjs  questions.yaml    # the runner, and what it asks
   fixtures/documents.mjs     # the SPECIMEN documents and the facts they carry
@@ -436,12 +444,13 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `app-info.ts` | Version, release date and commit (stamped into `extra` by `app.config.ts` at build time), and the support contact Help shows |
 | `ocr.ts` | Platform-split OCR with progress callback; reads the person's chosen languages |
 | `ocr-languages.ts` | The document-language picker list, and `resolveOcrLanguages()` which always appends English |
+| `push.ts` / `push.web.ts` | Notifications on this device (034): on the web, Web Push through `public/sw.js` (`loadPushStatus`, `turnOnPush`, `turnOffPush`, `sendTestPush`, and `forgetPushOnThisDevice` on sign-out); the phone app's file is a stand-in until EAS builds exist. Types in `push-types.ts` |
 | `preferences.tsx` | `PreferencesProvider`: voice toggle + language, document languages. Cached locally, stored on `public.users`; reads and writes fall back to the older column set so an unapplied migration degrades one setting rather than all of them |
 | `speech.ts` | Voice: `listen`/`stopListening` (platform-split recogniser) and `speak`/`stopSpeaking` (expo-speech) |
 | `speech-text.ts` | `toSpeech()`: strips markdown and spells out ID numbers before they are read aloud |
 | `voice-languages.ts` | The language picker list and the few phrases the app itself says, per language |
 | `storage.ts` | Key-value cache: localStorage on web, AsyncStorage on native |
-| `database.types.ts` | Generated Supabase types, current to 032 (030 changed nothing in them). Regenerate after every migration and re-append the hand-written block at the bottom (see the typecheck note) |
+| `database.types.ts` | Generated Supabase types, current to 034 (030 changed nothing in them). Regenerate after every migration and re-append the hand-written block at the bottom (see the typecheck note) |
 
 ---
 
@@ -455,7 +464,9 @@ src/components/animated-icon.tsx   /  animated-icon.web.tsx
 src/components/app-tabs.tsx        /  app-tabs.web.tsx
 src/hooks/use-color-scheme.ts      /  use-color-scheme.web.ts
 src/lib/speech-recognition.ts      /  speech-recognition.web.ts
-src/app/+html.tsx                     (web only — HTML shell, @font-face)
+src/lib/push.ts                    /  push.web.ts
+src/app/+html.tsx                     (web only — HTML shell, @font-face; NOT used by the single-page export)
+public/sw.js                          (web only — the service worker that shows notifications)
 src/global.css                        (web only)
 ```
 
@@ -502,8 +513,8 @@ Supabase, cloud-hosted. Three layers:
 
 - **Layer 1 (common)** — `public` schema: users, families, family_members,
   invitations, document_categories, notifications, audit_logs, feedback,
-  saved_chats, family_people, family_links, family_emergency_cards. RLS
-  enabled.
+  saved_chats, family_people, family_links, family_emergency_cards,
+  push_subscriptions, reminders_sent, push_config. RLS enabled.
 - **Layer 2 (private)** — one isolated schema per family (`family_<short_uuid>`)
   holding documents, document_metadata, document_chunks, expiry_alerts,
   family_relationships. Created by the `public.create_family()` PG function.
@@ -597,10 +608,10 @@ so storage policies live only in `019`.
   account's metadata, which is what the app reads for your own name — so the
   name changes for you even where 027 is not applied; the family sees it
   once it is.
-- **Notifications** is `users.notifications_enabled`, read only by the app:
-  off hides the bell's count and the list. Expiry alerts are still written
-  for every member, so switching back on shows them. Before 027 it is kept on
-  the device (`preferences.tsx`'s fallback).
+- **Notifications** is `users.notifications_enabled`: off hides the bell's
+  count and the list, and (034) sends nothing to that person's devices.
+  Reminders are still written for every member, so switching back on shows
+  them. Before 027 it is kept on the device (`preferences.tsx`'s fallback).
 - **Feedback** goes to `public.feedback`: INSERT on four columns for
   `authenticated`, the sender defaulted from `auth.uid()` and checked by the
   policy, and no SELECT for any client — the team reads it in the dashboard.
@@ -706,6 +717,12 @@ so storage policies live only in `019`.
   deleted, not anonymous — and adds them as a viewer, with a `member`
   notification and an audit row, in one transaction. No such account → the
   admin is told to ask them to sign up, and nothing is created.
+- **Someone already in the family tree is linked, not added** (033). Adding
+  by email gives a person added by name a second entry beside the one with
+  their links, documents and card, so their page has **Link to their
+  FamilyVault account** for admins: `link-account` →
+  `link_family_person_account()`, service role only like 025's. See
+  [Family tree](#family-tree--people-not-accounts-031).
 - **Being added needs no consent, so it must be visible and reversible.** The
   person is notified, sees every family they are in under Manage Family, and
   can leave any of them (`family_members_delete_self`). The last admin cannot
@@ -783,9 +800,23 @@ so storage policies live only in `019`.
   two-way words are deliberately not relations: "ma" is also an MA degree,
   and "mama" is a mother in English but a mother's brother in Hindi — the
   tree says which.
-- **Not built yet:** merging two people. Someone added to the tree without an
-  account and later added as a member appears twice; an admin removes the
-  one without the account (its links go with it).
+- **An entry without an account is linked to one when they sign up** (033):
+  their page's **Link to their FamilyVault account**, admins only, by the
+  email they sign in with, through `link-account` →
+  `link_family_person_account()` (service role only; it takes the admin's
+  user id). Not yet a member, they join as a viewer and the membership takes
+  the ENTRY's id — the rule above — so links, documents and card stay put,
+  nothing rewritten; they get the same `member` notification as when added.
+  Already a member (added in Manage Family, so in the tree twice), the two
+  become one: the member's person keeps its id and takes the entry's name
+  (the one the family uses), a gender or birth date it lacks, the entry's
+  links — re-made through `tree_add_parent`/`tree_add_pair`, so a third
+  parent or a cycle refuses the whole join with that rule's message —, the
+  documents marked as the entry, and its card unless the member has one; the
+  entry is deleted. A function of its own, not an option on `add-member`, on
+  purpose: an older `add-member` asked to link would ADD the person again,
+  the very duplicate this prevents, while a missing `link-account` answers
+  the gateway's 404, which the app shows as not switched on yet.
 
 ### Emergency cards — one per person, for whoever is there (032)
 
@@ -813,6 +844,62 @@ so storage policies live only in `019`.
   AI service; answering "Dadi's blood group" from them would change that and
   needs saying in Settings › Privacy first. `users.emergency_info` (024) is
   unused and left alone.
+
+### Reminders — once per stage, on every device that asks (034)
+
+- **Before 034 a reminder was made only when someone opened Home**
+  (`check_expiry_notifications()`), so nobody was told unless already
+  looking — and it made a fresh copy of every reminder within 90 days on
+  each day that someone did. Now the database's own clock does it: `pg_cron`
+  (free on every plan) runs `run_reminders()` at five past every hour. From
+  9 in the morning, India time, `queue_expiry_reminders()` makes each
+  document's reminders for every member: 90, 30 and 7 days before (each
+  expiry alert's `alert_days_before`) and on the day, until three days after.
+  `reminders_sent` remembers each (document, expiry date, stage), so each
+  goes once, the runs after the first find nothing, and a renewed date
+  starts afresh. A document added with 20 days left gets its 30-day reminder,
+  not the 90-day one it is past; one that ran out long ago gets none. Home's
+  call still works, and makes the same reminders, once.
+- **Devices: Web Push, free.** The browser's own push service — Google's,
+  Mozilla's, Apple's, Microsoft's — carries each notification, encrypted to
+  the device's own key so that service cannot read it.
+  `_shared/webpush.ts` is RFC 8291 and RFC 8292 in WebCrypto, no library; the
+  QA self-test checks its encryption against RFC 8291's example, byte for
+  byte. Settings › Notifications › On this device turns it on, per browser
+  (`src/lib/push.web.ts`); `public/sw.js` shows each notification and opens
+  Notifications when it is tapped, and caches nothing. An iPhone or iPad
+  allows it only to a web app on the Home Screen (iOS 16.4 or later), hence
+  `public/manifest.json`, linked by `_layout.tsx` at start-up — the
+  single-page export never uses `+html.tsx`, so a tag added there reaches no
+  page; the screen says how. The phone app's
+  `push.ts` is a stand-in until EAS builds exist (Expo push, also free).
+- **`push_subscriptions` is its owner's**: RLS SELECT and DELETE on your own
+  rows, written only by `save_push_subscription()` (from `auth.uid()`). An
+  endpoint is one browser, so it moves to whoever signs in there. It must be
+  at a real push service — a CHECK on the table, `isPushServiceEndpoint()` in
+  the sender — so the server never posts to an address a client chose.
+  Signing out takes the device off (`forgetPushOnThisDevice()`, in
+  `auth.tsx`), Sign out everywhere takes them all, and deleting the account
+  cascades.
+- **The push function makes its own keys.** Its first `key` call generates
+  this project's VAPID pair and keeps it, with the function's address and
+  the public anon key, in `push_config` (service role only). That is the
+  whole setup: no secret to set. `run_reminders()` calls `push`'s `send`
+  through `pg_net` at that address when something is waiting, between 8 in
+  the morning and 10 at night India time, and `send` keeps the same quiet
+  hours itself — the key it is called with is public. That is safe by
+  construction: `send` takes nothing from the request and sends only what
+  `push_pending()` returns (a day's unread notifications of people with a
+  device and notifications on), each once (`notifications.pushed_at`), with a
+  lease that keeps runs a minute apart. A device the push service calls gone
+  (404/410) is forgotten; a notification that met only a push service that
+  was down is tried again, within the day.
+- **Every notification goes to devices, not only reminders** — being added
+  to a family too. India time only: a family abroad hears at 9 in India.
+- **Not built yet:** birthdays from the family tree — the tree needs a way
+  to say someone has passed away first, or it would wish a late grandparent
+  happy birthday; email (needs a paid domain); notifications in the phone
+  app.
 
 ## Edge Functions
 
@@ -872,6 +959,17 @@ so storage policies live only in `019`.
   It replaced `invite-member`, which the deploy workflow deletes from each
   project it deploys to — a function removed from the repo otherwise stays
   live, running its old code.
+- **`link-account`** — a family admin links someone already in the family
+  tree to the account they have since made, by email (033; see
+  [Family tree](#family-tree--people-not-accounts-031)). Answers 200 `linked`
+  or `merged`, 404 `no_account`/`no_person`, 409 `already_linked`,
+  `already_member` or `tree_rule` (with the rule's own words), and 503
+  `needs_migration` where 033 is not applied.
+- **`push`** — notifications on devices (034; see
+  [Reminders](#reminders--once-per-stage-on-every-device-that-asks-034)):
+  `key` and `test` for a signed-in person, `send` for the hourly clock (open
+  by design: it reads nothing from the request and returns only counts).
+  503 `needs_migration` where 034 is not applied.
 - **`delete-account`** — a person deletes their own account: `preview`
   lists what would go, `delete` with `confirm: 'DELETE'` does it; see
   [Deleting your account](#deleting-your-account--at-once-nothing-kept-029).
@@ -1190,7 +1288,7 @@ rule again once pinned chunks are mixed in.
 - **★ Family Plus marks what the paid plan will include** (`<PlusTag />`).
   The plan does not exist yet, so nothing is locked behind it: a starred
   feature works for everyone and says the paid version is coming. Today that
-  is Reminders (in the drawer), Import from Gmail (on Upload), and space
+  is Reminders (in the drawer; since 034 they really are sent), Import from Gmail (on Upload), and space
   beyond each family's free allotment (Settings › Storage): each shows the
   tag where you find it, and Help's FAQ names all three.
 - **Never give a web panel `flex` for its width.** On react-native-web

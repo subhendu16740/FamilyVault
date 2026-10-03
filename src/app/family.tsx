@@ -339,6 +339,9 @@ export default function FamilyScreen() {
             <Text style={styles.sheetIntro}>
               They need a FamilyVault account. Enter the email they sign in with: they're added straight away as a viewer, and get a notification.
             </Text>
+            <Text style={styles.sheetIntro}>
+              Already in the family tree? Open them there and choose Link to their FamilyVault account instead, so they keep their place in the tree, their documents and their emergency card.
+            </Text>
 
             {/* Email */}
             <View style={styles.field}>
