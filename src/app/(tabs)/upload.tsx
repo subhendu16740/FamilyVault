@@ -13,6 +13,8 @@ import { useFamily } from '../../lib/family-context';
 import { useDocumentOwners } from '../../lib/family-people';
 import { useAuth } from '../../lib/auth';
 import { StorageFullError, fetchCategories, uploadDocument } from '../../lib/api';
+import { plusPage, useFamilyPlan } from '../../lib/family-plan';
+import type { PlanName } from '../../lib/plans';
 import {
   extractTextFromImage, isImageFile, ocrLanguageGapOnThisDevice, type OcrProgress,
 } from '../../lib/ocr';
@@ -38,6 +40,7 @@ interface PickedFile {
 export default function UploadScreen() {
   const { user } = useAuth();
   const { currentFamily } = useFamily();
+  const { routeFor } = useFamilyPlan();
   // Everyone in the family tree (you first); the members, before migration 031.
   const owners = useDocumentOwners();
   // From a person's page: "Add a document for Nani".
@@ -56,8 +59,9 @@ export default function UploadScreen() {
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<{ docId: string } | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  // Says which wall was hit: the family's storage limit (038), or anything else.
-  const [storageFull, setStorageFull] = useState(false);
+  // Which wall was hit: the family's storage limit (038) on this plan, or
+  // anything else (null). A free family is offered the Family Plus page.
+  const [fullPlan, setFullPlan] = useState<PlanName | null>(null);
   const [ocrText, setOcrText] = useState<string | null>(null);
   const [ocrProgress, setOcrProgress] = useState<OcrProgress | null>(null);
   const [ocrRunning, setOcrRunning] = useState(false);
@@ -89,7 +93,7 @@ export default function UploadScreen() {
   ) => {
     const kind = detectFileType(picked);
     if (!isSaveable(kind)) {
-      setStorageFull(false);
+      setFullPlan(null);
       setErrorMsg(unsupportedFileMessage(kind));
       return;
     }
@@ -184,7 +188,7 @@ export default function UploadScreen() {
 
   const handleUpload = async () => {
     if (!pickedFile || !currentFamily || !user) {
-      setStorageFull(false);
+      setFullPlan(null);
       setErrorMsg('Missing file, family, or user session. Please try again.');
       return;
     }
@@ -211,7 +215,7 @@ export default function UploadScreen() {
       setUploadResult({ docId });
     } catch (err: any) {
       console.error('Upload error:', err);
-      setStorageFull(err instanceof StorageFullError);
+      setFullPlan(err instanceof StorageFullError ? err.room.plan : null);
       setErrorMsg(err.message ?? 'Something went wrong.');
     } finally {
       setUploading(false);
@@ -267,12 +271,12 @@ export default function UploadScreen() {
               </TouchableOpacity>
               {/* Web only: connecting Gmail from the phone app needs a native
                   auth session, not built yet (see gmail-import.tsx).
-                  ★: part of Family Plus, the paid plan. It works for everyone
-                  until the plan exists; the tag sits under the label. */}
+                  ★: part of Family Plus; a free family is shown the Family
+                  Plus page instead. The tag sits under the label. */}
               {Platform.OS === 'web' && (
                 <TouchableOpacity
                   style={styles.secondaryBtn}
-                  onPress={() => router.push('/gmail-import' as any)}
+                  onPress={async () => router.push((await routeFor('gmail', '/gmail-import')) as any)}
                   activeOpacity={0.8}
                   accessibilityRole="button"
                   accessibilityLabel="From Gmail, part of Family Plus"
@@ -483,14 +487,29 @@ export default function UploadScreen() {
             <View style={styles.dialogIconWrap}>
               <Feather name="alert-circle" size={32} color="#EF4444" />
             </View>
-            <Text style={styles.dialogTitle}>{storageFull ? 'Storage full' : 'Upload Failed'}</Text>
+            <Text style={styles.dialogTitle}>{fullPlan ? 'Storage full' : 'Upload Failed'}</Text>
             <Text style={styles.dialogMsg}>{errorMsg}</Text>
-            <TouchableOpacity
-              style={styles.dialogBtnWide}
-              onPress={() => setErrorMsg(null)}
-            >
-              <Text style={styles.dialogBtnFilledText}>OK</Text>
-            </TouchableOpacity>
+            {fullPlan === 'free' ? (
+              <View style={styles.dialogBtns}>
+                <TouchableOpacity
+                  style={styles.dialogBtnOutline}
+                  onPress={() => { setErrorMsg(null); router.push(plusPage('storage') as any); }}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.dialogBtnOutlineText}>See Family Plus</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.dialogBtnFilled} onPress={() => setErrorMsg(null)} accessibilityRole="button">
+                  <Text style={styles.dialogBtnFilledText}>OK</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={styles.dialogBtnWide}
+                onPress={() => setErrorMsg(null)}
+              >
+                <Text style={styles.dialogBtnFilledText}>OK</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </Pressable>
       </Modal>

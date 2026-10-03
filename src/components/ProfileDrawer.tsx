@@ -18,17 +18,20 @@ import { router } from 'expo-router';
 import { useAuth } from '../lib/auth';
 import { useFamily } from '../lib/family-context';
 import { useDrawer } from '../lib/drawer-context';
+import { useFamilyPlan, type PlusFeature } from '../lib/family-plan';
 import { appVersion } from '../lib/app-info';
 import { PlusTag } from './screen-header';
 import { color, radius, size, space, type } from '../constants/design';
 
-const menuItems: { icon: string; label: string; route: string; plus?: boolean }[] = [
+type MenuItem = { icon: string; label: string; route: string; plus?: PlusFeature };
+
+const menuItems: MenuItem[] = [
   { icon: 'home', label: 'Home', route: '/home' },
   { icon: 'git-branch', label: 'Family tree', route: '/family-tree' },
   { icon: 'plus-square', label: 'Emergency cards', route: '/emergency' },
   { icon: 'users', label: 'Manage Family', route: '/family' },
-  // ★: part of Family Plus, the paid plan. The screen works for everyone.
-  { icon: 'clock', label: 'Reminders', route: '/reminders', plus: true },
+  // ★: part of Family Plus. A free family is shown the Family Plus page instead.
+  { icon: 'clock', label: 'Reminders', route: '/reminders', plus: 'reminders' },
   { icon: 'settings', label: 'Settings', route: '/settings' },
 ];
 
@@ -39,6 +42,7 @@ export default function ProfileDrawer() {
   const { user, signOut } = useAuth();
   const { currentFamily, membership } = useFamily();
   const { isDrawerOpen, closeDrawer } = useDrawer();
+  const { routeFor } = useFamilyPlan();
   const { width } = useWindowDimensions();
   const drawerWidth = Math.min(300, Math.round(width * 0.86));
 
@@ -68,8 +72,9 @@ export default function ProfileDrawer() {
   const role = membership?.role ? membership.role.charAt(0).toUpperCase() + membership.role.slice(1) : '';
   const familyLine = [currentFamily?.name, role].filter(Boolean).join(' · ');
 
-  const handleNavigate = (route: string) => {
+  const handleNavigate = async (item: MenuItem) => {
     closeDrawer();
+    const route = item.plus ? await routeFor(item.plus, item.route) : item.route;
     setTimeout(() => router.navigate(route as any), 150);
   };
 
@@ -127,7 +132,7 @@ export default function ProfileDrawer() {
               <TouchableOpacity
                 key={item.route}
                 style={styles.menuItem}
-                onPress={() => handleNavigate(item.route)}
+                onPress={() => handleNavigate(item)}
                 activeOpacity={0.7}
                 accessibilityRole="button"
               >

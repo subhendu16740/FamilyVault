@@ -5,6 +5,7 @@
 import type { ReactNode } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { BackButton } from './back-button';
 import { color, size, space, type } from '../constants/design';
 
@@ -66,13 +67,29 @@ export function HeaderButton({ icon, label, onPress }: { icon?: string; label: s
   );
 }
 
-/** "★ Family Plus" — marks what the paid plan will include. */
-export function PlusTag() {
-  return (
+/**
+ * "★ Family Plus" — marks what the paid plan includes. With `link` it opens
+ * the Family Plus page (Free and Plus side by side); without, it is only a
+ * mark, for a tag inside something that is already tappable.
+ */
+export function PlusTag({ link = false }: { link?: boolean }) {
+  const tag = (
     <View style={styles.plusTag} accessibilityLabel="Part of Family Plus, the paid plan">
       <Text style={styles.plusStar}>★</Text>
       <Text style={styles.plusText}>Family Plus</Text>
     </View>
+  );
+  if (!link) return tag;
+  return (
+    <TouchableOpacity
+      onPress={() => router.push('/plus' as any)}
+      activeOpacity={0.7}
+      hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
+      accessibilityRole="link"
+      accessibilityLabel="Family Plus: see what it includes"
+    >
+      {tag}
+    </TouchableOpacity>
   );
 }
 

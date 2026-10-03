@@ -63,7 +63,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'What does ★ Family Plus mean?',
-    a: `Family Plus is the paid plan for the whole family, ${plusPrice('inr')} in India or ${plusPrice('usd')} elsewhere, coming soon. It gives ${formatBytes(DEFAULT_PLAN_LIMITS.plus)} of space, and things marked with ★, like the reminders page and bringing documents in from Gmail, are part of it; until it can be bought, those work for everyone.`,
+    a: `Family Plus is the paid plan for the whole family, ${plusPrice('inr')} in India or ${plusPrice('usd')} elsewhere, coming soon. It gives ${formatBytes(DEFAULT_PLAN_LIMITS.plus)} of space, and the things marked with ★ — the Reminders page, with every expiry date in one list, and bringing documents in from Gmail. Tap any ★, or open Settings › Family Plus, to see Free and Plus side by side. The reminders themselves reach every family, Free or Plus.`,
   },
   {
     q: 'How do I delete my account?',
