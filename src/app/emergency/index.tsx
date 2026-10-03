@@ -87,7 +87,7 @@ export default function EmergencyCardsScreen() {
                     accessibilityRole="button"
                     accessibilityLabel={`${p.name}${card ? '' : ', no card yet'}`}
                   >
-                    <Avatar name={p.name} me={isMe} size={size.iconBox} />
+                    <Avatar name={p.name} me={isMe} size={size.iconBox} onApp={!!p.userId} />
                     <View style={styles.rowText}>
                       <Text style={styles.rowName} numberOfLines={1}>{p.name}</Text>
                       <Text style={styles.rowSub} numberOfLines={1}>

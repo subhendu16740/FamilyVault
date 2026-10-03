@@ -9,6 +9,7 @@
 
 import { useRef, type RefObject } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import type { KinPerson, TreeUnit, FamilyBranch } from '../../supabase/functions/_shared/kinship';
 import type { PersonBadge } from '../lib/family-people';
@@ -19,6 +20,8 @@ export interface TreeViewProps {
   meId: string | null;
   labelFor: (id: string) => string | null;
   badgeFor?: (id: string) => PersonBadge | null;
+  /** Whether this person has a FamilyVault account: their card carries the phone badge. */
+  onAppFor?: (id: string) => boolean;
   onPressPerson: (person: KinPerson) => void;
   /** Where the viewer's own card sits, measured within `measureIn`, so the screen can scroll to it. */
   measureIn?: RefObject<View | null>;
@@ -35,16 +38,49 @@ export function initials(name: string): string {
   return (first + last).toUpperCase();
 }
 
-export function Avatar({ name, me, size = 36 }: { name: string; me?: boolean; size?: number }) {
+/** The green phone on an avatar: this person has a FamilyVault account. */
+export const ON_APP_COLOR = '#16A34A';
+
+/**
+ * A person's initials in a circle; coral for the viewer. `onApp` adds the
+ * green phone badge for someone with a FamilyVault account — the tree also
+ * holds people without one. Too small to read on the tiny avatars in chips,
+ * so it is drawn from 28px up.
+ */
+export function Avatar({ name, me, size = 36, onApp = false }: { name: string; me?: boolean; size?: number; onApp?: boolean }) {
+  const badge = Math.min(22, Math.max(16, Math.round(size * 0.5)));
   return (
-    <LinearGradient
-      colors={me ? ['#D4807B', '#2A3D66'] : ['#2A3D66', '#4A6491']}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={{ width: size, height: size, borderRadius: size / 2, alignItems: 'center', justifyContent: 'center' }}
-    >
-      <Text style={[styles.initials, { fontSize: size >= 48 ? 18 : 13 }]}>{initials(name)}</Text>
-    </LinearGradient>
+    <View style={{ width: size, height: size }}>
+      <LinearGradient
+        colors={me ? ['#D4807B', '#2A3D66'] : ['#2A3D66', '#4A6491']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={{ width: size, height: size, borderRadius: size / 2, alignItems: 'center', justifyContent: 'center' }}
+      >
+        <Text style={[styles.initials, { fontSize: size >= 48 ? 18 : 13 }]}>{initials(name)}</Text>
+      </LinearGradient>
+      {onApp && size >= 28 && (
+        <View
+          style={[styles.onApp, { width: badge, height: badge, borderRadius: badge / 2, right: -badge * 0.2, bottom: -badge * 0.15 }]}
+          accessibilityElementsHidden
+          importantForAccessibility="no"
+        >
+          <Feather name="smartphone" size={Math.round(badge * 0.58)} color="#FFFFFF" />
+        </View>
+      )}
+    </View>
+  );
+}
+
+/** One line that explains the badge, shown above the tree. */
+export function OnAppKey() {
+  return (
+    <View style={styles.key} accessible accessibilityLabel="A green phone on someone's picture means they are on FamilyVault, with their own account.">
+      <View style={[styles.onApp, styles.keyBadge]}>
+        <Feather name="smartphone" size={9} color="#FFFFFF" />
+      </View>
+      <Text style={styles.keyText}>On FamilyVault (has an account)</Text>
+    </View>
   );
 }
 
@@ -52,6 +88,7 @@ function PersonCard({ person, props }: { person: KinPerson; props: TreeViewProps
   const me = person.id === props.meId;
   const label = me ? 'You' : props.labelFor(person.id);
   const badge = props.badgeFor?.(person.id) ?? null;
+  const onApp = props.onAppFor?.(person.id) ?? false;
   const ref = useRef<View>(null);
   const measure = () => {
     const box = props.measureIn?.current;
@@ -66,9 +103,9 @@ function PersonCard({ person, props }: { person: KinPerson; props: TreeViewProps
       onPress={() => props.onPressPerson(person)}
       activeOpacity={0.75}
       accessibilityRole="button"
-      accessibilityLabel={[person.name, label, badge?.text].filter(Boolean).join(', ')}
+      accessibilityLabel={[person.name, label, onApp ? 'on FamilyVault' : null, badge?.text].filter(Boolean).join(', ')}
     >
-      <Avatar name={person.name} me={me} />
+      <Avatar name={person.name} me={me} onApp={onApp} />
       <Text style={styles.name} numberOfLines={2}>{person.name}</Text>
       {!!label && <Text style={styles.relation} numberOfLines={2}>{label}</Text>}
       {!!badge && (
@@ -165,6 +202,13 @@ const styles = StyleSheet.create({
   },
   cardMe: { borderColor: color.accent, borderWidth: 2 },
   initials: { color: '#FFFFFF', fontWeight: '700' },
+  onApp: {
+    position: 'absolute', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: ON_APP_COLOR, borderWidth: 2, borderColor: '#FFFFFF',
+  },
+  key: { flexDirection: 'row', alignItems: 'center', gap: space.sm, alignSelf: 'flex-start' },
+  keyBadge: { position: 'relative', width: 18, height: 18, borderRadius: 9 },
+  keyText: { ...type.caption, color: color.textMuted },
   name: { ...type.caption, color: color.text, fontWeight: '600', textAlign: 'center' },
   relation: { ...type.meta, color: color.textMuted, textAlign: 'center' },
   badge: { borderRadius: radius.pill, paddingHorizontal: 6, paddingVertical: 1, maxWidth: CARD - 12 },
