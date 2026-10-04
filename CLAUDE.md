@@ -55,7 +55,9 @@ Four things will mislead you if you assume otherwise:
    the address asked, and answered or withdrawn only through their
    functions; 038's plan limits (one row per plan since 039) are read by
    anyone and a family's plan by its members, never its payment reference,
-   and set only through `set_family_plan`, service role only).
+   and set only through `set_family_plan`, service role only; 040's
+   countdown after Plus ends, and the removal at its end, are the server's
+   alone).
    **A new writable
    column needs its own `GRANT` in a migration.** Nobody joins a family
    without saying yes: only an admin asks a person in, through the
@@ -105,12 +107,13 @@ errors**) and `npm run build` are the local gates.
 at 03:10 IST, and on pushes that change `qa/`. It uploads synthetic SPECIMEN
 documents to its own vault (QA Vault A, account A), asks questions about
 them, and checks the answers on facts and sources, never wording. It also
-runs the 023 sweep and the 024 DEV/PROD fingerprint, 122 access probes (a
+runs the 023 sweep and the 024 DEV/PROD fingerprint, 129 access probes (a
 logged-out visitor and a second account must be refused everywhere, Gmail
 import's endpoints, the family tree, emergency cards, linking,
 notification devices, share links, invitations and plans included; a share
 link must open without an account, and stop once it is turned off; nobody
-can give a family Plus, raise a limit or read another family's storage),
+can give a family Plus, raise a limit, read another family's storage, end
+its Plus or start, run or close a removal),
 the membership model (the second account is invited, not added: it sees
 nothing of the vault until it says yes, the admin cannot say yes for it, a
 no removes the invitation and a yes makes it a viewer, who must not be able
@@ -243,6 +246,7 @@ npx supabase@latest functions deploy link-account     --project-ref <ref>
 npx supabase@latest functions deploy delete-account   --project-ref <ref>
 npx supabase@latest functions deploy push             --project-ref <ref>   # reminders on devices; makes its own keys
 npx supabase@latest functions deploy share            --project-ref <ref>   # opens a share link, for anyone who has it
+npx supabase@latest functions deploy plans            --project-ref <ref>   # when Family Plus ends: the removal after 30 days
 npx supabase@latest functions deploy reembed-index    --project-ref <ref>
 npx supabase@latest functions deploy gmail-connect    --project-ref <ref>   # also gmail-scan, gmail-import
 npx supabase@latest functions deploy gmail-callback   --project-ref <ref> --no-verify-jwt   # Google's redirect target
@@ -467,7 +471,7 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `speech-text.ts` | `toSpeech()`: strips markdown and spells out ID numbers before they are read aloud |
 | `voice-languages.ts` | The language picker list and the few phrases the app itself says, per language |
 | `storage.ts` | Key-value cache: localStorage on web, AsyncStorage on native |
-| `database.types.ts` | Generated Supabase types, current to 039 (030 changed nothing in them). Regenerate after every migration and re-append the hand-written block at the bottom (see the typecheck note) |
+| `database.types.ts` | Generated Supabase types, current to 040 (030 changed nothing in them). Regenerate after every migration and re-append the hand-written block at the bottom (see the typecheck note) |
 
 ---
 
@@ -1012,7 +1016,8 @@ so storage policies live only in `019`.
   same function with `p_source` and `p_source_ref`. A new or lapsed plan
   tells the family (a `plan` notification, which opens Settings › Storage),
   a renewal is quiet, and every call writes `audit_logs`. To end a plan at
-  once (a refund), delete its row. `PLUS_FOR_SALE` in `plan-text.ts` turns
+  once (a refund), `select end_family_plan('<family id>');` (040) — not a
+  deleted row, which would skip the countdown below. `PLUS_FOR_SALE` in `plan-text.ts` turns
   the "coming soon" words into an offer once Plus can be bought.
 - **The server keeps the limit, not the app.** The `documents` bucket's
   upload policy (019's, plus `family_storage_has_room()`) refuses a new file
@@ -1025,10 +1030,31 @@ so storage policies live only in `019`.
   `StorageFullError`), so the person reads what is left and what to do, not
   a policy error. Gmail import uploads as the service role, which no policy
   stops, so it asks `family_storage_status()` itself before storing.
-- **When Plus ends, nothing is deleted.** The family keeps, reads and
-  searches every document and only cannot add more while over the free
-  limit; Storage says so. Those files go on costing storage — at most a
-  lapsed family's 10 GB, about $0.21 a month past Pro's included 100 GB.
+- **When Plus ends, the storage ends too — after 30 days** (040). We do not
+  keep storage nobody pays for. A family whose Plus has ended (`paid_until`
+  passed, or `end_family_plan()` for a refund — deleting the row instead
+  would keep its files for ever) and that holds more than the free limit is
+  told at once, warned 7 days and 1 day before (`queue_plan_notices()`,
+  hourly from `run_reminders()`), and on day 30 the **newest documents
+  above the free limit are removed** until it is within it — files with no
+  document (a failed upload) first, once a day old — and the family is told
+  how many. Renewing stops it at any point (`set_family_plan` resets the
+  countdown), and so does deleting documents to get under the limit. Until
+  then it can read, search and download everything but add nothing.
+  `plan_limits.grace_days` holds the 30. Storage, the Plus page and a full
+  vault's message show the date (`family_storage_status().removal_at`).
+  The safeguards are deliberate, because this deletes documents: only a
+  family whose Plus **ended** is touched, never one that was always free;
+  nothing goes before the "ended" notice and the "tomorrow" warning, or
+  sooner than 20 hours after that warning (so a clock that was down cannot
+  skip the warnings); the database alone picks what goes
+  (`plan_take_excess()`, which deletes the rows and hands back the files);
+  a lease keeps two runs off one family; a renewal refuses a run under way.
+  The files go through the Storage API, so the **`plans`** Edge Function
+  deletes them: `run_reminders()` calls it at `push_config`'s address — the
+  same one push uses, filled the first time anyone opens Settings ›
+  Notifications; on a project where nobody has, the countdown and notices
+  still run, and the removal waits for that address.
 - **Starred features are for Plus families, and each one leads to the Plus
   page.** `/plus` (`src/app/plus.tsx`) shows what Plus gives side by side
   with Free, the price where the person is, and the family's own plan. For a
@@ -1126,6 +1152,14 @@ so storage policies live only in `019`.
   a link that expired, was turned off, lost its document or its maker — or
   never existed, so the answer tells a guesser nothing; 503
   `needs_migration` where 036 is not applied.
+- **`plans`** — when Family Plus ends (040; see
+  [Plans and storage limits](#plans-and-storage-limits--every-plan-has-a-limit-038-039)):
+  `cleanup`, called hourly by `run_reminders()` with the public key when a
+  family's 30 days are up, deletes the files `plan_take_excess()` hands it
+  and closes the books with `plan_settle()`. Open by design, like push's
+  `send`: it reads nothing from the request but the action and removes only
+  what the database says is due. 503 `needs_migration` where 040 is not
+  applied.
 - **`delete-account`** — a person deletes their own account: `preview`
   lists what would go, `delete` with `confirm: 'DELETE'` does it; see
   [Deleting your account](#deleting-your-account--at-once-nothing-kept-029).

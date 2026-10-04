@@ -55,7 +55,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'How much space does my family get?',
-    a: `Every family gets ${FREE_STORAGE_LABEL} free for its documents, in total. ★ Family Plus gives ${formatBytes(DEFAULT_PLAN_LIMITS.plus)}, for ${plusPrice('inr')} in India or ${plusPrice('usd')} elsewhere. Every plan has a limit: when a family's space is full, new documents can't be added until some are deleted${PLUS_FOR_SALE ? ', or the family moves to a bigger plan' : ''}. Nothing is ever deleted for you. Settings › Storage shows how much is used.`,
+    a: `Every family gets ${FREE_STORAGE_LABEL} free for its documents, in total. ★ Family Plus gives ${formatBytes(DEFAULT_PLAN_LIMITS.plus)}, for ${plusPrice('inr')} in India or ${plusPrice('usd')} elsewhere. Every plan has a limit: when a family's space is full, new documents can't be added until some are deleted${PLUS_FOR_SALE ? ', or the family moves to a bigger plan' : ''}. If Family Plus ends while your family holds more than ${FREE_STORAGE_LABEL}, it has ${DEFAULT_PLAN_LIMITS.graceDays} days to renew or delete documents; after that, the newest documents above ${FREE_STORAGE_LABEL} are removed. You are reminded when it ends, a week before and the day before. Settings › Storage shows how much is used.`,
   },
   {
     q: 'How do reminders work?',

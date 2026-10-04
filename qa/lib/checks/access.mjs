@@ -186,6 +186,23 @@ const planJudge = (expect) => (outcome) => {
   }
   return typeof expect === 'function' ? expect(outcome) : judge(expect, outcome);
 };
+// When Family Plus ends (040): the countdown and the clean-up are the
+// server's alone. Skipped until 040 is on DEV, and the plans function until
+// it is deployed there.
+const lapseJudge = (expect) => (outcome) => {
+  if (String(outcome.error?.code) === 'PGRST202') return ['skipped', 'migration 040 is not applied to DEV yet'];
+  return judge(expect, outcome);
+};
+const plansFnJudge = ({ status, data }) => {
+  if (status === 404 && !data?.status) return ['skipped', 'plans is not deployed to DEV yet'];
+  if (status === 503 && data?.status === 'needs_migration') return ['skipped', 'migration 040 is not applied to DEV yet'];
+  // Open by design, like push's send: it removes only what the database says
+  // is due, and QA Vault A has never been on Plus. The sacrificial-document
+  // control at the end proves nothing of A's went.
+  return status === 200 && typeof data?.families === 'number'
+    ? ['pass', `ran; nothing of QA Vault A's was due (${data.families} famil${data.families === 1 ? 'y' : 'ies'} on DEV)`]
+    : ['fail', `HTTP ${status}: ${JSON.stringify(data).slice(0, 160)}`];
+};
 // A well-formed device key and secret: RFC 8291's own example.
 const PROBE_P256DH = 'BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4';
 const PROBE_AUTH = 'BTBZMqHH6r4Tts7J_aSIgg';
@@ -694,6 +711,13 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
         : now;
     })],
     ['B', "raise every plan's storage limit", planJudge('refused'), onPlans(() => b.client.from('plan_limits').update({ storage_bytes: 1099511627776 }).eq('plan', 'free'))],
+    ['anon', "end a family's Family Plus (server-only)", lapseJudge('refused'), rpc(anon, 'end_family_plan', { p_family_id: A.family })],
+    ['B', "end QA Vault A's Family Plus (server-only)", lapseJudge('refused'), rpc(b, 'end_family_plan', { p_family_id: A.family })],
+    ['B', 'make the Family Plus notices (server-only)', lapseJudge('refused'), rpc(b, 'queue_plan_notices', {})],
+    ['B', 'claim families for removal (server-only)', lapseJudge('refused'), rpc(b, 'plan_cleanup_due', { p_max: 10 })],
+    ['B', "take documents from QA Vault A (server-only)", lapseJudge('refused'), rpc(b, 'plan_take_excess', { p_family_id: A.family, p_max: 500 })],
+    ['B', "close QA Vault A's clean-up (server-only)", lapseJudge('refused'), rpc(b, 'plan_settle', { p_family_id: A.family })],
+    ['B', 'make the plans function remove a document of account A\'s', plansFnJudge, fn(b, 'plans', { action: 'cleanup' })],
 
     ['B', "invite someone to be a person in A's tree through the database (server-only)", inviteJudge('refused'), onInvites(() => b.client.rpc('invite_family_person_account', { p_family_id: A.family, p_invited_by: A.user, p_person_id: randomUUID(), p_email: `qa-probe-${cfg.runId}@example.invalid` }))],
 

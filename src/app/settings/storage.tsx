@@ -163,7 +163,12 @@ export default function StorageScreen() {
                           // Before 038: said, not kept.
                           ? `This family has used ${level === 'full' ? 'all of' : 'most of'} its free ${formatBytes(limit)}.`
                           : level === 'full'
-                            ? storageFullMessage(status, 0, limits, price)
+                            ? storageFullMessage(status, 0, {
+                                limits,
+                                price,
+                                // Plus has ended and the family is above the free limit (040).
+                                removalOn: status.removalAt ? longDate(new Date(status.removalAt)) : undefined,
+                              })
                             : `Nearly full: ${formatBytes(limit - used)} left. When it is full, new documents can't be added.`}
                       </Text>
                       {!isPlus && (

@@ -1,4 +1,4 @@
-// ─── What a family may keep, and the words for a full vault (038, 039) ─
+// ─── What a family may keep, and the words for a full vault (038–040) ─
 //
 // Shared by the app (src/lib/plans.ts) and Gmail import, so both say the same
 // thing when a family's storage is full. Pure TypeScript: no Deno, no React.
@@ -7,6 +7,9 @@
 //
 //   Free           1 GB, in total
 //   Family Plus   10 GB, ₹100 a month in India, $10 a month elsewhere
+//
+// When Family Plus ends (040), a family above the free limit has 30 days to
+// renew or delete documents; then the newest documents above it are removed.
 //
 // The limits live in the database (public.plan_limits), and the server keeps
 // them: the documents bucket refuses a new file once a family's files reach
@@ -27,12 +30,14 @@ export interface StorageRoom {
 export interface PlanLimits {
   free: number;
   plus: number;
+  /** Days a family keeps what is above the free limit after Plus ends (040). */
+  graceDays: number;
 }
 
 const GB = 1024 ** 3;
 
-/** What 039 sets; plan_limits is the truth. */
-export const DEFAULT_PLAN_LIMITS: PlanLimits = { free: 1 * GB, plus: 10 * GB };
+/** What 039 and 040 set; plan_limits is the truth. */
+export const DEFAULT_PLAN_LIMITS: PlanLimits = { free: 1 * GB, plus: 10 * GB, graceDays: 30 };
 
 /** What Family Plus costs a month. */
 export const PLUS_PRICE = { inr: 100, usd: 10 } as const;
@@ -69,17 +74,17 @@ export function fits(room: StorageRoom, fileBytes: number): boolean {
   return room.usedBytes + fileBytes <= room.limitBytes;
 }
 
-/**
- * Why a file does not fit, and what the family can do about it. `price` is
- * Family Plus's price where the person is ("₹100 a month"); the server, which
- * cannot tell, leaves it out.
- */
-export function storageFullMessage(
-  room: StorageRoom,
-  fileBytes = 0,
-  limits: PlanLimits = DEFAULT_PLAN_LIMITS,
-  price?: string,
-): string {
+export interface StorageMessageOptions {
+  limits?: PlanLimits;
+  /** Family Plus's price where the person is ("₹100 a month"); the server, which cannot tell, leaves it out. */
+  price?: string;
+  /** For a family whose Plus has ended: the day its documents above the free limit go ("4 Nov 2026"). */
+  removalOn?: string;
+}
+
+/** Why a file does not fit, and what the family can do about it. */
+export function storageFullMessage(room: StorageRoom, fileBytes = 0, options: StorageMessageOptions = {}): string {
+  const { limits = DEFAULT_PLAN_LIMITS, price, removalOn } = options;
   const left = Math.max(0, room.limitBytes - room.usedBytes);
   const on = `${formatBytes(room.limitBytes)} on ${planLabel(room.plan)}`;
   const head = left === 0 || fileBytes === 0
@@ -89,7 +94,9 @@ export function storageFullMessage(
   const free = 'Delete documents you no longer need';
   const plus = `${formatBytes(limits.plus)}${price ? ` for ${price}` : ''}`;
   let more: string;
-  if (room.plan === 'free') {
+  if (room.plan === 'free' && removalOn) {
+    more = `Family Plus has ended: on ${removalOn}, the newest documents above ${formatBytes(room.limitBytes)} will be removed, unless it is renewed or you delete documents to get under ${formatBytes(room.limitBytes)}.`;
+  } else if (room.plan === 'free') {
     more = PLUS_FOR_SALE
       ? `${free}, or move to Family Plus: ${plus}.`
       : `${free} to make room. Family Plus, coming soon, gives ${plus}.`;

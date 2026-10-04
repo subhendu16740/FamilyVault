@@ -61,7 +61,7 @@ function CellView({ value, plus }: { value: Cell; plus?: boolean }) {
 export default function PlusScreen() {
   const { feature } = useLocalSearchParams<{ feature?: string }>();
   const { currentFamily } = useFamily();
-  const { plan, paidUntil, refresh } = useFamilyPlan();
+  const { plan, paidUntil, removalAt, refresh } = useFamilyPlan();
   const [limits, setLimits] = useState<PlanLimits>(DEFAULT_PLAN_LIMITS);
   const price = localPlusPrice();
   const broughtBy = feature && feature in BROUGHT_BY ? BROUGHT_BY[feature as PlusFeature] : null;
@@ -103,6 +103,15 @@ export default function PlusScreen() {
             <Feather name="check-circle" size={18} color="#15803D" />
             <Text style={[styles.stateText, { color: '#15803D' }]}>
               {familyName ?? 'Your family'} has Family Plus{paidUntil ? `, until ${longDate(new Date(paidUntil))}` : ''}.
+            </Text>
+          </View>
+        ) : plan === 'free' && removalAt ? (
+          <View style={[styles.state, styles.stateEnded]}>
+            <Feather name="alert-triangle" size={18} color="#B91C1C" />
+            <Text style={[styles.stateText, { color: '#B91C1C' }]}>
+              Family Plus has ended for {familyName ?? 'your family'}. On {longDate(new Date(removalAt))}, the newest
+              documents above {formatBytes(limits.free)} will be removed, unless Family Plus is renewed or documents are
+              deleted to get under {formatBytes(limits.free)}.
             </Text>
           </View>
         ) : plan === 'free' ? (
@@ -161,10 +170,12 @@ export default function PlusScreen() {
             <Text style={styles.pointText}>One plan covers everyone in the family.</Text>
           </View>
           <View style={styles.point}>
-            <Feather name="shield" size={16} color={color.primary} />
+            <Feather name="clock" size={16} color={color.primary} />
             <Text style={styles.pointText}>
-              If Family Plus ends, nothing is deleted. Your family keeps every document and can still read and
-              search them; new ones wait until there is room.
+              If Family Plus ends while your family holds more than the free {formatBytes(limits.free)}, it has{' '}
+              {limits.graceDays} days to renew, or to delete documents to get under {formatBytes(limits.free)}. After
+              that, the newest documents above {formatBytes(limits.free)} are removed. We remind you when it ends, a
+              week before and the day before.
             </Text>
           </View>
           <View style={styles.point}>
@@ -197,6 +208,7 @@ const styles = StyleSheet.create({
     backgroundColor: color.surface, borderWidth: 1, borderColor: color.border,
   },
   statePlus: { backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' },
+  stateEnded: { backgroundColor: '#FEF2F2', borderColor: '#FECACA', alignItems: 'flex-start' },
   stateText: { ...type.label, flex: 1, color: color.primary },
   tableCard: { paddingVertical: space.sm, gap: 0 },
   row: {

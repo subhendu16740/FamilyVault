@@ -536,28 +536,46 @@ export type Database = {
       }
       family_plans: {
         Row: {
+          cleanup_until: string | null
+          ended_notice_at: string | null
           family_id: string
           paid_until: string
           plan: string
+          removed_count: number
+          settled_at: string | null
           source: string
           source_ref: string | null
           updated_at: string
+          warned_day_at: string | null
+          warned_week_at: string | null
         }
         Insert: {
+          cleanup_until?: string | null
+          ended_notice_at?: string | null
           family_id: string
           paid_until: string
           plan?: string
+          removed_count?: number
+          settled_at?: string | null
           source?: string
           source_ref?: string | null
           updated_at?: string
+          warned_day_at?: string | null
+          warned_week_at?: string | null
         }
         Update: {
+          cleanup_until?: string | null
+          ended_notice_at?: string | null
           family_id?: string
           paid_until?: string
           plan?: string
+          removed_count?: number
+          settled_at?: string | null
           source?: string
           source_ref?: string | null
           updated_at?: string
+          warned_day_at?: string | null
+          warned_week_at?: string | null
         }
         Relationships: [
           {
@@ -868,14 +886,17 @@ export type Database = {
       }
       plan_limits: {
         Row: {
+          grace_days: number | null
           plan: string
           storage_bytes: number
         }
         Insert: {
+          grace_days?: number | null
           plan: string
           storage_bytes: number
         }
         Update: {
+          grace_days?: number | null
           plan?: string
           storage_bytes?: number
         }
@@ -1189,12 +1210,15 @@ export type Database = {
         Returns: string[]
       }
       family_storage_has_room: { Args: { p_folder: string }; Returns: boolean }
+      end_family_plan: { Args: { p_family_id: string }; Returns: undefined }
+      family_files_bytes: { Args: { p_ns: string }; Returns: number }
       family_storage_status: {
         Args: { p_family_id: string }
         Returns: {
           limit_bytes: number
           paid_until: string
           plan: string
+          removal_at: string
           used_bytes: number
         }[]
       }
@@ -1548,6 +1572,24 @@ export type Database = {
         }
         Returns: undefined
       }
+      gb_text: { Args: { p_bytes: number }; Returns: string }
+      ist_day: { Args: { p_at: string }; Returns: string }
+      plan_cleanup_candidates: {
+        Args: never
+        Returns: { family_id: string; storage_namespace: string }[]
+      }
+      plan_cleanup_due: {
+        Args: { p_max?: number }
+        Returns: { family_id: string; storage_namespace: string }[]
+      }
+      plan_cleanup_waiting: { Args: never; Returns: boolean }
+      plan_removal_at: { Args: { p_family_id: string }; Returns: string }
+      plan_settle: { Args: { p_family_id: string }; Returns: boolean }
+      plan_take_excess: {
+        Args: { p_family_id: string; p_max?: number }
+        Returns: { name: string }[]
+      }
+      queue_plan_notices: { Args: never; Returns: number }
       set_family_plan: {
         Args: {
           p_family_id: string
