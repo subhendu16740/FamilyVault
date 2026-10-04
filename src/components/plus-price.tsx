@@ -1,5 +1,5 @@
 // The yearly Family Plus price, shown as a discount: twelve months at the
-// monthly price crossed out, then what a year costs — "₹1,200 ₹1,000 a year".
+// monthly price crossed out, then what a year costs — "₹1,200 ₹1,100 a year".
 // The crossed-out price is worked out (plusTwelveMonths()), never typed in, so
 // it is always one a family could really pay.
 //
@@ -26,7 +26,7 @@ export function TwelveMonthsPrice({ currency, onDark, style }: PriceProps & { st
   );
 }
 
-/** "₹1,200 ₹1,000 a year", the first crossed out, inside a sentence. */
+/** "₹1,200 ₹1,100 a year", the first crossed out, inside a sentence. */
 export function YearlyPrice({ currency, onDark }: PriceProps) {
   const c = currency ?? localCurrency();
   return (

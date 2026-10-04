@@ -3,8 +3,8 @@
 // Every plan has a storage limit; none is unlimited:
 //
 //   Free           1 GB, in total — not a monthly allowance
-//   Family Plus   10 GB — in India ₹100 a month or ₹1,000 a year,
-//                 elsewhere $10 a month or $100 a year
+//   Family Plus   10 GB — in India ₹100 a month or ₹1,100 a year,
+//                 elsewhere $10 a month or $110 a year
 //
 // The yearly price is shown as a discount on twelve months at the monthly
 // price, crossed out (<YearlyPrice />, src/components/plus-price.tsx).
@@ -25,13 +25,13 @@
 // ────────────────────────────────────────────────────────────────
 
 import {
-  DEFAULT_PLAN_LIMITS, formatBytes, plusPrice, plusPriceShort, plusPrices, plusYearlyOffer,
+  DEFAULT_PLAN_LIMITS, formatBytes, plusAmount, plusPrice, plusPrices, plusYearlyOffer, plusYearlySaving,
   type PriceCurrency, type PricePeriod,
 } from '../../supabase/functions/_shared/plan-text';
 
 export {
-  DEFAULT_PLAN_LIMITS, PLUS_FOR_SALE, PLUS_PRICE, fits, formatBytes, planLabel, plusPrice, plusPriceShort, plusPrices,
-  plusTwelveMonths, plusYearlyOffer, storageFullMessage,
+  DEFAULT_PLAN_LIMITS, PLUS_FOR_SALE, PLUS_PRICE, fits, formatBytes, planLabel, plusAmount, plusPrice, plusPrices,
+  plusTwelveMonths, plusYearlyOffer, plusYearlySaving, storageFullMessage,
   type PlanLimits, type PlanName, type PriceCurrency, type PricePeriod, type StorageRoom,
 } from '../../supabase/functions/_shared/plan-text';
 
@@ -57,22 +57,27 @@ export function localCurrency(): PriceCurrency {
   return zone && !/^Asia\/(Kolkata|Calcutta)$/.test(zone) ? 'usd' : 'inr';
 }
 
-/** "₹100 a month" (or "₹1,000 a year") where this device is. */
+/** "₹100 a month" (or "₹1,100 a year") where this device is. */
 export function localPlusPrice(period: PricePeriod = 'monthly'): string {
   return plusPrice(localCurrency(), period);
 }
 
-/** "₹100 a month or ₹1,000 a year" where this device is. */
+/** "₹100 a month or ₹1,100 a year" where this device is. */
 export function localPlusPrices(): string {
   return plusPrices(localCurrency());
 }
 
-/** "₹100/mo", "₹1,000/yr" where this device is. */
-export function localPlusPriceShort(period: PricePeriod): string {
-  return plusPriceShort(localCurrency(), period);
+/** "₹100", "₹1,100" where this device is. */
+export function localPlusAmount(period: PricePeriod): string {
+  return plusAmount(localCurrency(), period);
 }
 
-/** "₹1,000 a year instead of ₹1,200" where this device is: what a screen reader hears for <YearlyPrice />. */
+/** "1 month free" where this device is. */
+export function localPlusYearlySaving(): string {
+  return plusYearlySaving(localCurrency());
+}
+
+/** "₹1,100 a year instead of ₹1,200" where this device is: what a screen reader hears for <YearlyPrice />. */
 export function localPlusYearlyOffer(): string {
   return plusYearlyOffer(localCurrency());
 }
