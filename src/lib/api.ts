@@ -4,7 +4,7 @@ import { isSaveable, mimeTypeFor, unsupportedFileMessage } from './file-types';
 import type { Gender, KinLink, KinPerson } from '../../supabase/functions/_shared/kinship';
 import { isBloodGroup, type EmergencyCard, type EmergencyCardInput, type EmergencyContact } from './emergency';
 import {
-  DEFAULT_PLAN_LIMITS, fits, localPlusPrice, storageFullMessage, type PlanLimits, type PlanName, type StorageRoom,
+  DEFAULT_PLAN_LIMITS, fits, localPlusPrices, storageFullMessage, type PlanLimits, type PlanName, type StorageRoom,
 } from './plans';
 import type {
   FamilyWithMembership,
@@ -1270,7 +1270,7 @@ export class StorageFullError extends Error {
 
   constructor(room: StorageRoom & { removalAt?: string | null }, fileBytes: number) {
     super(storageFullMessage(room, fileBytes, {
-      price: localPlusPrice(),
+      price: localPlusPrices(),
       removalOn: room.removalAt ? longDate(new Date(room.removalAt)) : undefined,
     }));
     this.name = 'StorageFullError';
