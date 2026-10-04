@@ -15,12 +15,13 @@ import {
   fetchPlanLimits, fetchStorageStatus, fetchStorageUsage, type FamilyPlanStatus, type FamilyStorage,
 } from '../../lib/api';
 import {
-  DEFAULT_PLAN_LIMITS, FREE_STORAGE_BYTES, PLUS_FOR_SALE, formatBytes, localPlusPrices, storageFullMessage,
-  storageLevel, type PlanLimits, type StorageLevel,
+  DEFAULT_PLAN_LIMITS, FREE_STORAGE_BYTES, PLUS_FOR_SALE, formatBytes, localPlusPrice, localPlusPrices,
+  localPlusYearlyOffer, storageFullMessage, storageLevel, type PlanLimits, type StorageLevel,
 } from '../../lib/plans';
 import { longDate } from '../../lib/dates';
 import { plusPage } from '../../lib/family-plan';
 import { ScreenHeader, PlusTag } from '../../components/screen-header';
+import { YearlyPrice } from '../../components/plus-price';
 import { Card, CardTitle, Body, Muted, Status, screenStyles } from '../../components/settings-ui';
 import { color, radius, size, space, type } from '../../constants/design';
 
@@ -90,7 +91,12 @@ export default function StorageScreen() {
                 <View style={styles.planRow}>
                   <View style={styles.planRowText}>
                     <Text style={styles.planRowName}>★ Family Plus</Text>
-                    <Text style={styles.planRowPrice}>{price}</Text>
+                    <Text
+                      style={styles.planRowPrice}
+                      accessibilityLabel={`${localPlusPrice('monthly')} or ${localPlusYearlyOffer()}`}
+                    >
+                      {localPlusPrice('monthly')} or <YearlyPrice />
+                    </Text>
                   </View>
                   <Text style={styles.planRowSize}>{formatBytes(limits.plus)}</Text>
                 </View>

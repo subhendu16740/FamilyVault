@@ -9,8 +9,10 @@
 //   Family Plus   10 GB — in India ₹100 a month or ₹1,000 a year,
 //                 elsewhere $10 a month or $100 a year
 //
-// A year costs ten months: two months free. How a family pays never changes
-// what it may keep.
+// A year costs ten months: two months free. The yearly price is shown against
+// twelve months at the monthly price, crossed out (₹1,200 → ₹1,000, $120 →
+// $100), worked out here, never typed in: a crossed-out price must be one a
+// family could really pay. How a family pays never changes what it may keep.
 //
 // When Family Plus ends (040), a family above the free limit has 30 days to
 // renew or delete documents; then the newest documents above it are removed.
@@ -67,9 +69,12 @@ function grouped(amount: number, indian: boolean): string {
   return `${groups.join(',')},${digits.slice(-3)}`;
 }
 
-function money(currency: PriceCurrency, period: PricePeriod): string {
-  const amount = PLUS_PRICE[period][currency];
+function formatMoney(currency: PriceCurrency, amount: number): string {
   return currency === 'inr' ? `₹${grouped(amount, true)}` : `$${grouped(amount, false)}`;
+}
+
+function money(currency: PriceCurrency, period: PricePeriod): string {
+  return formatMoney(currency, PLUS_PRICE[period][currency]);
 }
 
 /**
@@ -91,6 +96,19 @@ export function plusPrices(currency: PriceCurrency): string {
 /** "₹100/mo", "₹1,000/yr", for narrow places. */
 export function plusPriceShort(currency: PriceCurrency, period: PricePeriod): string {
   return `${money(currency, period)}/${period === 'monthly' ? 'mo' : 'yr'}`;
+}
+
+/**
+ * Twelve months at the monthly price: "₹1,200", "$120". The yearly price is
+ * shown against it, crossed out.
+ */
+export function plusTwelveMonths(currency: PriceCurrency): string {
+  return formatMoney(currency, 12 * PLUS_PRICE.monthly[currency]);
+}
+
+/** "₹1,000 a year instead of ₹1,200", where a crossed-out price cannot be drawn or seen. */
+export function plusYearlyOffer(currency: PriceCurrency): string {
+  return `${plusPrice(currency, 'yearly')} instead of ${plusTwelveMonths(currency)}`;
 }
 
 export function formatBytes(bytes: number): string {

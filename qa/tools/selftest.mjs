@@ -26,7 +26,7 @@ import {
 import { buildGraph, relationTo, relationLabel, relativesForPrompt, relativesNamedIn, buildForest, shortName, siblingsSharingParents } from '../../supabase/functions/_shared/kinship.ts';
 import { encryptPayload, vapidAuthorization, generateVapidKeys, isPushServiceEndpoint, MAX_PLAINTEXT } from '../../supabase/functions/_shared/webpush.ts';
 import { phoneLooksRight, cardProblem, cardIsEmpty, emptyCard, bloodGroupLabel, bloodGroupSpoken, telHref } from '../../src/lib/emergency.ts';
-import { DEFAULT_PLAN_LIMITS, PLUS_FOR_SALE, PLUS_PRICE, fits, formatBytes, plusPrice, plusPriceShort, plusPrices, storageFullMessage } from '../../supabase/functions/_shared/plan-text.ts';
+import { DEFAULT_PLAN_LIMITS, PLUS_FOR_SALE, PLUS_PRICE, fits, formatBytes, plusPrice, plusPriceShort, plusPrices, plusTwelveMonths, plusYearlyOffer, storageFullMessage } from '../../supabase/functions/_shared/plan-text.ts';
 import { mentionsDate, mentionsAmount, mentionsPhone, mentionsText, refuses, devanagariShare, scriptShare, hasMarkdown } from '../lib/match.mjs';
 import { judgeAnswer } from '../lib/checks/ask.mjs';
 import { vehicleInsurance } from '../lib/tiny-pdf.mjs';
@@ -517,6 +517,12 @@ await test('plans: every limit is finite, and a full vault says why and what to 
   assert.equal(plusPrices('inr'), '₹100 a month or ₹1,000 a year');
   assert.equal(plusPriceShort('inr', 'yearly'), '₹1,000/yr');
   assert.equal(plusPriceShort('usd', 'monthly'), '$10/mo');
+  // The yearly price is shown against twelve months at the monthly price,
+  // crossed out: a real price, worked out, so the discount is a real one.
+  assert.equal(plusTwelveMonths('inr'), '₹1,200');
+  assert.equal(plusTwelveMonths('usd'), '$120');
+  assert.equal(plusYearlyOffer('inr'), '₹1,000 a year instead of ₹1,200');
+  assert.equal(plusYearlyOffer('usd'), '$100 a year instead of $120');
   assert.equal(formatBytes(512), '512 B');
   assert.equal(formatBytes(2048), '2 KB');
   assert.equal(formatBytes(1.25 * MB), '1.3 MB');

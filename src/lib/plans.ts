@@ -6,6 +6,9 @@
 //   Family Plus   10 GB — in India ₹100 a month or ₹1,000 a year,
 //                 elsewhere $10 a month or $100 a year
 //
+// The yearly price is shown as a discount on twelve months at the monthly
+// price, crossed out (<YearlyPrice />, src/components/plus-price.tsx).
+//
 // The numbers live in the database (public.plan_limits) and the server keeps
 // them: the documents bucket refuses a new file once a family's files reach
 // its plan's limit, and Gmail import checks before it stores. The app asks
@@ -22,13 +25,14 @@
 // ────────────────────────────────────────────────────────────────
 
 import {
-  DEFAULT_PLAN_LIMITS, formatBytes, plusPrice, plusPriceShort, plusPrices,
+  DEFAULT_PLAN_LIMITS, formatBytes, plusPrice, plusPriceShort, plusPrices, plusYearlyOffer,
   type PriceCurrency, type PricePeriod,
 } from '../../supabase/functions/_shared/plan-text';
 
 export {
   DEFAULT_PLAN_LIMITS, PLUS_FOR_SALE, PLUS_PRICE, fits, formatBytes, planLabel, plusPrice, plusPriceShort, plusPrices,
-  storageFullMessage, type PlanLimits, type PlanName, type PriceCurrency, type PricePeriod, type StorageRoom,
+  plusTwelveMonths, plusYearlyOffer, storageFullMessage,
+  type PlanLimits, type PlanName, type PriceCurrency, type PricePeriod, type StorageRoom,
 } from '../../supabase/functions/_shared/plan-text';
 
 /** Free space per family, in bytes, when the database cannot be asked. */
@@ -66,6 +70,11 @@ export function localPlusPrices(): string {
 /** "₹100/mo", "₹1,000/yr" where this device is. */
 export function localPlusPriceShort(period: PricePeriod): string {
   return plusPriceShort(localCurrency(), period);
+}
+
+/** "₹1,000 a year instead of ₹1,200" where this device is: what a screen reader hears for <YearlyPrice />. */
+export function localPlusYearlyOffer(): string {
+  return plusYearlyOffer(localCurrency());
 }
 
 /** From this share of a family's limit on, it is told it is nearly full. */

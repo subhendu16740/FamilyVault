@@ -14,11 +14,12 @@ import { useFamily } from '../lib/family-context';
 import { useFamilyPlan, type PlusFeature } from '../lib/family-plan';
 import { fetchPlanLimits } from '../lib/api';
 import {
-  DEFAULT_PLAN_LIMITS, PLUS_FOR_SALE, formatBytes, localPlusPrice, localPlusPriceShort, localPlusPrices, plusPrices,
-  type PlanLimits,
+  DEFAULT_PLAN_LIMITS, PLUS_FOR_SALE, formatBytes, localPlusPrice, localPlusPriceShort, localPlusYearlyOffer, plusPrice,
+  plusYearlyOffer, type PlanLimits,
 } from '../lib/plans';
 import { longDate } from '../lib/dates';
 import { ScreenHeader } from '../components/screen-header';
+import { TwelveMonthsPrice, YearlyPrice } from '../components/plus-price';
 import { Card, Muted, screenStyles } from '../components/settings-ui';
 import { color, radius, space, type } from '../constants/design';
 
@@ -65,8 +66,8 @@ export default function PlusScreen() {
   const { plan, paidUntil, removalAt, refresh } = useFamilyPlan();
   const [limits, setLimits] = useState<PlanLimits>(DEFAULT_PLAN_LIMITS);
   const monthly = localPlusPrice('monthly');
-  const yearly = localPlusPrice('yearly');
-  const prices = localPlusPrices();
+  // "₹1,000 a year instead of ₹1,200": what a screen reader hears for <YearlyPrice />.
+  const yearlyOffer = localPlusYearlyOffer();
   const broughtBy = feature && feature in BROUGHT_BY ? BROUGHT_BY[feature as PlusFeature] : null;
 
   useFocusEffect(useCallback(() => {
@@ -96,7 +97,14 @@ export default function PlusScreen() {
             {monthly.replace(' a month', '')}
             <Text style={styles.heroPer}> a month</Text>
           </Text>
-          <Text style={styles.heroYear}>or {yearly}: two months free</Text>
+          <View style={styles.heroYearRow}>
+            <Text style={styles.heroYear} accessibilityLabel={`or ${yearlyOffer}`}>
+              or <YearlyPrice onDark />
+            </Text>
+            <View style={styles.heroSave}>
+              <Text style={styles.heroSaveText}>Two months free</Text>
+            </View>
+          </View>
           <Text style={styles.heroNote}>
             {familyName ? `One plan for everyone in ${familyName}.` : 'One plan for everyone in the family.'}
           </Text>
@@ -149,12 +157,13 @@ export default function PlusScreen() {
           <View
             style={[styles.row, styles.priceRow]}
             accessible
-            accessibilityLabel={`Price: Free costs nothing, Family Plus ${prices}`}
+            accessibilityLabel={`Price: Free costs nothing, Family Plus ${monthly} or ${yearlyOffer}`}
           >
             <Text style={[styles.label, styles.priceLabel]}>Price</Text>
             <Text style={[styles.value, styles.cellText]}>Free</Text>
             <View style={[styles.value, styles.priceCell]}>
               <Text style={[styles.cellText, styles.cellTextPlus]}>{localPlusPriceShort('monthly')}</Text>
+              <TwelveMonthsPrice style={styles.cellWas} />
               <Text style={[styles.cellText, styles.cellTextPlus]}>{localPlusPriceShort('yearly')}</Text>
             </View>
           </View>
@@ -164,8 +173,12 @@ export default function PlusScreen() {
           PLUS_FOR_SALE ? null : (
             <View style={styles.soon}>
               <Text style={styles.soonTag}>Coming soon</Text>
-              <Text style={styles.soonText}>
-                Family Plus can't be bought in the app yet. When it can, it is {prices} for the whole family.
+              <Text
+                style={styles.soonText}
+                accessibilityLabel={`Family Plus can't be bought in the app yet. When it can, it is ${monthly} or ${yearlyOffer} for the whole family.`}
+              >
+                Family Plus can't be bought in the app yet. When it can, it is {monthly} or <YearlyPrice /> for the
+                whole family.
               </Text>
             </View>
           )
@@ -187,7 +200,13 @@ export default function PlusScreen() {
           </View>
           <View style={styles.point}>
             <Feather name="globe" size={16} color={color.primary} />
-            <Text style={styles.pointText}>{plusPrices('inr')} in India; {plusPrices('usd')} everywhere else.</Text>
+            <Text
+              style={styles.pointText}
+              accessibilityLabel={`In India: ${plusPrice('inr')} or ${plusYearlyOffer('inr')}. Elsewhere: ${plusPrice('usd')} or ${plusYearlyOffer('usd')}.`}
+            >
+              In India: {plusPrice('inr')} or <YearlyPrice currency="inr" />.{'\n'}
+              Elsewhere: {plusPrice('usd')} or <YearlyPrice currency="usd" />.
+            </Text>
           </View>
         </Card>
 
@@ -208,7 +227,10 @@ const styles = StyleSheet.create({
   heroTitle: { fontSize: 17, lineHeight: 23, fontWeight: '600', color: '#FFFFFF' },
   heroPrice: { fontSize: 28, lineHeight: 34, fontWeight: '700', color: '#FFFFFF', marginTop: space.sm },
   heroPer: { fontSize: 15, fontWeight: '500', color: '#DCE3F0' },
+  heroYearRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: space.sm },
   heroYear: { fontSize: 15, lineHeight: 20, fontWeight: '600', color: '#FFFFFF' },
+  heroSave: { borderRadius: radius.pill, paddingHorizontal: space.sm, paddingVertical: 2, backgroundColor: '#FBD5D1' },
+  heroSaveText: { fontSize: 12, lineHeight: 16, fontWeight: '700', color: '#8A3B35' },
   heroNote: { fontSize: 13, lineHeight: 18, color: '#DCE3F0' },
   state: {
     flexDirection: 'row', alignItems: 'center', gap: space.sm,
@@ -231,6 +253,7 @@ const styles = StyleSheet.create({
   value: { width: 64, alignItems: 'center', textAlign: 'center' },
   cellText: { fontSize: 14, lineHeight: 20, fontWeight: '600', color: color.textBody, textAlign: 'center' },
   cellTextPlus: { color: color.primary },
+  cellWas: { fontSize: 12, lineHeight: 16, color: color.textMuted, textAlign: 'center', marginTop: space.xs },
   priceRow: { borderBottomWidth: 0 },
   priceCell: { gap: 2 },
   priceLabel: { fontWeight: '600', color: color.text },
