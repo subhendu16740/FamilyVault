@@ -6,13 +6,14 @@
 // Two plans, each with a limit (039):
 //
 //   Free           1 GB, in total
-//   Family Plus   10 GB — in India ₹100 a month or ₹1,000 a year,
-//                 elsewhere $10 a month or $100 a year
+//   Family Plus   10 GB — in India ₹100 a month or ₹1,100 a year,
+//                 elsewhere $10 a month or $110 a year
 //
-// A year costs ten months: two months free. The yearly price is shown against
-// twelve months at the monthly price, crossed out (₹1,200 → ₹1,000, $120 →
-// $100), worked out here, never typed in: a crossed-out price must be one a
-// family could really pay. How a family pays never changes what it may keep.
+// A year costs eleven months: one month free. The yearly price is shown
+// against twelve months at the monthly price, crossed out (₹1,200 → ₹1,100,
+// $120 → $110), and so are the months it saves — both worked out here, never
+// typed in: a crossed-out price must be one a family could really pay. How a
+// family pays never changes what it may keep.
 //
 // When Family Plus ends (040), a family above the free limit has 30 days to
 // renew or delete documents; then the newest documents above it are removed.
@@ -45,10 +46,10 @@ const GB = 1024 ** 3;
 /** What 039 and 040 set; plan_limits is the truth. */
 export const DEFAULT_PLAN_LIMITS: PlanLimits = { free: 1 * GB, plus: 10 * GB, graceDays: 30 };
 
-/** What Family Plus costs, by the month or by the year (two months free). */
+/** What Family Plus costs, by the month or by the year (one month free). */
 export const PLUS_PRICE = {
   monthly: { inr: 100, usd: 10 },
-  yearly: { inr: 1000, usd: 100 },
+  yearly: { inr: 1100, usd: 110 },
 } as const;
 
 export type PricePeriod = keyof typeof PLUS_PRICE;
@@ -83,19 +84,19 @@ function money(currency: PriceCurrency, period: PricePeriod): string {
  */
 export const PLUS_FOR_SALE = false;
 
-/** "₹100 a month", "₹1,000 a year", "$10 a month", "$100 a year". */
+/** "₹100 a month", "₹1,100 a year", "$10 a month", "$110 a year". */
 export function plusPrice(currency: PriceCurrency, period: PricePeriod = 'monthly'): string {
   return `${money(currency, period)} a ${period === 'monthly' ? 'month' : 'year'}`;
 }
 
-/** "₹100 a month or ₹1,000 a year". */
+/** "₹100 a month or ₹1,100 a year". */
 export function plusPrices(currency: PriceCurrency): string {
   return `${plusPrice(currency, 'monthly')} or ${plusPrice(currency, 'yearly')}`;
 }
 
-/** "₹100/mo", "₹1,000/yr", for narrow places. */
-export function plusPriceShort(currency: PriceCurrency, period: PricePeriod): string {
-  return `${money(currency, period)}/${period === 'monthly' ? 'mo' : 'yr'}`;
+/** The amount alone, "₹100" or "₹1,100", for a narrow column. */
+export function plusAmount(currency: PriceCurrency, period: PricePeriod): string {
+  return money(currency, period);
 }
 
 /**
@@ -106,9 +107,15 @@ export function plusTwelveMonths(currency: PriceCurrency): string {
   return formatMoney(currency, 12 * PLUS_PRICE.monthly[currency]);
 }
 
-/** "₹1,000 a year instead of ₹1,200", where a crossed-out price cannot be drawn or seen. */
+/** "₹1,100 a year instead of ₹1,200", where a crossed-out price cannot be drawn or seen. */
 export function plusYearlyOffer(currency: PriceCurrency): string {
   return `${plusPrice(currency, 'yearly')} instead of ${plusTwelveMonths(currency)}`;
+}
+
+/** What paying by the year saves, in months: "1 month free". */
+export function plusYearlySaving(currency: PriceCurrency): string {
+  const months = 12 - PLUS_PRICE.yearly[currency] / PLUS_PRICE.monthly[currency];
+  return `${months} ${months === 1 ? 'month' : 'months'} free`;
 }
 
 export function formatBytes(bytes: number): string {
@@ -132,7 +139,7 @@ export function fits(room: StorageRoom, fileBytes: number): boolean {
 
 export interface StorageMessageOptions {
   limits?: PlanLimits;
-  /** Family Plus's price where the person is ("₹100 a month or ₹1,000 a year"); the server, which cannot tell, leaves it out. */
+  /** Family Plus's price where the person is ("₹100 a month or ₹1,100 a year"); the server, which cannot tell, leaves it out. */
   price?: string;
   /** For a family whose Plus has ended: the day its documents above the free limit go ("4 Nov 2026"). */
   removalOn?: string;

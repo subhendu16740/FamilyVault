@@ -14,8 +14,8 @@ import { useFamily } from '../lib/family-context';
 import { useFamilyPlan, type PlusFeature } from '../lib/family-plan';
 import { fetchPlanLimits } from '../lib/api';
 import {
-  DEFAULT_PLAN_LIMITS, PLUS_FOR_SALE, formatBytes, localPlusPrice, localPlusPriceShort, localPlusYearlyOffer, plusPrice,
-  plusYearlyOffer, type PlanLimits,
+  DEFAULT_PLAN_LIMITS, PLUS_FOR_SALE, formatBytes, localPlusAmount, localPlusPrice, localPlusYearlyOffer,
+  localPlusYearlySaving, plusPrice, plusYearlyOffer, type PlanLimits,
 } from '../lib/plans';
 import { longDate } from '../lib/dates';
 import { ScreenHeader } from '../components/screen-header';
@@ -66,7 +66,7 @@ export default function PlusScreen() {
   const { plan, paidUntil, removalAt, refresh } = useFamilyPlan();
   const [limits, setLimits] = useState<PlanLimits>(DEFAULT_PLAN_LIMITS);
   const monthly = localPlusPrice('monthly');
-  // "₹1,000 a year instead of ₹1,200": what a screen reader hears for <YearlyPrice />.
+  // "₹1,100 a year instead of ₹1,200": what a screen reader hears for <YearlyPrice />.
   const yearlyOffer = localPlusYearlyOffer();
   const broughtBy = feature && feature in BROUGHT_BY ? BROUGHT_BY[feature as PlusFeature] : null;
 
@@ -94,7 +94,7 @@ export default function PlusScreen() {
           <Text style={styles.heroTag}>★ Family Plus</Text>
           <Text style={styles.heroTitle}>More space and more help, for the whole family</Text>
           <Text style={styles.heroPrice} accessibilityLabel={monthly}>
-            {monthly.replace(' a month', '')}
+            {localPlusAmount('monthly')}
             <Text style={styles.heroPer}> a month</Text>
           </Text>
           <View style={styles.heroYearRow}>
@@ -102,7 +102,7 @@ export default function PlusScreen() {
               or <YearlyPrice onDark />
             </Text>
             <View style={styles.heroSave}>
-              <Text style={styles.heroSaveText}>Two months free</Text>
+              <Text style={styles.heroSaveText}>{localPlusYearlySaving()}</Text>
             </View>
           </View>
           <Text style={styles.heroNote}>
@@ -137,7 +137,14 @@ export default function PlusScreen() {
           <View style={[styles.row, styles.headRow]}>
             <Text style={[styles.label, styles.headText]}>What you get</Text>
             <Text style={[styles.value, styles.headText]}>Free</Text>
-            <Text style={[styles.value, styles.headText, styles.headPlus]}>★ Plus</Text>
+            <View style={styles.value} accessible accessibilityLabel="Family Plus, monthly">
+              <Text style={[styles.headText, styles.headPlus]}>★ Plus</Text>
+              <Text style={[styles.headText, styles.headPlus]}>Monthly</Text>
+            </View>
+            <View style={styles.value} accessible accessibilityLabel="Family Plus, yearly">
+              <Text style={[styles.headText, styles.headPlus]}>★ Plus</Text>
+              <Text style={[styles.headText, styles.headPlus]}>Yearly</Text>
+            </View>
           </View>
           {rows(limits).map((r) => {
             const pointed = !!broughtBy && r.feature === feature && plan !== 'plus';
@@ -151,20 +158,27 @@ export default function PlusScreen() {
                 <Text style={styles.label}>{r.label}</Text>
                 <View style={styles.value}><CellView value={r.free} /></View>
                 <View style={styles.value}><CellView value={r.plus} plus /></View>
+                <View style={styles.value}><CellView value={r.plus} plus /></View>
               </View>
             );
           })}
           <View
             style={[styles.row, styles.priceRow]}
             accessible
-            accessibilityLabel={`Price: Free costs nothing, Family Plus ${monthly} or ${yearlyOffer}`}
+            accessibilityLabel={`Price: Free costs nothing. Family Plus monthly, ${monthly}. Family Plus yearly, ${yearlyOffer}.`}
           >
             <Text style={[styles.label, styles.priceLabel]}>Price</Text>
             <Text style={[styles.value, styles.cellText]}>Free</Text>
-            <View style={[styles.value, styles.priceCell]}>
-              <Text style={[styles.cellText, styles.cellTextPlus]}>{localPlusPriceShort('monthly')}</Text>
+            <View style={styles.value}>
+              {/* As tall as the crossed-out price, so ₹100 sits level with ₹1,100. */}
+              <View style={styles.cellWasSpace} />
+              <Text style={[styles.cellText, styles.cellTextPlus]}>{localPlusAmount('monthly')}</Text>
+              <Text style={styles.cellPer}>a month</Text>
+            </View>
+            <View style={styles.value}>
               <TwelveMonthsPrice style={styles.cellWas} />
-              <Text style={[styles.cellText, styles.cellTextPlus]}>{localPlusPriceShort('yearly')}</Text>
+              <Text style={[styles.cellText, styles.cellTextPlus]}>{localPlusAmount('yearly')}</Text>
+              <Text style={styles.cellPer}>a year</Text>
             </View>
           </View>
         </Card>
@@ -242,20 +256,22 @@ const styles = StyleSheet.create({
   stateText: { ...type.label, flex: 1, color: color.primary },
   tableCard: { paddingVertical: space.sm, gap: 0 },
   row: {
-    flexDirection: 'row', alignItems: 'center', gap: space.sm,
+    flexDirection: 'row', alignItems: 'center', gap: space.xs,
     paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: color.divider,
   },
   rowPointed: { backgroundColor: '#FFF7ED', marginHorizontal: -space.lg, paddingHorizontal: space.lg },
   headRow: { paddingTop: space.xs },
-  headText: { ...type.overline },
+  // Not uppercase like an overline: "MONTHLY" is wider than its column.
+  headText: { fontSize: 12, lineHeight: 16, fontWeight: '600', color: color.textMuted },
   headPlus: { color: color.accent },
   label: { ...type.body, flex: 1, fontSize: 14, lineHeight: 20 },
-  value: { width: 64, alignItems: 'center', textAlign: 'center' },
+  value: { width: 60, alignItems: 'center', textAlign: 'center' },
   cellText: { fontSize: 14, lineHeight: 20, fontWeight: '600', color: color.textBody, textAlign: 'center' },
   cellTextPlus: { color: color.primary },
-  cellWas: { fontSize: 12, lineHeight: 16, color: color.textMuted, textAlign: 'center', marginTop: space.xs },
+  cellWas: { fontSize: 12, lineHeight: 16, color: color.textMuted, textAlign: 'center' },
+  cellWasSpace: { height: 16 },
+  cellPer: { fontSize: 12, lineHeight: 16, color: color.textMuted, textAlign: 'center' },
   priceRow: { borderBottomWidth: 0 },
-  priceCell: { gap: 2 },
   priceLabel: { fontWeight: '600', color: color.text },
   soon: {
     borderRadius: radius.control, padding: space.md, gap: space.xs,

@@ -459,7 +459,7 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `dates.ts` | `parseDocumentDate()`: expiry dates exactly as ingest stores them (DD/MM/YYYY and kin, YYYY-MM-DD, "19 October 2026") |
 | `emergency.ts` | The emergency card's shape, blood groups (`bloodGroupLabel()`: "A−", "Bombay (hh)"), `telHref()`, and `cardProblem()` — the same checks and messages as `save_emergency_card()`, so the form can say what is wrong before saving |
 | `family-people.ts` | Whose a document can be: everyone in the tree, you first (`useDocumentOwners()`, members only before 031), and a person's expiry badge (`badgeFromExpiries()`) |
-| `plans.ts` | What each plan may keep (038, 039): the limits as 039 sets them (`DEFAULT_PLAN_LIMITS`, used only when the database cannot be asked), Family Plus's prices, monthly and yearly (`PLUS_PRICE`; `localPlusPrice()` / `localPlusPrices()` show rupees in India, dollars elsewhere, by the device's time zone; the yearly one against twelve months, crossed out: `plusTwelveMonths()`), `storageLevel()`, and the words for a full vault (`storageFullMessage()`), which live in `supabase/functions/_shared/plan-text.ts` so Gmail import says the same. `PLUS_FOR_SALE` is false until payments exist |
+| `plans.ts` | What each plan may keep (038, 039): the limits as 039 sets them (`DEFAULT_PLAN_LIMITS`, used only when the database cannot be asked), Family Plus's prices, monthly and yearly (`PLUS_PRICE`; `localPlusPrice()` / `localPlusPrices()` show rupees in India, dollars elsewhere, by the device's time zone; the yearly one against twelve months, crossed out, and the months it saves: `plusTwelveMonths()`, `plusYearlySaving()`), `storageLevel()`, and the words for a full vault (`storageFullMessage()`), which live in `supabase/functions/_shared/plan-text.ts` so Gmail import says the same. `PLUS_FOR_SALE` is false until payments exist |
 | `family-plan.ts` | Is the current family on Family Plus? `useFamilyPlan()` (from `family_storage_status()`, kept a minute per family): `isFree`, and `routeFor(feature, route)`, which sends a free family to `/plus?feature=…` instead of a starred feature. Unknown (before 038, offline) gates nothing |
 | `file-types.ts` | What a picked file is (`detectFileType()`: MIME type, then name, never a web `blob:` uri) and whether the vault can keep it (PDF, JPG, PNG) |
 | `app-info.ts` | Version, release date and commit (stamped into `extra` by `app.config.ts` at build time), and the support contact Help shows |
@@ -994,17 +994,19 @@ so storage policies live only in `019`.
 ### Plans and storage limits — every plan has a limit (038, 039)
 
 - **What a family may keep, never unlimited**: Free 1 GB in total (not a
-  monthly allowance), Family Plus 10 GB — in India ₹100 a month or ₹1,000 a
-  year, elsewhere $10 a month or $100 a year. A year costs ten months (the
-  self-test pins it, because the Plus page says "two months free"), and
-  ₹1,000 stays under the ₹2,000 above which UPI charges merchants 0.4%.
+  monthly allowance), Family Plus 10 GB — in India ₹100 a month or ₹1,100 a
+  year, elsewhere $10 a month or $110 a year. A year costs eleven months,
+  and ₹1,100 stays under the ₹2,000 above which UPI charges merchants 0.4%.
   The yearly price is shown as a discount on twelve months at the monthly
-  price, crossed out — ~~₹1,200~~ ₹1,000, ~~$120~~ $100 (`<YearlyPrice />`,
-  `src/components/plus-price.tsx`). The crossed-out price is worked out
-  (`plusTwelveMonths()`), never typed in, so it follows the monthly price:
-  a crossed-out price must be one a family could really pay, or the
-  discount is a fake one. Screen readers skip it and hear "₹1,000 a year
-  instead of ₹1,200" (`plusYearlyOffer()`, in each `accessibilityLabel`).
+  price, crossed out — ~~₹1,200~~ ₹1,100, ~~$120~~ $110 (`<YearlyPrice />`,
+  `src/components/plus-price.tsx`) — with what it saves, "1 month free".
+  Both are worked out (`plusTwelveMonths()`, `plusYearlySaving()`), never
+  typed in, so they follow the prices: a crossed-out price must be one a
+  family could really pay, or the discount is a fake one. The self-test
+  pins the prices, and that a year costs a whole number of months. Screen
+  readers skip the crossed-out price and hear "₹1,100 a year instead of
+  ₹1,200" (`plusYearlyOffer()`, in each `accessibilityLabel`). The Plus
+  page compares Free, Plus Monthly and Plus Yearly side by side.
   Storage is the one cost that keeps growing after a month is paid for, so
   no plan is open-ended. 038 had two Plus plans (5 GB
   monthly, 10 GB yearly); 039 made them one, so how a family pays never
@@ -1495,7 +1497,7 @@ rule again once pinned chunks are mixed in.
   menu button with no menu. Add the control when its screen exists.
 - **★ Family Plus marks what only Plus families get** (`<PlusTag />`):
   10 GB instead of 1 GB, the Reminders page (in the drawer) and Import from
-  Gmail (on Upload) — ₹100 a month or ₹1,000 a year in India, $10 or $100
+  Gmail (on Upload) — ₹100 a month or ₹1,100 a year in India, $10 or $110
   elsewhere, given by hand
   until payments exist. For a free family a starred feature opens the
   Family Plus page, Free and Plus side by side (`/plus`); a new starred
