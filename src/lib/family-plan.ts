@@ -24,6 +24,8 @@ export type PlusFeature = 'reminders' | 'gmail' | 'storage';
 interface KnownPlan {
   plan: PlanName | null;
   paidUntil: string | null;
+  /** Plus has ended and the family is above the free limit: when the newest documents above it go (040). */
+  removalAt: string | null;
   at: number;
 }
 
@@ -35,11 +37,16 @@ async function readPlan(familyId: string, force: boolean): Promise<KnownPlan> {
   if (hit && !force && Date.now() - hit.at < FRESH_MS) return hit;
   try {
     const status = await fetchStorageStatus(familyId);
-    const fresh = { plan: status?.plan ?? null, paidUntil: status?.paidUntil ?? null, at: Date.now() };
+    const fresh = {
+      plan: status?.plan ?? null,
+      paidUntil: status?.paidUntil ?? null,
+      removalAt: status?.removalAt ?? null,
+      at: Date.now(),
+    };
     known.set(familyId, fresh);
     return fresh;
   } catch {
-    return hit ?? { plan: null, paidUntil: null, at: 0 };
+    return hit ?? { plan: null, paidUntil: null, removalAt: null, at: 0 };
   }
 }
 
@@ -92,6 +99,7 @@ export function useFamilyPlan() {
   return {
     plan: plan?.plan ?? null,
     paidUntil: plan?.paidUntil ?? null,
+    removalAt: plan?.removalAt ?? null,
     isFree: plan?.plan === 'free',
     loading,
     refresh,

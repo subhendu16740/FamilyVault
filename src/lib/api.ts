@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { parseDocumentDate } from './dates';
+import { longDate, parseDocumentDate } from './dates';
 import { isSaveable, mimeTypeFor, unsupportedFileMessage } from './file-types';
 import type { Gender, KinLink, KinPerson } from '../../supabase/functions/_shared/kinship';
 import { isBloodGroup, type EmergencyCard, type EmergencyCardInput, type EmergencyContact } from './emergency';
@@ -1215,6 +1215,11 @@ export async function fetchStorageUsage(
 export interface FamilyPlanStatus extends StorageRoom {
   /** When a Plus plan's paid time ends; null on Free. */
   paidUntil: string | null;
+  /**
+   * For a family whose Plus has ended and that holds more than the free limit:
+   * when the newest documents above it are removed (040). Null otherwise.
+   */
+  removalAt: string | null;
 }
 
 /** A family's plan, its limit and what its files add up to; null before 038. */
@@ -1231,27 +1236,43 @@ export async function fetchStorageStatus(familyId: string): Promise<FamilyPlanSt
     paidUntil: row.paid_until ?? null,
     limitBytes: Number(row.limit_bytes),
     usedBytes: Number(row.used_bytes),
+    // Before 040 the row has no removal_at.
+    removalAt: (row as { removal_at?: string | null }).removal_at ?? null,
   };
 }
 
-/** What each plan may keep, as the database says; 039's numbers before 038. */
+/** What each plan may keep, as the database says; 039's and 040's numbers before 038. */
 export async function fetchPlanLimits(): Promise<PlanLimits> {
-  const { data, error } = await supabase.from('plan_limits').select('plan, storage_bytes');
-  if (error || !data?.length) return DEFAULT_PLAN_LIMITS;
+  type Row = { plan: string; storage_bytes: number; grace_days?: number | null };
+  // grace_days arrives with 040; without it the whole select fails, so ask again without.
+  const withGrace = await supabase.from('plan_limits').select('plan, storage_bytes, grace_days');
+  const answer = withGrace.error && /grace_days/.test(withGrace.error.message ?? '')
+    ? await supabase.from('plan_limits').select('plan, storage_bytes')
+    : withGrace;
+  const rows = (answer.data ?? []) as Row[];
+  if (answer.error || !rows.length) return DEFAULT_PLAN_LIMITS;
   // Under 038 Plus has two rows, monthly and yearly; the larger is the offer.
   const of = (plan: string, fallback: number) => {
-    const sizes = data.filter((r) => r.plan === plan).map((r) => Number(r.storage_bytes));
+    const sizes = rows.filter((r) => r.plan === plan).map((r) => Number(r.storage_bytes));
     return sizes.length ? Math.max(...sizes) : fallback;
   };
-  return { free: of('free', DEFAULT_PLAN_LIMITS.free), plus: of('plus', DEFAULT_PLAN_LIMITS.plus) };
+  const grace = rows.find((r) => r.plan === 'plus')?.grace_days;
+  return {
+    free: of('free', DEFAULT_PLAN_LIMITS.free),
+    plus: of('plus', DEFAULT_PLAN_LIMITS.plus),
+    graceDays: grace ? Number(grace) : DEFAULT_PLAN_LIMITS.graceDays,
+  };
 }
 
 /** The family's storage is full, in words the person can act on. */
 export class StorageFullError extends Error {
   room: StorageRoom;
 
-  constructor(room: StorageRoom, fileBytes: number) {
-    super(storageFullMessage(room, fileBytes, DEFAULT_PLAN_LIMITS, localPlusPrice()));
+  constructor(room: StorageRoom & { removalAt?: string | null }, fileBytes: number) {
+    super(storageFullMessage(room, fileBytes, {
+      price: localPlusPrice(),
+      removalOn: room.removalAt ? longDate(new Date(room.removalAt)) : undefined,
+    }));
     this.name = 'StorageFullError';
     this.room = room;
   }

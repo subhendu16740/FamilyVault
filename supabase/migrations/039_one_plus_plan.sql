@@ -136,7 +136,8 @@ GRANT EXECUTE ON FUNCTION public.family_storage_has_room(text) TO authenticated,
 
 -- ─── 3. Giving a family Plus — by hand now, from the payment webhook later ──
 -- Service role only. A new or lapsed plan tells the family; a renewal is
--- quiet. To end one at once (a refund): delete the family's family_plans row.
+-- quiet. To end one at once (a refund): end_family_plan() since 040 (a
+-- deleted row would skip 040's countdown and keep the family's files).
 DROP FUNCTION IF EXISTS public.set_family_plan(uuid, text, timestamptz, text, text);
 CREATE OR REPLACE FUNCTION public.set_family_plan(
   p_family_id  uuid,

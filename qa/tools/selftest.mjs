@@ -502,10 +502,11 @@ await test('every suite stays inside its Groq budget', () => {
   assert.equal(seen.size, groups, 'consecutive days cover every rotation group');
 });
 
-await test('plans: every limit is finite, and a full vault says why and what to do (038, 039)', () => {
+await test('plans: every limit is finite, and a full vault says why and what to do (038–040)', () => {
   const GB = 1024 ** 3, MB = 1024 ** 2;
-  // What 039 leaves in plan_limits: one row per plan, Plus ten times Free.
-  assert.deepEqual(DEFAULT_PLAN_LIMITS, { free: GB, plus: 10 * GB });
+  // What 039 and 040 leave in plan_limits: one row per plan, Plus ten times
+  // Free, and 30 days after Plus ends before anything above Free goes.
+  assert.deepEqual(DEFAULT_PLAN_LIMITS, { free: GB, plus: 10 * GB, graceDays: 30 });
   assert.deepEqual(PLUS_PRICE, { inr: 100, usd: 10 });
   assert.equal(plusPrice('inr'), '₹100 a month');
   assert.equal(plusPrice('usd'), '$10 a month');
@@ -521,7 +522,7 @@ await test('plans: every limit is finite, and a full vault says why and what to 
   const tooBig = storageFullMessage(free, 3 * MB);
   assert.match(tooBig, /^This file is 3 MB, and your family has 2 MB left of 1 GB on the free plan\./);
   assert.match(tooBig, /Delete documents you no longer need/);
-  const full = storageFullMessage({ ...free, usedBytes: GB + 10 * MB }, 0, DEFAULT_PLAN_LIMITS, plusPrice('inr'));
+  const full = storageFullMessage({ ...free, usedBytes: GB + 10 * MB }, 0, { price: plusPrice('inr') });
   assert.match(full, /^Your family's storage is full: 1\.01 GB used of 1 GB on the free plan\./);
   // Until Plus can be bought, nothing offers to sell it.
   if (!PLUS_FOR_SALE) {
@@ -530,8 +531,11 @@ await test('plans: every limit is finite, and a full vault says why and what to 
   }
   // The server cannot tell where the person is, so it names no price.
   assert.match(storageFullMessage({ ...free, usedBytes: GB }), /gives 10 GB\.$/);
-  const plus = storageFullMessage({ plan: 'plus', limitBytes: 10 * GB, usedBytes: 10 * GB }, 0, DEFAULT_PLAN_LIMITS, plusPrice('usd'));
+  const plus = storageFullMessage({ plan: 'plus', limitBytes: 10 * GB, usedBytes: 10 * GB }, 0, { price: plusPrice('usd') });
   assert.equal(plus, "Your family's storage is full: 10 GB used of 10 GB on Family Plus. Delete documents you no longer need to make room.");
+  // Plus has ended and the family holds more than Free: the day it loses the excess, and how to keep it.
+  const ended = storageFullMessage({ plan: 'free', limitBytes: GB, usedBytes: 3 * GB }, 0, { price: plusPrice('inr'), removalOn: '3 Nov 2026' });
+  assert.equal(ended, "Your family's storage is full: 3 GB used of 1 GB on the free plan. Family Plus has ended: on 3 Nov 2026, the newest documents above 1 GB will be removed, unless it is renewed or you delete documents to get under 1 GB.");
 });
 
 await test('the languages suite: by hand only, every language, half a day at most', () => {

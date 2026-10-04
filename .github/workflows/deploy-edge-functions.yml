@@ -91,7 +91,7 @@ jobs:
           echo "Deploying to ${{ steps.target.outputs.name }} (${{ steps.target.outputs.ref }})"
 
           # --use-api bundles server-side, so the runner needs no Docker.
-          for fn in ingest-document rag-search add-member link-account reembed-index gmail-connect gmail-scan gmail-import delete-account push share; do
+          for fn in ingest-document rag-search add-member link-account reembed-index gmail-connect gmail-scan gmail-import delete-account push share plans; do
             echo "::group::$fn"
             supabase functions deploy "$fn" \
               --project-ref "${{ steps.target.outputs.ref }}" \
@@ -140,6 +140,7 @@ jobs:
             echo "- \`gmail-connect\`, \`gmail-scan\`, \`gmail-import\`"
             echo "- \`delete-account\`"
             echo "- \`push\` (reminders on devices), \`share\` (share links)"
+            echo "- \`plans\` (when Family Plus ends: the clean-up after 30 days)"
             echo "- \`gmail-callback\` (no JWT check — Google's redirect target)"
             echo ""
             echo "Migrations are not run by this workflow — apply SQL in the dashboard."
