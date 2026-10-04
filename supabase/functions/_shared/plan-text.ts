@@ -6,7 +6,11 @@
 // Two plans, each with a limit (039):
 //
 //   Free           1 GB, in total
-//   Family Plus   10 GB, ₹100 a month in India, $10 a month elsewhere
+//   Family Plus   10 GB — in India ₹100 a month or ₹1,000 a year,
+//                 elsewhere $10 a month or $100 a year
+//
+// A year costs ten months: two months free. How a family pays never changes
+// what it may keep.
 //
 // When Family Plus ends (040), a family above the free limit has 30 days to
 // renew or delete documents; then the newest documents above it are removed.
@@ -39,10 +43,34 @@ const GB = 1024 ** 3;
 /** What 039 and 040 set; plan_limits is the truth. */
 export const DEFAULT_PLAN_LIMITS: PlanLimits = { free: 1 * GB, plus: 10 * GB, graceDays: 30 };
 
-/** What Family Plus costs a month. */
-export const PLUS_PRICE = { inr: 100, usd: 10 } as const;
+/** What Family Plus costs, by the month or by the year (two months free). */
+export const PLUS_PRICE = {
+  monthly: { inr: 100, usd: 10 },
+  yearly: { inr: 1000, usd: 100 },
+} as const;
 
-export type PriceCurrency = keyof typeof PLUS_PRICE;
+export type PricePeriod = keyof typeof PLUS_PRICE;
+export type PriceCurrency = keyof (typeof PLUS_PRICE)['monthly'];
+
+/** 1000 → "1,000"; in rupees, lakhs group in twos: 100000 → "1,00,000". */
+function grouped(amount: number, indian: boolean): string {
+  const digits = String(Math.round(amount));
+  if (digits.length <= 3) return digits;
+  let rest = digits.slice(0, -3);
+  const groups: string[] = [];
+  const size = indian ? 2 : 3;
+  while (rest.length > size) {
+    groups.unshift(rest.slice(-size));
+    rest = rest.slice(0, -size);
+  }
+  groups.unshift(rest);
+  return `${groups.join(',')},${digits.slice(-3)}`;
+}
+
+function money(currency: PriceCurrency, period: PricePeriod): string {
+  const amount = PLUS_PRICE[period][currency];
+  return currency === 'inr' ? `₹${grouped(amount, true)}` : `$${grouped(amount, false)}`;
+}
 
 /**
  * Whether Family Plus can be bought yet. Until payments are switched on it is
@@ -50,9 +78,19 @@ export type PriceCurrency = keyof typeof PLUS_PRICE;
  */
 export const PLUS_FOR_SALE = false;
 
-/** "₹100 a month", "$10 a month". */
-export function plusPrice(currency: PriceCurrency): string {
-  return currency === 'inr' ? `₹${PLUS_PRICE.inr} a month` : `$${PLUS_PRICE.usd} a month`;
+/** "₹100 a month", "₹1,000 a year", "$10 a month", "$100 a year". */
+export function plusPrice(currency: PriceCurrency, period: PricePeriod = 'monthly'): string {
+  return `${money(currency, period)} a ${period === 'monthly' ? 'month' : 'year'}`;
+}
+
+/** "₹100 a month or ₹1,000 a year". */
+export function plusPrices(currency: PriceCurrency): string {
+  return `${plusPrice(currency, 'monthly')} or ${plusPrice(currency, 'yearly')}`;
+}
+
+/** "₹100/mo", "₹1,000/yr", for narrow places. */
+export function plusPriceShort(currency: PriceCurrency, period: PricePeriod): string {
+  return `${money(currency, period)}/${period === 'monthly' ? 'mo' : 'yr'}`;
 }
 
 export function formatBytes(bytes: number): string {
@@ -76,7 +114,7 @@ export function fits(room: StorageRoom, fileBytes: number): boolean {
 
 export interface StorageMessageOptions {
   limits?: PlanLimits;
-  /** Family Plus's price where the person is ("₹100 a month"); the server, which cannot tell, leaves it out. */
+  /** Family Plus's price where the person is ("₹100 a month or ₹1,000 a year"); the server, which cannot tell, leaves it out. */
   price?: string;
   /** For a family whose Plus has ended: the day its documents above the free limit go ("4 Nov 2026"). */
   removalOn?: string;

@@ -7,7 +7,7 @@ import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SUPPORT_EMAIL, SUPPORT_PHONE } from '../../lib/app-info';
-import { DEFAULT_PLAN_LIMITS, FREE_STORAGE_LABEL, PLUS_FOR_SALE, formatBytes, plusPrice } from '../../lib/plans';
+import { DEFAULT_PLAN_LIMITS, FREE_STORAGE_LABEL, PLUS_FOR_SALE, formatBytes, plusPrices } from '../../lib/plans';
 import { ScreenHeader } from '../../components/screen-header';
 import { Card, CardTitle, Body, PrimaryButton, screenStyles } from '../../components/settings-ui';
 import { color, radius, shadow, space, type } from '../../constants/design';
@@ -55,7 +55,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'How much space does my family get?',
-    a: `Every family gets ${FREE_STORAGE_LABEL} free for its documents, in total. ★ Family Plus gives ${formatBytes(DEFAULT_PLAN_LIMITS.plus)}, for ${plusPrice('inr')} in India or ${plusPrice('usd')} elsewhere. Every plan has a limit: when a family's space is full, new documents can't be added until some are deleted${PLUS_FOR_SALE ? ', or the family moves to a bigger plan' : ''}. If Family Plus ends while your family holds more than ${FREE_STORAGE_LABEL}, it has ${DEFAULT_PLAN_LIMITS.graceDays} days to renew or delete documents; after that, the newest documents above ${FREE_STORAGE_LABEL} are removed. You are reminded when it ends, a week before and the day before. Settings › Storage shows how much is used.`,
+    a: `Every family gets ${FREE_STORAGE_LABEL} free for its documents, in total. ★ Family Plus gives ${formatBytes(DEFAULT_PLAN_LIMITS.plus)}, for ${plusPrices('inr')} in India (${plusPrices('usd')} elsewhere). Every plan has a limit: when a family's space is full, new documents can't be added until some are deleted${PLUS_FOR_SALE ? ', or the family moves to a bigger plan' : ''}. If Family Plus ends while your family holds more than ${FREE_STORAGE_LABEL}, it has ${DEFAULT_PLAN_LIMITS.graceDays} days to renew or delete documents; after that, the newest documents above ${FREE_STORAGE_LABEL} are removed. You are reminded when it ends, a week before and the day before. Settings › Storage shows how much is used.`,
   },
   {
     q: 'How do reminders work?',
@@ -63,7 +63,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'What does ★ Family Plus mean?',
-    a: `Family Plus is the paid plan for the whole family, ${plusPrice('inr')} in India or ${plusPrice('usd')} elsewhere, coming soon. It gives ${formatBytes(DEFAULT_PLAN_LIMITS.plus)} of space, and the things marked with ★ — the Reminders page, with every expiry date in one list, and bringing documents in from Gmail. Tap any ★, or open Settings › Family Plus, to see Free and Plus side by side. The reminders themselves reach every family, Free or Plus.`,
+    a: `Family Plus is the paid plan for the whole family, coming soon: ${plusPrices('inr')} in India, or ${plusPrices('usd')} elsewhere. A year costs the same as ten months. It gives ${formatBytes(DEFAULT_PLAN_LIMITS.plus)} of space, and the things marked with ★ — the Reminders page, with every expiry date in one list, and bringing documents in from Gmail. Tap any ★, or open Settings › Family Plus, to see Free and Plus side by side. The reminders themselves reach every family, Free or Plus.`,
   },
   {
     q: 'How do I delete my account?',

@@ -14,7 +14,8 @@ import { useFamily } from '../lib/family-context';
 import { useFamilyPlan, type PlusFeature } from '../lib/family-plan';
 import { fetchPlanLimits } from '../lib/api';
 import {
-  DEFAULT_PLAN_LIMITS, PLUS_FOR_SALE, formatBytes, localPlusPrice, plusPrice, type PlanLimits,
+  DEFAULT_PLAN_LIMITS, PLUS_FOR_SALE, formatBytes, localPlusPrice, localPlusPriceShort, localPlusPrices, plusPrices,
+  type PlanLimits,
 } from '../lib/plans';
 import { longDate } from '../lib/dates';
 import { ScreenHeader } from '../components/screen-header';
@@ -63,7 +64,9 @@ export default function PlusScreen() {
   const { currentFamily } = useFamily();
   const { plan, paidUntil, removalAt, refresh } = useFamilyPlan();
   const [limits, setLimits] = useState<PlanLimits>(DEFAULT_PLAN_LIMITS);
-  const price = localPlusPrice();
+  const monthly = localPlusPrice('monthly');
+  const yearly = localPlusPrice('yearly');
+  const prices = localPlusPrices();
   const broughtBy = feature && feature in BROUGHT_BY ? BROUGHT_BY[feature as PlusFeature] : null;
 
   useFocusEffect(useCallback(() => {
@@ -89,10 +92,11 @@ export default function PlusScreen() {
         <LinearGradient colors={['#2A3D66', '#4A6491']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.hero}>
           <Text style={styles.heroTag}>★ Family Plus</Text>
           <Text style={styles.heroTitle}>More space and more help, for the whole family</Text>
-          <Text style={styles.heroPrice} accessibilityLabel={price}>
-            {price.replace(' a month', '')}
+          <Text style={styles.heroPrice} accessibilityLabel={monthly}>
+            {monthly.replace(' a month', '')}
             <Text style={styles.heroPer}> a month</Text>
           </Text>
+          <Text style={styles.heroYear}>or {yearly}: two months free</Text>
           <Text style={styles.heroNote}>
             {familyName ? `One plan for everyone in ${familyName}.` : 'One plan for everyone in the family.'}
           </Text>
@@ -145,11 +149,14 @@ export default function PlusScreen() {
           <View
             style={[styles.row, styles.priceRow]}
             accessible
-            accessibilityLabel={`Price: Free costs nothing, Family Plus ${price}`}
+            accessibilityLabel={`Price: Free costs nothing, Family Plus ${prices}`}
           >
             <Text style={[styles.label, styles.priceLabel]}>Price</Text>
             <Text style={[styles.value, styles.cellText]}>Free</Text>
-            <Text style={[styles.value, styles.cellText, styles.cellTextPlus]}>{price.replace(' a month', '/mo')}</Text>
+            <View style={[styles.value, styles.priceCell]}>
+              <Text style={[styles.cellText, styles.cellTextPlus]}>{localPlusPriceShort('monthly')}</Text>
+              <Text style={[styles.cellText, styles.cellTextPlus]}>{localPlusPriceShort('yearly')}</Text>
+            </View>
           </View>
         </Card>
 
@@ -158,7 +165,7 @@ export default function PlusScreen() {
             <View style={styles.soon}>
               <Text style={styles.soonTag}>Coming soon</Text>
               <Text style={styles.soonText}>
-                Family Plus can't be bought in the app yet. When it can, it is {price} for the whole family.
+                Family Plus can't be bought in the app yet. When it can, it is {prices} for the whole family.
               </Text>
             </View>
           )
@@ -180,7 +187,7 @@ export default function PlusScreen() {
           </View>
           <View style={styles.point}>
             <Feather name="globe" size={16} color={color.primary} />
-            <Text style={styles.pointText}>{plusPrice('inr')} in India, {plusPrice('usd')} everywhere else.</Text>
+            <Text style={styles.pointText}>{plusPrices('inr')} in India; {plusPrices('usd')} everywhere else.</Text>
           </View>
         </Card>
 
@@ -201,6 +208,7 @@ const styles = StyleSheet.create({
   heroTitle: { fontSize: 17, lineHeight: 23, fontWeight: '600', color: '#FFFFFF' },
   heroPrice: { fontSize: 28, lineHeight: 34, fontWeight: '700', color: '#FFFFFF', marginTop: space.sm },
   heroPer: { fontSize: 15, fontWeight: '500', color: '#DCE3F0' },
+  heroYear: { fontSize: 15, lineHeight: 20, fontWeight: '600', color: '#FFFFFF' },
   heroNote: { fontSize: 13, lineHeight: 18, color: '#DCE3F0' },
   state: {
     flexDirection: 'row', alignItems: 'center', gap: space.sm,
@@ -224,6 +232,7 @@ const styles = StyleSheet.create({
   cellText: { fontSize: 14, lineHeight: 20, fontWeight: '600', color: color.textBody, textAlign: 'center' },
   cellTextPlus: { color: color.primary },
   priceRow: { borderBottomWidth: 0 },
+  priceCell: { gap: 2 },
   priceLabel: { fontWeight: '600', color: color.text },
   soon: {
     borderRadius: radius.control, padding: space.md, gap: space.xs,

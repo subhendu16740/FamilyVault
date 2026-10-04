@@ -15,7 +15,7 @@ import {
   fetchPlanLimits, fetchStorageStatus, fetchStorageUsage, type FamilyPlanStatus, type FamilyStorage,
 } from '../../lib/api';
 import {
-  DEFAULT_PLAN_LIMITS, FREE_STORAGE_BYTES, PLUS_FOR_SALE, formatBytes, localPlusPrice, storageFullMessage,
+  DEFAULT_PLAN_LIMITS, FREE_STORAGE_BYTES, PLUS_FOR_SALE, formatBytes, localPlusPrices, storageFullMessage,
   storageLevel, type PlanLimits, type StorageLevel,
 } from '../../lib/plans';
 import { longDate } from '../../lib/dates';
@@ -62,7 +62,7 @@ export default function StorageScreen() {
     return () => { cancelled = true; };
   }, [user?.id, familyKey]));
 
-  const price = localPlusPrice();
+  const price = localPlusPrices();
   const yourBytes = usage?.reduce((sum, f) => sum + f.yourBytes, 0) ?? 0;
   const yourDocs = usage?.reduce((sum, f) => sum + f.yourDocuments, 0) ?? 0;
 

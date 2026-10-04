@@ -26,7 +26,7 @@ import {
 import { buildGraph, relationTo, relationLabel, relativesForPrompt, relativesNamedIn, buildForest, shortName, siblingsSharingParents } from '../../supabase/functions/_shared/kinship.ts';
 import { encryptPayload, vapidAuthorization, generateVapidKeys, isPushServiceEndpoint, MAX_PLAINTEXT } from '../../supabase/functions/_shared/webpush.ts';
 import { phoneLooksRight, cardProblem, cardIsEmpty, emptyCard, bloodGroupLabel, bloodGroupSpoken, telHref } from '../../src/lib/emergency.ts';
-import { DEFAULT_PLAN_LIMITS, PLUS_FOR_SALE, PLUS_PRICE, fits, formatBytes, plusPrice, storageFullMessage } from '../../supabase/functions/_shared/plan-text.ts';
+import { DEFAULT_PLAN_LIMITS, PLUS_FOR_SALE, PLUS_PRICE, fits, formatBytes, plusPrice, plusPriceShort, plusPrices, storageFullMessage } from '../../supabase/functions/_shared/plan-text.ts';
 import { mentionsDate, mentionsAmount, mentionsPhone, mentionsText, refuses, devanagariShare, scriptShare, hasMarkdown } from '../lib/match.mjs';
 import { judgeAnswer } from '../lib/checks/ask.mjs';
 import { vehicleInsurance } from '../lib/tiny-pdf.mjs';
@@ -507,9 +507,16 @@ await test('plans: every limit is finite, and a full vault says why and what to 
   // What 039 and 040 leave in plan_limits: one row per plan, Plus ten times
   // Free, and 30 days after Plus ends before anything above Free goes.
   assert.deepEqual(DEFAULT_PLAN_LIMITS, { free: GB, plus: 10 * GB, graceDays: 30 });
-  assert.deepEqual(PLUS_PRICE, { inr: 100, usd: 10 });
+  assert.deepEqual(PLUS_PRICE, { monthly: { inr: 100, usd: 10 }, yearly: { inr: 1000, usd: 100 } });
+  // The Plus page says a year is "two months free": it must cost ten months.
+  for (const c of ['inr', 'usd']) assert.equal(PLUS_PRICE.yearly[c], 10 * PLUS_PRICE.monthly[c], `${c}: a year is not ten months`);
   assert.equal(plusPrice('inr'), '₹100 a month');
   assert.equal(plusPrice('usd'), '$10 a month');
+  assert.equal(plusPrice('inr', 'yearly'), '₹1,000 a year');
+  assert.equal(plusPrice('usd', 'yearly'), '$100 a year');
+  assert.equal(plusPrices('inr'), '₹100 a month or ₹1,000 a year');
+  assert.equal(plusPriceShort('inr', 'yearly'), '₹1,000/yr');
+  assert.equal(plusPriceShort('usd', 'monthly'), '$10/mo');
   assert.equal(formatBytes(512), '512 B');
   assert.equal(formatBytes(2048), '2 KB');
   assert.equal(formatBytes(1.25 * MB), '1.3 MB');
@@ -529,6 +536,7 @@ await test('plans: every limit is finite, and a full vault says why and what to 
     assert.match(full, /Family Plus, coming soon, gives 10 GB for ₹100 a month\.$/);
     assert.doesNotMatch(full, /move to/);
   }
+  assert.match(storageFullMessage({ ...free, usedBytes: GB }, 0, { price: plusPrices('inr') }), /gives 10 GB for ₹100 a month or ₹1,000 a year\.$/);
   // The server cannot tell where the person is, so it names no price.
   assert.match(storageFullMessage({ ...free, usedBytes: GB }), /gives 10 GB\.$/);
   const plus = storageFullMessage({ plan: 'plus', limitBytes: 10 * GB, usedBytes: 10 * GB }, 0, { price: plusPrice('usd') });
