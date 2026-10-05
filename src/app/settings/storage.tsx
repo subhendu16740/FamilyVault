@@ -2,7 +2,8 @@
 // holds, and what you have added yourself. Every plan has a limit (038): the
 // server refuses new documents once a family is at its limit, and this screen
 // says so before anyone meets the refusal. Before 038 it shows the free limit,
-// unenforced, from the documents' own sizes (see src/lib/plans.ts).
+// unenforced, from the documents' own sizes (see src/lib/plans.ts). Whether
+// Family Plus can be bought is the payments function's answer (044).
 
 import { useCallback, useState } from 'react';
 import { ScrollView, View, Text, ActivityIndicator, TouchableOpacity, StyleSheet } from 'react-native';
@@ -19,7 +20,7 @@ import {
   localPlusYearlyOffer, storageFullMessage, storageLevel, type PlanLimits, type StorageLevel,
 } from '../../lib/plans';
 import { longDate } from '../../lib/dates';
-import { plusPage } from '../../lib/family-plan';
+import { plusPage, usePaymentsStatus } from '../../lib/family-plan';
 import { ScreenHeader, PlusTag } from '../../components/screen-header';
 import { YearlyPrice } from '../../components/plus-price';
 import { Card, CardTitle, Body, Muted, Status, screenStyles } from '../../components/settings-ui';
@@ -41,6 +42,7 @@ export default function StorageScreen() {
   const [plans, setPlans] = useState<Record<string, FamilyPlanStatus | null>>({});
   const [limits, setLimits] = useState<PlanLimits>(DEFAULT_PLAN_LIMITS);
   const [error, setError] = useState<string | null>(null);
+  const payments = usePaymentsStatus();
   const familyKey = families.map((f) => f.family_id).join(',');
 
   useFocusEffect(useCallback(() => {
@@ -101,7 +103,7 @@ export default function StorageScreen() {
                   <Text style={styles.planRowSize}>{formatBytes(limits.plus)}</Text>
                 </View>
               </View>
-              {!PLUS_FOR_SALE && (
+              {payments && !payments.available && (
                 <View style={styles.plusRow}>
                   <PlusTag link />
                   <Text style={styles.plusText}>Family Plus can't be bought in the app yet. Coming soon.</Text>
@@ -175,6 +177,7 @@ export default function StorageScreen() {
                                 price,
                                 // Plus has ended and the family is above the free limit (040).
                                 removalOn: status.removalAt ? longDate(new Date(status.removalAt)) : undefined,
+                                forSale: payments?.available ?? PLUS_FOR_SALE,
                               })
                             : `Nearly full: ${formatBytes(limit - used)} left. When it is full, new documents and saved chats can't be added.`}
                       </Text>

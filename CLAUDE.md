@@ -62,7 +62,9 @@ Four things will mislead you if you assume otherwise:
    `member_usage` (043; `family_usage` before), each person's count of
    voice chats, is written only through `claim_voice_answer`; 042 counts
    saved chats in a family's storage, and a trigger refuses a chat that
-   does not fit).
+   does not fit; 044's payments, `plan_payments`, are the server's alone —
+   no client reads or writes them, and only `apply_plan_payment`, service
+   role only, turns a payment into Family Plus).
    **A new writable
    column needs its own `GRANT` in a migration.** Nobody joins a family
    without saying yes: only an admin asks a person in, through the
@@ -112,14 +114,16 @@ errors**) and `npm run build` are the local gates.
 at 03:10 IST, and on pushes that change `qa/`. It uploads synthetic SPECIMEN
 documents to its own vault (QA Vault A, account A), asks questions about
 them, and checks the answers on facts and sources, never wording. It also
-runs the 023 sweep and the 024 DEV/PROD fingerprint, 137 access probes (a
+runs the 023 sweep and the 024 DEV/PROD fingerprint, 146 access probes (a
 logged-out visitor and a second account must be refused everywhere, Gmail
 import's endpoints, the family tree, emergency cards, linking,
 notification devices, share links, invitations and plans included; a share
 link must open without an account, and stop once it is turned off; nobody
 can give a family Plus, raise a limit, read another family's storage, end
 its Plus or start, run or close a removal, use up or read another
-family's voice chats, or add up its saved chats),
+family's voice chats, add up its saved chats, pay for another family,
+confirm a payment never made, or report one to the Razorpay webhook
+without Razorpay's signature; DEV holds only Razorpay's test keys),
 the membership model (the second account is invited, not added: it sees
 nothing of the vault until it says yes, the admin cannot say yes for it, a
 no removes the invitation and a yes makes it a viewer, who must not be able
@@ -253,15 +257,18 @@ npx supabase@latest functions deploy delete-account   --project-ref <ref>
 npx supabase@latest functions deploy push             --project-ref <ref>   # reminders on devices; makes its own keys
 npx supabase@latest functions deploy share            --project-ref <ref>   # opens a share link, for anyone who has it
 npx supabase@latest functions deploy plans            --project-ref <ref>   # when Family Plus ends: the removal after 30 days
+npx supabase@latest functions deploy payments         --project-ref <ref>   # paying for Family Plus: Razorpay orders and checks
 npx supabase@latest functions deploy reembed-index    --project-ref <ref>
 npx supabase@latest functions deploy gmail-connect    --project-ref <ref>   # also gmail-scan, gmail-import
 npx supabase@latest functions deploy gmail-callback   --project-ref <ref> --no-verify-jwt   # Google's redirect target
+npx supabase@latest functions deploy razorpay-webhook --project-ref <ref> --no-verify-jwt   # Razorpay reporting a payment
 
 # Set or rotate a secret (server-side only; never in this repo)
 npx supabase@latest secrets set GROQ_API_KEY=...      --project-ref <ref>
 npx supabase@latest secrets set HF_API_TOKEN=...      --project-ref <ref>
 npx supabase@latest secrets set OCR_SPACE_API_KEY=... --project-ref <ref>
 npx supabase@latest secrets set GMAIL_CLIENT_ID=... GMAIL_CLIENT_SECRET=... GMAIL_TOKEN_KEY=... GMAIL_RETURN_ORIGINS=... --project-ref <ref>
+npx supabase@latest secrets set RAZORPAY_KEY_ID=... RAZORPAY_KEY_SECRET=... RAZORPAY_WEBHOOK_SECRET=... --project-ref <ref>   # test keys on DEV
 
 # Capture the live schema (see Database — the migration gap)
 npx supabase@latest db dump --db-url "postgresql://..." -f 010_live_schema.sql
@@ -319,7 +326,13 @@ changing one requires a rebuild — there is no runtime config.
 Google Cloud project made for Gmail), `GMAIL_TOKEN_KEY` (32 random bytes,
 base64 — `openssl rand -base64 32`; it seals refresh tokens, so changing it
 disconnects everyone) and `GMAIL_RETURN_ORIGINS` (the web origins Google may
-return to, comma-separated; localhost is always allowed)
+return to, comma-separated; localhost is always allowed), and for paying
+for Family Plus `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET` (Razorpay's
+API keys: **test keys on DEV, live keys on PROD only** — QA fails a live key
+on DEV), `RAZORPAY_WEBHOOK_SECRET` (the secret typed into Razorpay's
+webhook settings) and, optionally, `RAZORPAY_CURRENCIES` (`INR` unless set;
+`INR,USD` once international payments are on in Razorpay). Without the two
+keys a project takes no payments and Family Plus says "Coming soon"
 (`SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are injected automatically).
 
 **Local dev only:** `WEB_HOST` (Firebase Studio; see [App config](#app-config)).
@@ -422,7 +435,7 @@ src/
       delete-account.tsx     # Security › Delete account: shows what goes, asks for DELETE (029)
     document/[id].tsx        # document viewer; Share opens the share sheet (036, web only)
     gmail-import.tsx         # connect Gmail, review what it found, import (web only, ★ Family Plus)
-    plus.tsx                 # Family Plus: what Plus gives, side by side with Free; every ★ opens it for a free family
+    plus.tsx                 # Family Plus: what Plus gives, side by side with Free; every ★ opens it for a free family; pay for a month or a year (044, web only)
     s.tsx                    # what a share link opens: one document, for anyone with the link, no account (036)
     +html.tsx                # custom HTML shell, web only
     (tabs)/
@@ -461,23 +474,24 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `auth.tsx` | `AuthProvider`: session, signIn, signUp, signInWithGoogle, signOut |
 | `family-context.tsx` | `FamilyProvider`: currentFamily, members, membership, needsFamily |
 | `drawer-context.tsx` | Profile drawer open/close state |
-| `api.ts` | **All** Supabase queries — documents, search, upload, RAG, notifications, adding and leaving families, invitations, Gmail import, saved chats, share links, deleting your account, plans and storage limits (`fetchStorageStatus`, `fetchPlanLimits`; `uploadDocument` throws `StorageFullError` before a file that does not fit is sent, and `saveChat` `ChatStorageFullError` for a chat, 042), voice chats (`claimVoiceAnswer`, 041; `fetchVoiceStatus`, how many are left, 042), and the Settings screens (profile, password, storage use, expiry dates, feedback) |
+| `api.ts` | **All** Supabase queries — documents, search, upload, RAG, notifications, adding and leaving families, invitations, Gmail import, saved chats, share links, deleting your account, plans and storage limits (`fetchStorageStatus`, `fetchPlanLimits`; `uploadDocument` throws `StorageFullError` before a file that does not fit is sent, and `saveChat` `ChatStorageFullError` for a chat, 042), voice chats (`claimVoiceAnswer`, 041; `fetchVoiceStatus`, how many are left, 042), paying for Family Plus (`fetchPaymentsStatus`, whether this project takes payments, asked once a session; `createPlusOrder`, `verifyPlusPayment`, 044), and the Settings screens (profile, password, storage use, expiry dates, feedback) |
 | `dates.ts` | `parseDocumentDate()`: expiry dates exactly as ingest stores them (DD/MM/YYYY and kin, YYYY-MM-DD, "19 October 2026") |
 | `emergency.ts` | The emergency card's shape, blood groups (`bloodGroupLabel()`: "A−", "Bombay (hh)"), `telHref()`, and `cardProblem()` — the same checks and messages as `save_emergency_card()`, so the form can say what is wrong before saving |
 | `family-people.ts` | Whose a document can be: everyone in the tree, you first (`useDocumentOwners()`, members only before 031), and a person's expiry badge (`badgeFromExpiries()`) |
-| `plans.ts` | What each plan allows (038–043): the limits as 039–043 set them — storage, 4 members, and 10 voice chats for each person on Free (`DEFAULT_PLAN_LIMITS`, used only when the database cannot be asked), Family Plus's prices, monthly and yearly (`PLUS_PRICE`; `localPlusPrice()` / `localPlusPrices()` show rupees in India, dollars elsewhere, by the device's time zone; the yearly one against twelve months, crossed out, and the months it saves: `plusTwelveMonths()`, `plusYearlySaving()`), `storageLevel()`, and the words for a full vault (`storageFullMessage()`; for a chat, `chatStorageFullMessage()`), which live in `supabase/functions/_shared/plan-text.ts` so Gmail import says the same. `PLUS_FOR_SALE` is false until payments exist |
-| `family-plan.ts` | Is the current family on Family Plus? `useFamilyPlan()` (from `family_storage_status()`, kept a minute per family): `isFree`, and `routeFor(feature, route)`, which sends a free family to `/plus?feature=…` instead of a starred feature. Unknown (before 038, offline) gates nothing |
+| `plans.ts` | What each plan allows (038–043): the limits as 039–043 set them — storage, 4 members, and 10 voice chats for each person on Free (`DEFAULT_PLAN_LIMITS`, used only when the database cannot be asked), Family Plus's prices, monthly and yearly (`PLUS_PRICE`; `localPlusPrice()` / `localPlusPrices()` show rupees in India, dollars elsewhere, by the device's time zone; the yearly one against twelve months, crossed out, and the months it saves: `plusTwelveMonths()`, `plusYearlySaving()`), `storageLevel()`, and the words for a full vault (`storageFullMessage()`; for a chat, `chatStorageFullMessage()`), which live in `supabase/functions/_shared/plan-text.ts` so Gmail import says the same. Whether Plus can be bought is the payments function's answer (044: `usePaymentsStatus()`, `plusForSale()`); `PLUS_FOR_SALE` (false) is only what the words assume before it answers |
+| `family-plan.ts` | Is the current family on Family Plus? `useFamilyPlan()` (from `family_storage_status()`, kept a minute per family): `isFree`, and `routeFor(feature, route)`, which sends a free family to `/plus?feature=…` instead of a starred feature. Unknown (before 038, offline) gates nothing. `usePaymentsStatus()`: can Family Plus be bought here (044) |
 | `file-types.ts` | What a picked file is (`detectFileType()`: MIME type, then name, never a web `blob:` uri) and whether the vault can keep it (PDF, JPG, PNG) |
 | `app-info.ts` | Version, release date and commit (stamped into `extra` by `app.config.ts` at build time), and the support contact Help shows |
 | `ocr.ts` | Platform-split OCR with progress callback; reads the person's chosen languages |
 | `ocr-languages.ts` | The document-language picker list, and `resolveOcrLanguages()` which always appends English |
+| `razorpay.ts` / `razorpay.web.ts` | Paying for Family Plus (044): on the web, Razorpay's own checkout window (`openCheckout`; checkout.js is loaded the first time someone pays, and card and UPI details go to Razorpay, never to us); the phone app's file is a stand-in until EAS builds exist. Types in `razorpay-types.ts` |
 | `push.ts` / `push.web.ts` | Notifications on this device (034): on the web, Web Push through `public/sw.js` (`loadPushStatus`, `turnOnPush`, `turnOffPush`, `sendTestPush`, and `forgetPushOnThisDevice` on sign-out); the phone app's file is a stand-in until EAS builds exist. Types in `push-types.ts` |
 | `preferences.tsx` | `PreferencesProvider`: voice toggle + language, document languages. Cached locally, stored on `public.users`; reads and writes fall back to the older column set so an unapplied migration degrades one setting rather than all of them |
 | `speech.ts` | Voice: `listen`/`stopListening` (platform-split recogniser) and `speak`/`stopSpeaking` (expo-speech), in the voice chosen for the language on this device (`voicesFor`, `chooseVoice`: Settings › Accessibility › Voice, kept per language in `storage.ts`, not per account), or the best match |
 | `speech-text.ts` | `toSpeech()`: strips markdown and spells out ID numbers before they are read aloud |
 | `voice-languages.ts` | The language picker list and the few phrases the app itself says, per language |
 | `storage.ts` | Key-value cache: localStorage on web, AsyncStorage on native |
-| `database.types.ts` | Generated Supabase types, current to 043 (030 changed nothing in them). Regenerate after every migration and re-append the hand-written block at the bottom (see the typecheck note) |
+| `database.types.ts` | Generated Supabase types, current to 044 (030 changed nothing in them). Regenerate after every migration and re-append the hand-written block at the bottom (see the typecheck note) |
 
 ---
 
@@ -492,12 +506,13 @@ src/components/app-tabs.tsx        /  app-tabs.web.tsx
 src/hooks/use-color-scheme.ts      /  use-color-scheme.web.ts
 src/lib/speech-recognition.ts      /  speech-recognition.web.ts
 src/lib/push.ts                    /  push.web.ts
+src/lib/razorpay.ts                /  razorpay.web.ts
 src/app/+html.tsx                     (web only — HTML shell, @font-face; NOT used by the single-page export)
 public/sw.js                          (web only — the service worker that shows notifications)
 src/global.css                        (web only)
 ```
 
-Plus 8 `Platform.OS === 'web'` branches across `src/`. The important ones:
+Plus 15 `Platform.OS === 'web'` branches across `src/`. The important ones:
 
 - **`src/lib/ocr.ts`** runs two entirely different OCR engines —
   `tesseract.js` (WASM) on web, `react-native-mlkit-ocr` (native module) on
@@ -542,7 +557,8 @@ Supabase, cloud-hosted. Three layers:
   invitations, document_categories, notifications, audit_logs, feedback,
   saved_chats, family_people, family_links, family_emergency_cards,
   push_subscriptions, reminders_sent, push_config, document_shares,
-  family_invites, plan_limits, family_plans, member_usage. RLS enabled.
+  family_invites, plan_limits, family_plans, member_usage, plan_payments.
+  RLS enabled.
 - **Layer 2 (private)** — one isolated schema per family (`family_<short_uuid>`)
   holding documents, document_metadata, document_chunks, expiry_alerts,
   family_relationships. Created by the `public.create_family()` PG function.
@@ -1048,25 +1064,31 @@ so storage policies live only in `019`.
   plan (Table editor; anyone may read them, a pricing page included), and
   change without a migration or a deploy — the app reads them
   (`fetchPlanLimits()`); `DEFAULT_PLAN_LIMITS` in `_shared/plan-text.ts` is
-  only what it shows when the database cannot be asked. The price is shown,
-  not stored: `PLUS_PRICE` there, and the payment company's plan is what
-  will be charged.
+  only what it shows when the database cannot be asked. The price is
+  `PLUS_PRICE` there, not a row: what every screen shows and, since 044,
+  what the payments function charges — never an amount the app sends.
 - **A family is on Plus while its `family_plans` row is paid up**
   (`paid_until` in the future); otherwise, and with no row, it is on Free.
   Members read their own family's row — never `source` or `source_ref`, the
   payment company's reference, which the column grant leaves out — and no
   client can write it.
-- **Plus is given by hand until payments exist**:
+- **Plus is paid for with Razorpay** (044; see
+  [Paying for Family Plus](#paying-for-family-plus--razorpay-a-month-or-a-year-at-a-time-044)),
+  **and can still be given by hand**:
   `select set_family_plan('<family id>', now() + interval '1 month');`
   (or `interval '1 year'` for a yearly plan — the same plan, a longer
   `paid_until`)
-  in the SQL editor (`paid_until` says how long; there is no period). Service role only; the payment webhook will call the
-  same function with `p_source` and `p_source_ref`. A new or lapsed plan
+  in the SQL editor (`paid_until` says how long; there is no period).
+  Service role only; a payment reaches the same function through
+  `apply_plan_payment()`, with `p_source` 'razorpay' and the payment's id as
+  `p_source_ref`. A new or lapsed plan
   tells the family (a `plan` notification, which opens Settings › Storage),
   a renewal is quiet, and every call writes `audit_logs`. To end a plan at
   once (a refund), `select end_family_plan('<family id>');` (040) — not a
-  deleted row, which would skip the countdown below. `PLUS_FOR_SALE` in `plan-text.ts` turns
-  the "coming soon" words into an offer once Plus can be bought.
+  deleted row, which would skip the countdown below. Whether Plus can be
+  bought is the payments function's answer (a project with Razorpay's keys
+  takes payments), and every screen's words follow it; `PLUS_FOR_SALE` in
+  `plan-text.ts` is only what they assume until it answers.
 - **The server keeps the limit, not the app.** The `documents` bucket's
   upload policy (019's, plus `family_storage_has_room()`) refuses a new file
   once the family's files reach its limit. Used space is what the family's
@@ -1113,9 +1135,9 @@ so storage policies live only in `019`.
   connection). A ★ tag drawn on its own (`<PlusTag link />`), Settings ›
   Family Plus, Storage and a full vault's dialog open it as well. Gmail
   import also refuses a free family on the server. The reminders themselves
-  — under the bell and on devices — reach every family. While Plus cannot be
-  bought (`PLUS_FOR_SALE`), the page says "Coming soon" rather than showing a
-  button that does nothing.
+  — under the bell and on devices — reach every family. Where Plus cannot be
+  bought (no Razorpay keys on the project, 044), the page says "Coming soon"
+  rather than showing a button that does nothing.
 - **Voice chats: 10 for each person on Free, then Family Plus** (041–043;
   `plan_limits.voice_answers`, per person, NULL for no limit, which is
   Plus). A voice chat is a question asked by voice or an answer read aloud,
@@ -1140,8 +1162,61 @@ so storage policies live only in `019`.
   `/plus?feature=voice`. Listening and reading are the device's own, so this
   is the app's rule to keep; when the server cannot be asked (before 041,
   offline) voice works.
-- **Not built yet:** paying for Plus (a webhook calling `set_family_plan`;
-  `source` allows `razorpay` and `dodo`), and a limit on questions per plan.
+- **Not built yet:** a limit on questions per plan.
+
+### Paying for Family Plus — Razorpay, a month or a year at a time (044)
+
+- **One payment buys a month or a year**, by UPI, card or net banking,
+  through Razorpay's own checkout window (`src/lib/razorpay.web.ts`): ₹100
+  or ₹1,100, and dollars only once `RAZORPAY_CURRENCIES` says `INR,USD`
+  (outside India the Plus page says paying from there is coming soon until
+  then). Each payment adds its time to the family's Plus — from the end of
+  the time already paid for, or from now — so paying early loses nothing.
+  Nothing renews by itself, so nothing is charged without someone paying:
+  no subscription, no mandate, no stored card. Anyone in the family can pay.
+  Razorpay keeps 2% plus GST of each payment (about ₹2.36 of ₹100, ₹26 of
+  ₹1,100) and charges nothing else — no setup or yearly fee.
+- **The server sets the price and checks the payment.** `payments`'s
+  `order` takes a member's family and a month or a year, never an amount:
+  it makes a Razorpay order at `PLUS_PRICE`'s price and keeps it in
+  `plan_payments`. After the checkout, `verify` checks Razorpay's signature
+  (HMAC-SHA256 of `order_id|payment_id` under the key secret, compared in
+  constant time), asks Razorpay that the payment is for that order and
+  amount and captured (capturing it if only authorised), and calls
+  `apply_plan_payment()`. The key secret never leaves the server; card and
+  UPI details never reach FamilyVault at all.
+- **Razorpay's webhook reports every payment too** (`razorpay-webhook`;
+  events payment.captured and order.paid), so a family whose browser closed
+  after paying still gets its Plus. Razorpay sends no session, so it is
+  deployed without the JWT check, like `gmail-callback`, and its own check
+  is all that guards it: the raw body's HMAC under
+  `RAZORPAY_WEBHOOK_SECRET`, before anything is read. QA fails it if an
+  unsigned or forged report gets through, or if it is deployed with the
+  JWT check (which would refuse Razorpay). `apply_plan_payment()` counts
+  each payment once — it locks the order, and a paid order only returns
+  its date — so the app and the webhook can both report it, in either
+  order; it locks the family too, so two payments at once add up.
+- **`plan_payments` is the server's ledger**: every order (family, who,
+  month or year, currency, amount in paise or cents) and the payment that
+  paid it. RLS on, no policies, every client grant revoked; it goes with
+  the family (cascade) and keeps a payment whose payer deleted their
+  account, without them.
+- **On by setting keys, per project.** Without `RAZORPAY_KEY_ID` and
+  `RAZORPAY_KEY_SECRET` the payments function answers `available: false`
+  and the app says "Coming soon" — the Plus page, Storage, a full vault's
+  message, Help. DEV takes Razorpay's test keys and test payments only (QA
+  fails a live key there); PROD takes live keys, which Razorpay gives after
+  KYC and a look at the website (terms, privacy, refund and contact pages,
+  and the prices).
+- **Web only for now.** The phone app's `razorpay.ts` says paying is on the
+  web app; Razorpay's native checkout (`react-native-razorpay`) needs an
+  EAS build.
+- **A refund is by hand**: refund the payment in the Razorpay dashboard,
+  then `select end_family_plan('<family id>');` if Plus should end (040's
+  countdown follows).
+- **Not built yet:** renewing by itself (Razorpay Subscriptions, which need
+  a mandate: UPI Autopay or a saved card); a reminder before Plus ends that
+  leads straight to paying; the phone app's checkout.
 
 ## Edge Functions
 
@@ -1242,6 +1317,19 @@ so storage policies live only in `019`.
   `send`: it reads nothing from the request but the action and removes only
   what the database says is due. 503 `needs_migration` where 040 is not
   applied.
+- **`payments`** — paying for Family Plus (044; see
+  [Paying for Family Plus](#paying-for-family-plus--razorpay-a-month-or-a-year-at-a-time-044)):
+  `status` for anyone (does this project take payments, and Razorpay's
+  public key id), `order` and `verify` for a member of the family. Answers
+  400 `bad_request`, `bad_signature` or `currency`, 401/403, 402
+  `not_paid`, 404 `no_order`, 502 `razorpay` (Razorpay said no), and 503
+  `not_configured` without the keys or `needs_migration` where 044 is not
+  applied.
+- **`razorpay-webhook`** — Razorpay reporting a payment (044). Deployed
+  **without JWT verification**; Razorpay's signature on the raw body is the
+  check. 200 `applied`, `ignored` (another event, or an order not ours) or
+  `mismatch`; 401 `bad_signature`; 503 `not_configured` without
+  `RAZORPAY_WEBHOOK_SECRET`; 500 on a passing fault, which Razorpay retries.
 - **`delete-account`** — a person deletes their own account: `preview`
   lists what would go, `delete` with `confirm: 'DELETE'` does it; see
   [Deleting your account](#deleting-your-account--at-once-nothing-kept-029).
@@ -1266,8 +1354,9 @@ rules sort the rest (`_shared/gmail-rules.ts`).
   budget is seconds). Shared code: `_shared/gmail.ts` (Google),
   `_shared/gmail-rules.ts` and `_shared/gmail-crypto.ts` (pure; the QA
   self-test runs them in Node).
-- **`gmail-callback` is the only function deployed without JWT
-  verification** (`--no-verify-jwt`, in the deploy workflow): Google's
+- **`gmail-callback` is deployed without JWT verification**
+  (`--no-verify-jwt`, in the deploy workflow — the only other is
+  `razorpay-webhook`, which checks Razorpay's signature instead): Google's
   redirect carries no Supabase session. So it does nothing that needs one —
   it relays the browser to the page that started the flow. Never give it
   another job. QA fails if it is deployed with the check.
@@ -1567,8 +1656,8 @@ rule again once pinned chunks are mixed in.
   10 GB instead of 1 GB, voice chats with no limit (on Free, each person
   has 10), the Reminders page (in the drawer) and Import from
   Gmail (on Upload) — ₹100 a month or ₹1,100 a year in India, $10 or $110
-  elsewhere, given by hand
-  until payments exist. For a free family a starred feature opens the
+  elsewhere, paid for on the Plus page with Razorpay (044), or given by
+  hand. For a free family a starred feature opens the
   Family Plus page, Free and Plus side by side (`/plus`); a new starred
   feature must do the same, through `useFamilyPlan().routeFor()` and a
   redirect in its own screen, and get a row on that page. Each shows the tag

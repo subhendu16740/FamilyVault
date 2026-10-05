@@ -937,6 +937,56 @@ export type Database = {
         }
         Relationships: []
       }
+      plan_payments: {
+        Row: {
+          amount: number
+          created_at: string
+          currency: string
+          family_id: string
+          order_id: string
+          paid_at: string | null
+          paid_until: string | null
+          payment_id: string | null
+          period: string
+          status: string
+          user_id: string | null
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          currency: string
+          family_id: string
+          order_id: string
+          paid_at?: string | null
+          paid_until?: string | null
+          payment_id?: string | null
+          period: string
+          status?: string
+          user_id?: string | null
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          currency?: string
+          family_id?: string
+          order_id?: string
+          paid_at?: string | null
+          paid_until?: string | null
+          payment_id?: string | null
+          period?: string
+          status?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "plan_payments_family_id_fkey"
+            columns: ["family_id"]
+            isOneToOne: false
+            referencedRelation: "families"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       push_config: {
         Row: {
           anon_key: string | null
@@ -1185,6 +1235,10 @@ export type Database = {
           p_relation?: string
           p_relative?: string
         }
+        Returns: string
+      }
+      apply_plan_payment: {
+        Args: { p_order_id: string; p_payment_id: string }
         Returns: string
       }
       assert_caller_in_family: {

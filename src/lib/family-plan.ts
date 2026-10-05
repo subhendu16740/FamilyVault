@@ -16,7 +16,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useFamily } from './family-context';
-import { fetchStorageStatus } from './api';
+import { fetchPaymentsStatus, fetchStorageStatus, type PaymentsStatus } from './api';
 import type { PlanName } from './plans';
 
 /** What a starred feature is called in /plus?feature=… */
@@ -49,6 +49,20 @@ async function readPlan(familyId: string, force: boolean): Promise<KnownPlan> {
   } catch {
     return hit ?? { plan: null, paidUntil: null, removalAt: null, at: 0 };
   }
+}
+
+/**
+ * Whether Family Plus can be bought here (044): the payments function's
+ * answer, asked once per session. Null until it answers.
+ */
+export function usePaymentsStatus(): PaymentsStatus | null {
+  const [status, setStatus] = useState<PaymentsStatus | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchPaymentsStatus().then((s) => { if (!cancelled) setStatus(s); });
+    return () => { cancelled = true; };
+  }, []);
+  return status;
 }
 
 /** The page a free family sees instead of a starred feature. */
