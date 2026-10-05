@@ -1,48 +1,61 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, StyleSheet, Switch, Modal, Pressable,
   ActivityIndicator,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useAuth } from '../lib/auth';
-import { isProduction, environmentDescription } from '../lib/environment';
-import { useFamily } from '../lib/family-context';
-import { usePreferences } from '../lib/preferences';
-import { indexStatus, type IndexStatus } from '../lib/api';
-import { VOICE_LANGUAGES, voiceLanguage } from '../lib/voice-languages';
-import { OCR_LANGUAGES, describeOcrLanguages } from '../lib/ocr-languages';
-import { hasVoiceFor } from '../lib/speech';
+import { useAuth } from '../../lib/auth';
+import { isProduction, environmentDescription } from '../../lib/environment';
+import { useFamily } from '../../lib/family-context';
+import { usePreferences } from '../../lib/preferences';
+import { fetchPlanLimits, fetchVoiceStatus, indexStatus, type IndexStatus, type VoiceStatus } from '../../lib/api';
+import { useFamilyPlan } from '../../lib/family-plan';
+import { DEFAULT_PLAN_LIMITS, type PlanLimits } from '../../lib/plans';
+import { VOICE_LANGUAGES, phrase, voiceLanguage } from '../../lib/voice-languages';
+import { OCR_LANGUAGES, describeOcrLanguages } from '../../lib/ocr-languages';
+import {
+  chooseVoice, chosenVoice, hasVoiceFor, speak, stopSpeaking, voicesFor, type DeviceVoice,
+} from '../../lib/speech';
+import { ScreenHeader, PlusTag } from '../../components/screen-header';
+import { appVersion } from '../../lib/app-info';
+import { color, radius, shadow, size, space, type } from '../../constants/design';
 
-const settingsGroups = [
-  {
-    title: 'Account',
-    items: [
-      { icon: 'user', label: 'Profile', sub: 'Edit your name and photo' },
-      { icon: 'shield', label: 'Security', sub: 'Password & biometrics' },
-      { icon: 'bell', label: 'Notifications', sub: 'Expiry alerts and reminders' },
-    ],
-  },
-  {
-    title: 'Vault',
-    items: [
-      { icon: 'users', label: 'Manage Families', sub: 'View and switch families' },
-      { icon: 'lock', label: 'Privacy', sub: 'Data isolation settings' },
-      { icon: 'cloud', label: 'Storage', sub: 'Manage cloud backup' },
-    ],
-  },
-  {
-    title: 'Support',
-    items: [
-      { icon: 'help-circle', label: 'Help & FAQ', sub: 'How FamilyVault works' },
-      // The badge says WHICH build this is at a glance; this says what that
-      // means, in the one place someone goes to check.
-      { icon: 'info', label: 'About', sub: isProduction ? 'Version 1.0.0' : `Version 1.0.0 · ${environmentDescription}` },
-    ],
-  },
-];
+// A row with an arrow opens a screen — every one of them. Rows that opened
+// nothing used to sit here, which tells the person using the app that it is
+// broken, or that they did something wrong. Import from Gmail lives on Upload.
+type LinkItem = { icon: string; label: string; sub: string; route: string; value?: string };
+
+function LinkGroup({ title, items }: { title: string; items: LinkItem[] }) {
+  return (
+    <View style={styles.group}>
+      <Text style={styles.groupTitle}>{title}</Text>
+      <View style={styles.groupCard}>
+        {items.map((item, i) => (
+          <TouchableOpacity
+            key={item.route}
+            style={[styles.settingRow, i > 0 && styles.settingRowBorder]}
+            activeOpacity={0.7}
+            onPress={() => router.push(item.route as any)}
+            accessibilityRole="button"
+          >
+            <View style={styles.settingIconWrap}>
+              <Feather name={item.icon as any} size={16} color={color.primary} />
+            </View>
+            <View style={styles.settingText}>
+              <Text style={styles.settingLabel}>{item.label}</Text>
+              <Text style={styles.settingSub}>{item.sub}</Text>
+            </View>
+            {!!item.value && <Text style={styles.settingValue}>{item.value}</Text>}
+            <Feather name="chevron-right" size={16} color="#9CA3AF" />
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+}
 
 /** Supabase function errors arrive in several shapes; show something a person can read. */
 function readableError(err: unknown): string {
@@ -55,9 +68,77 @@ export default function SettingsScreen() {
   const { user, signOut } = useAuth();
   const { membership, currentFamily } = useFamily();
   const {
-    voiceMode, voiceLanguage: voiceLang, documentLanguages,
+    voiceMode, voiceLanguage: voiceLang, documentLanguages, notificationsEnabled,
     setVoiceMode, setVoiceLanguage, setDocumentLanguages,
   } = usePreferences();
+  // On the free plan each person has their own voice chats (041–043); say
+  // how many are left where voice is switched on.
+  const { isFree } = useFamilyPlan();
+  const [limits, setLimits] = useState<PlanLimits>(DEFAULT_PLAN_LIMITS);
+  const [voiceChats, setVoiceChats] = useState<VoiceStatus | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchPlanLimits().then((l) => { if (!cancelled) setLimits(l); });
+    return () => { cancelled = true; };
+  }, []);
+  useFocusEffect(useCallback(() => {
+    if (!currentFamily) return;
+    let cancelled = false;
+    fetchVoiceStatus(currentFamily.id).then((v) => { if (!cancelled) setVoiceChats(v); });
+    return () => { cancelled = true; };
+  }, [currentFamily?.id]));
+  const freeVoiceChats = limits.voiceAnswers.free;
+
+  // Which voice reads the answers: this device's voices for the voice
+  // language, chosen by ear and kept on this device.
+  const [voicePickerOpen, setVoicePickerOpen] = useState(false);
+  const [deviceVoices, setDeviceVoices] = useState<DeviceVoice[]>([]);
+  const [voiceChoice, setVoiceChoice] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([voicesFor(voiceLang), chosenVoice(voiceLang)]).then(([list, chosen]) => {
+      if (cancelled) return;
+      setDeviceVoices(list);
+      setVoiceChoice(chosen && list.some((v) => v.id === chosen) ? chosen : null);
+    });
+    return () => { cancelled = true; };
+  }, [voiceLang]);
+  const pickVoice = (id: string | null) => {
+    setVoiceChoice(id);
+    chooseVoice(voiceLang, id);
+    // Heard straight away, so a voice is chosen by ear.
+    speak(phrase(voiceLang, 'voice_sample'), voiceLang, {}, id);
+  };
+  const closeVoicePicker = () => {
+    stopSpeaking();
+    setVoicePickerOpen(false);
+  };
+  const voiceLabel = deviceVoices.find((v) => v.id === voiceChoice)?.label ?? 'Automatic';
+
+  const accountItems: LinkItem[] = [
+    { icon: 'user', label: 'Profile', sub: 'Your name and phone number', route: '/settings/profile' },
+    { icon: 'shield', label: 'Security', sub: 'Password, signing out, deleting your account', route: '/settings/security' },
+    {
+      icon: 'bell', label: 'Notifications', sub: 'Expiry alerts and family news',
+      route: '/settings/notifications', value: notificationsEnabled ? 'On' : 'Off',
+    },
+  ];
+  const vaultItems: LinkItem[] = [
+    { icon: 'users', label: 'Manage Families', sub: 'View and switch families', route: '/family' },
+    { icon: 'hard-drive', label: 'Storage', sub: 'Your family\'s plan, and how much of its space is used', route: '/settings/storage' },
+    { icon: 'star', label: 'Family Plus', sub: 'What Plus gives, side by side with Free', route: '/plus' },
+    { icon: 'lock', label: 'Privacy', sub: 'Who can see your documents', route: '/settings/privacy' },
+  ];
+  const helpItems: LinkItem[] = [
+    { icon: 'help-circle', label: 'Help & FAQ', sub: 'Answers, feedback and contact', route: '/settings/help' },
+    // The badge says WHICH build this is at a glance; About says what that
+    // means, in the one place someone goes to check.
+    {
+      icon: 'info', label: 'About FamilyVault',
+      sub: isProduction ? `Version ${appVersion}` : `Version ${appVersion} · ${environmentDescription}`,
+      route: '/settings/about',
+    },
+  ];
   const [langPickerOpen, setLangPickerOpen] = useState(false);
   const [docLangPickerOpen, setDocLangPickerOpen] = useState(false);
 
@@ -154,6 +235,8 @@ export default function SettingsScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
+      <ScreenHeader title="Settings" />
+
       <ScrollView showsVerticalScrollIndicator={false}>
         {/* Profile Card */}
         <LinearGradient
@@ -174,30 +257,8 @@ export default function SettingsScreen() {
           </View>
         </LinearGradient>
 
-        {/* Settings Groups */}
-        {settingsGroups.map((group, gIdx) => (
-          <View key={gIdx} style={styles.group}>
-            <Text style={styles.groupTitle}>{group.title}</Text>
-            <View style={styles.groupCard}>
-              {group.items.map((item, iIdx) => (
-                <TouchableOpacity
-                  key={iIdx}
-                  style={[styles.settingRow, iIdx > 0 && styles.settingRowBorder]}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.settingIconWrap}>
-                    <Feather name={item.icon as any} size={18} color="#2A3D66" />
-                  </View>
-                  <View style={styles.settingText}>
-                    <Text style={styles.settingLabel}>{item.label}</Text>
-                    <Text style={styles.settingSub}>{item.sub}</Text>
-                  </View>
-                  <Feather name="chevron-right" size={18} color="#9CA3AF" />
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-        ))}
+        <LinkGroup title="Account" items={accountItems} />
+        <LinkGroup title="Vault" items={vaultItems} />
 
         {/* Accessibility — the one group with live controls */}
         <View style={styles.group}>
@@ -205,7 +266,7 @@ export default function SettingsScreen() {
           <View style={styles.groupCard}>
             <View style={styles.settingRow}>
               <View style={styles.settingIconWrap}>
-                <Feather name="mic" size={18} color="#2A3D66" />
+                <Feather name="mic" size={16} color={color.primary} />
               </View>
               <View style={styles.settingText}>
                 <Text style={styles.settingLabel}>Voice assistant</Text>
@@ -219,20 +280,47 @@ export default function SettingsScreen() {
                 accessibilityLabel="Voice assistant"
               />
             </View>
+            {(voiceChats ? voiceChats.limit != null : isFree && freeVoiceChats != null) && (
+              <View style={[styles.settingRow, styles.settingRowBorder, styles.plusNote]}>
+                <PlusTag link />
+                <Text style={styles.plusNoteText}>
+                  {voiceChats?.limit != null
+                    ? voiceChats.left === 0
+                      ? `You have used your ${voiceChats.limit} free voice chats. Family Plus brings voice back: every question by voice, every answer read aloud.`
+                      : `You have ${voiceChats.left} of ${voiceChats.limit} free voice chats left: a question asked by voice or an answer read aloud, one per question. Everyone in the family has their own ${voiceChats.limit}. Family Plus has no limit.`
+                    : `On the free plan, each person has ${freeVoiceChats} free voice chats: a question asked by voice or an answer read aloud, one per question. Family Plus has no limit.`}
+                </Text>
+              </View>
+            )}
             <TouchableOpacity
               style={[styles.settingRow, styles.settingRowBorder]}
               activeOpacity={0.7}
               onPress={() => setLangPickerOpen(true)}
             >
               <View style={styles.settingIconWrap}>
-                <Feather name="globe" size={18} color="#2A3D66" />
+                <Feather name="globe" size={16} color={color.primary} />
               </View>
               <View style={styles.settingText}>
                 <Text style={styles.settingLabel}>Voice language</Text>
                 <Text style={styles.settingSub}>What you speak, and what it speaks back</Text>
               </View>
               <Text style={styles.settingValue}>{voiceLanguage(voiceLang).native}</Text>
-              <Feather name="chevron-right" size={18} color="#9CA3AF" />
+              <Feather name="chevron-right" size={16} color="#9CA3AF" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.settingRow, styles.settingRowBorder]}
+              activeOpacity={0.7}
+              onPress={() => setVoicePickerOpen(true)}
+            >
+              <View style={styles.settingIconWrap}>
+                <Feather name="volume-2" size={16} color={color.primary} />
+              </View>
+              <View style={styles.settingText}>
+                <Text style={styles.settingLabel}>Voice</Text>
+                <Text style={styles.settingSub}>Who reads the answers on this device</Text>
+              </View>
+              <Text style={styles.settingValue} numberOfLines={1}>{voiceLabel}</Text>
+              <Feather name="chevron-right" size={16} color="#9CA3AF" />
             </TouchableOpacity>
           </View>
         </View>
@@ -247,7 +335,7 @@ export default function SettingsScreen() {
               onPress={() => setDocLangPickerOpen(true)}
             >
               <View style={styles.settingIconWrap}>
-                <Feather name="file-text" size={18} color="#2A3D66" />
+                <Feather name="file-text" size={16} color={color.primary} />
               </View>
               <View style={styles.settingText}>
                 <Text style={styles.settingLabel}>Document languages</Text>
@@ -256,7 +344,7 @@ export default function SettingsScreen() {
               <Text style={styles.settingValue} numberOfLines={1}>
                 {describeOcrLanguages(documentLanguages)}
               </Text>
-              <Feather name="chevron-right" size={18} color="#9CA3AF" />
+              <Feather name="chevron-right" size={16} color="#9CA3AF" />
             </TouchableOpacity>
           </View>
         </View>
@@ -272,7 +360,7 @@ export default function SettingsScreen() {
               onPress={rebuildIndex}
             >
               <View style={styles.settingIconWrap}>
-                <Feather name="refresh-cw" size={18} color="#2A3D66" />
+                <Feather name="refresh-cw" size={16} color={color.primary} />
               </View>
               <View style={styles.settingText}>
                 <Text style={styles.settingLabel}>Search index</Text>
@@ -287,6 +375,8 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        <LinkGroup title="Help" items={helpItems} />
+
         {/* Sign Out */}
         <View style={styles.signOutSection}>
           <TouchableOpacity
@@ -294,7 +384,7 @@ export default function SettingsScreen() {
             onPress={handleSignOut}
             activeOpacity={0.8}
           >
-            <Feather name="log-out" size={18} color="#DC2626" />
+            <Feather name="log-out" size={16} color={color.danger} />
             <Text style={styles.signOutText}>Sign Out</Text>
           </TouchableOpacity>
         </View>
@@ -326,11 +416,55 @@ export default function SettingsScreen() {
                         {l.english}{unavailable ? ' · No voice on this phone' : ''}
                       </Text>
                     </View>
-                    {selected && <Feather name="check" size={20} color="#2A3D66" />}
+                    {selected && <Feather name="check" size={18} color={color.primary} />}
                   </TouchableOpacity>
                 );
               })}
             </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={voicePickerOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={closeVoicePicker}
+      >
+        <Pressable style={styles.sheetBackdrop} onPress={closeVoicePicker}>
+          <Pressable style={styles.sheet} onPress={() => {}}>
+            <Text style={styles.sheetTitle}>Voice for {voiceLanguage(voiceLang).english}</Text>
+            <Text style={styles.sheetNote}>
+              {deviceVoices.length
+                ? 'Tap a voice to hear it. The one you tap last reads your answers on this device.'
+                : `This device has no ${voiceLanguage(voiceLang).english} voice of its own, so answers are read in its default voice. A phone's settings, or another browser, may offer more voices.`}
+            </Text>
+            <ScrollView style={styles.sheetList}>
+              {[{ id: null as string | null, label: 'Automatic', note: 'The best voice for the language' }, ...deviceVoices].map((v, i) => {
+                const selected = v.id === voiceChoice;
+                return (
+                  <TouchableOpacity
+                    key={v.id ?? 'automatic'}
+                    style={[styles.langRow, i > 0 && styles.settingRowBorder]}
+                    activeOpacity={0.7}
+                    onPress={() => pickVoice(v.id)}
+                    accessibilityRole="radio"
+                    accessibilityState={{ checked: selected }}
+                  >
+                    <View style={styles.settingText}>
+                      <Text style={[styles.langNative, selected && styles.langSelected]} numberOfLines={2}>{v.label}</Text>
+                      {!!v.note && <Text style={styles.settingSub}>{v.note}</Text>}
+                    </View>
+                    {selected
+                      ? <Feather name="check" size={18} color={color.primary} />
+                      : <Feather name="play-circle" size={18} color="#9CA3AF" />}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+            <TouchableOpacity style={styles.sheetDone} onPress={closeVoicePicker} accessibilityRole="button">
+              <Text style={styles.sheetDoneText}>Done</Text>
+            </TouchableOpacity>
           </Pressable>
         </Pressable>
       </Modal>
@@ -367,8 +501,8 @@ export default function SettingsScreen() {
                     </View>
                     <Feather
                       name={selected ? 'check-square' : 'square'}
-                      size={20}
-                      color={selected ? '#2A3D66' : '#D1D5DB'}
+                      size={18}
+                      color={selected ? color.primary : '#D1D5DB'}
                     />
                   </TouchableOpacity>
                 );
@@ -382,115 +516,119 @@ export default function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F8F9FC' },
+  safe: { flex: 1, backgroundColor: color.background },
   profileCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
-    margin: 20,
-    padding: 20,
-    borderRadius: 24,
-    boxShadow: '0px 4px 12px rgba(42, 61, 102, 0.3)',
-    elevation: 6,
+    gap: space.md,
+    margin: space.lg,
+    padding: space.lg,
+    borderRadius: radius.card,
+    boxShadow: '0px 2px 8px rgba(42, 61, 102, 0.2)',
+    elevation: 3,
   },
   avatarWrap: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: 'rgba(255,255,255,0.2)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarInitial: { fontSize: 26, fontWeight: '700', color: '#FFFFFF' },
-  profileInfo: { flex: 1 },
-  profileName: { fontSize: 18, fontWeight: '700', color: '#FFFFFF' },
-  profileEmail: { fontSize: 13, color: 'rgba(255,255,255,0.75)', marginTop: 2 },
+  avatarInitial: { fontSize: 20, fontWeight: '600', color: '#FFFFFF' },
+  profileInfo: { flex: 1, minWidth: 0 },
+  profileName: { ...type.heading, color: '#FFFFFF' },
+  profileEmail: { ...type.caption, color: 'rgba(255,255,255,0.8)' },
   adminBadge: {
     backgroundColor: 'rgba(255,255,255,0.2)',
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 3,
+    borderRadius: radius.pill,
+    paddingHorizontal: space.sm,
+    paddingVertical: 2,
     alignSelf: 'flex-start',
-    marginTop: 6,
+    marginTop: space.xs,
   },
-  adminBadgeText: { fontSize: 11, color: '#FFFFFF', fontWeight: '500' },
-  group: { paddingHorizontal: 20, marginBottom: 20 },
-  groupTitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#9CA3AF',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginBottom: 8,
-  },
+  adminBadgeText: { fontSize: 12, color: '#FFFFFF', fontWeight: '500', textTransform: 'capitalize' },
+  group: { paddingHorizontal: space.lg, marginBottom: space.lg },
+  groupTitle: { ...type.overline, marginBottom: space.sm, marginLeft: space.xs },
   groupCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.06)',
-    elevation: 3,
+    backgroundColor: color.surface,
+    borderRadius: radius.card,
+    ...shadow.card,
   },
   settingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    minHeight: 64,
+    gap: space.md,
+    paddingHorizontal: space.lg,
+    paddingVertical: 10,
+    minHeight: size.row,
   },
   settingRowBorder: {
     borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
+    borderTopColor: color.divider,
   },
   settingIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: '#EFF6FF',
+    width: size.iconBox,
+    height: size.iconBox,
+    borderRadius: 8,
+    backgroundColor: color.tint,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  settingText: { flex: 1 },
-  settingLabel: { fontSize: 15, fontWeight: '500', color: '#1F2937' },
-  settingSub: { fontSize: 12, color: '#9CA3AF', marginTop: 1 },
-  settingValue: { fontSize: 15, color: '#4B5563', maxWidth: 140 },
-  settingAction: { fontSize: 15, fontWeight: '600', color: '#2A3D66' },
+  settingText: { flex: 1, minWidth: 0 },
+  settingLabel: type.label,
+  settingSub: type.caption,
+  settingValue: { ...type.caption, maxWidth: 120 },
+  settingAction: { ...type.button, color: color.primary },
+  plusNote: { alignItems: 'flex-start', minHeight: 0 },
+  plusNoteText: { ...type.caption, flex: 1, color: color.textBody, marginTop: 2 },
   sheetBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(13, 17, 23, 0.45)',
     justifyContent: 'flex-end',
   },
   sheet: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingTop: 20,
-    paddingBottom: 32,
+    backgroundColor: color.surface,
+    borderTopLeftRadius: radius.card,
+    borderTopRightRadius: radius.card,
+    paddingTop: space.lg,
+    paddingBottom: space.xl,
     maxHeight: '75%',
   },
-  sheetTitle: { fontSize: 17, fontWeight: '700', color: '#2A3D66', paddingHorizontal: 20, marginBottom: 8 },
-  sheetNote: { fontSize: 12, color: '#6B7280', paddingHorizontal: 20, marginBottom: 12, lineHeight: 17 },
-  sheetList: { paddingHorizontal: 4 },
+  sheetTitle: { ...type.title, paddingHorizontal: space.lg, marginBottom: space.sm },
+  sheetNote: { ...type.caption, paddingHorizontal: space.lg, marginBottom: space.md },
+  sheetList: { paddingHorizontal: 0 },
+  sheetDone: {
+    marginTop: space.md,
+    marginHorizontal: space.lg,
+    height: size.control,
+    borderRadius: radius.control,
+    backgroundColor: color.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sheetDoneText: { ...type.button, color: '#FFFFFF' },
   langRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    minHeight: 60,
+    gap: space.md,
+    paddingHorizontal: space.lg,
+    paddingVertical: 10,
+    minHeight: size.row,
   },
-  langNative: { fontSize: 18, color: '#1F2937' },
-  langSelected: { color: '#2A3D66', fontWeight: '700' },
-  signOutSection: { paddingHorizontal: 20, paddingBottom: 32 },
+  langNative: type.label,
+  langSelected: { color: color.primary, fontWeight: '600' },
+  signOutSection: { paddingHorizontal: space.lg, paddingBottom: space.xl },
   signOutBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: space.sm,
     backgroundColor: '#FEF2F2',
-    borderRadius: 16,
-    paddingVertical: 16,
+    borderRadius: radius.control,
+    minHeight: size.control,
     borderWidth: 1,
     borderColor: '#FECACA',
   },
-  signOutText: { fontSize: 15, fontWeight: '600', color: '#DC2626' },
+  signOutText: { ...type.button, color: color.danger },
 });

@@ -10,10 +10,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../lib/auth';
 import { useFamily } from '../lib/family-context';
 import { createNewFamily } from '../lib/api';
+import { BackButton } from '../components/back-button';
+import { color, radius, size, space, type } from '../constants/design';
 
 export default function SetupFamilyScreen() {
   const { user } = useAuth();
-  const { refreshFamilies } = useFamily();
+  // First sign-in has nowhere to go back to — the app sends people here
+  // until they have a vault. Someone who already has one came from Manage
+  // Family to make another, and needs a way out.
+  const { families, refreshFamilies } = useFamily();
   const [familyName, setFamilyName] = useState('');
   const [description, setDescription] = useState('');
   const [loading, setLoading] = useState(false);
@@ -39,7 +44,13 @@ export default function SetupFamilyScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={styles.container}>
+      {families.length > 0 && (
+        <View style={styles.backRow}>
+          <BackButton fallback="/family" />
+        </View>
+      )}
+      <View style={[styles.container, families.length > 0 && styles.containerBelowBack]}>
+
         {/* Header */}
         <View style={styles.header}>
           <LinearGradient
@@ -52,7 +63,7 @@ export default function SetupFamilyScreen() {
           </LinearGradient>
           <Text style={styles.title}>Create Your Family Vault</Text>
           <Text style={styles.subtitle}>
-            Set up a secure space for your family's documents. You can invite members after creation.
+            Set up a secure space for your family's documents. You can add members after creation.
           </Text>
         </View>
 
@@ -61,7 +72,7 @@ export default function SetupFamilyScreen() {
           <View style={styles.field}>
             <Text style={styles.fieldLabel}>Family Name</Text>
             <View style={styles.inputWrapper}>
-              <Feather name="users" size={20} color="#9CA3AF" style={styles.inputIcon} />
+              <Feather name="users" size={18} color="#9CA3AF" style={styles.inputIcon} />
               <TextInput
                 placeholder="e.g. The Sharma Family"
                 placeholderTextColor="#9CA3AF"
@@ -78,7 +89,7 @@ export default function SetupFamilyScreen() {
               Description <Text style={styles.fieldOptional}>(optional)</Text>
             </Text>
             <View style={styles.inputWrapper}>
-              <Feather name="file-text" size={20} color="#9CA3AF" style={styles.inputIcon} />
+              <Feather name="file-text" size={18} color="#9CA3AF" style={styles.inputIcon} />
               <TextInput
                 placeholder="A short description"
                 placeholderTextColor="#9CA3AF"
@@ -103,7 +114,7 @@ export default function SetupFamilyScreen() {
             style={[styles.createBtn, loading && styles.btnDisabled]}
           >
             {loading ? (
-              <ActivityIndicator color="#FFFFFF" />
+              <ActivityIndicator size="small" color="#FFFFFF" />
             ) : (
               <Text style={styles.createBtnText}>Create Family Vault</Text>
             )}
@@ -112,7 +123,7 @@ export default function SetupFamilyScreen() {
 
         {/* Info Card */}
         <View style={styles.infoCard}>
-          <Feather name="lock" size={18} color="#2A3D66" />
+          <Feather name="lock" size={16} color={color.primary} style={styles.infoIcon} />
           <View style={styles.infoTextWrap}>
             <Text style={styles.infoTitle}>Private & Isolated</Text>
             <Text style={styles.infoSub}>
@@ -126,87 +137,91 @@ export default function SetupFamilyScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F8F9FC' },
+  safe: { flex: 1, backgroundColor: color.background },
+  // The arrow sits where every other screen has it: the top-left of a 56px bar.
+  backRow: { height: size.bar, justifyContent: 'center', paddingLeft: space.xs },
   container: {
     flex: 1,
-    paddingHorizontal: 24,
-    paddingTop: 48,
+    paddingHorizontal: space.lg,
+    paddingTop: 40,
     maxWidth: 390,
     alignSelf: 'center',
     width: '100%',
   },
+  containerBelowBack: { paddingTop: space.sm },
   header: {
     alignItems: 'center',
-    marginBottom: 40,
+    marginBottom: space.xl + 8,
   },
   iconBox: {
-    width: 80,
-    height: 80,
-    borderRadius: 20,
+    width: 64,
+    height: 64,
+    borderRadius: radius.card,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+    marginBottom: space.lg,
   },
-  iconEmoji: { fontSize: 36 },
+  iconEmoji: { fontSize: 28 },
   title: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#2A3D66',
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '600',
+    color: color.primary,
     textAlign: 'center',
-    marginBottom: 8,
+    marginBottom: space.sm,
   },
   subtitle: {
-    fontSize: 15,
-    color: '#6B7280',
+    ...type.body,
+    color: color.textMuted,
     textAlign: 'center',
-    lineHeight: 22,
     maxWidth: 300,
   },
-  form: { gap: 16, marginBottom: 24 },
+  form: { gap: space.lg, marginBottom: space.xl },
   field: {},
   fieldLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#374151',
-    marginBottom: 8,
+    ...type.caption,
+    fontWeight: '500',
+    color: color.textBody,
+    marginBottom: 6,
   },
   fieldOptional: { fontWeight: '400', color: '#9CA3AF' },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
+    backgroundColor: color.surface,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    minHeight: 56,
-    paddingHorizontal: 16,
+    borderColor: color.inputBorder,
+    minHeight: size.control,
+    paddingHorizontal: space.md,
   },
-  inputIcon: { marginRight: 8 },
+  inputIcon: { marginRight: space.sm },
   input: {
     flex: 1,
-    fontSize: 16,
-    color: '#1F2937',
-    paddingVertical: 4,
+    fontSize: type.body.fontSize,
+    color: color.text,
+    paddingVertical: space.xs,
     outlineStyle: 'none',
   } as any,
   createBtn: {
-    borderRadius: 14,
+    borderRadius: radius.control,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 56,
-    marginBottom: 24,
+    minHeight: size.control,
+    marginBottom: space.xl,
   },
   btnDisabled: { opacity: 0.7 },
-  createBtnText: { color: '#FFFFFF', fontSize: 17, fontWeight: '600' },
+  createBtnText: { ...type.button, color: '#FFFFFF' },
   infoCard: {
     flexDirection: 'row',
-    backgroundColor: '#EFF6FF',
-    borderRadius: 16,
-    padding: 16,
-    gap: 12,
+    backgroundColor: color.tint,
+    borderRadius: radius.control,
+    padding: space.md,
+    gap: space.md,
     alignItems: 'flex-start',
   },
+  infoIcon: { marginTop: 2 },
   infoTextWrap: { flex: 1 },
-  infoTitle: { fontSize: 14, fontWeight: '600', color: '#2A3D66', marginBottom: 4 },
-  infoSub: { fontSize: 13, color: '#6B7280', lineHeight: 19 },
+  infoTitle: { fontSize: 14, lineHeight: 20, fontWeight: '600', color: color.primary, marginBottom: 2 },
+  infoSub: type.caption,
 });

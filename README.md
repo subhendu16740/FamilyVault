@@ -12,15 +12,20 @@ FamilyVault brings all your family's important documents into one secure, shared
 
 ### Implemented
 
-- **Family Vault Creation** — Create a private family vault and invite members by email
-- **Role-Based Access** — Admins manage members, invitations, and roles; viewers have read access
-- **Member Management** — Invite members, promote to admin, remove members, revoke pending invitations
+- **Family Vault Creation** — Create a private family vault and add family members to it
+- **Role-Based Access** — Only admins add and remove members and change roles; viewers have read access
+- **Member Management** — Add a member by the email they sign in with (no invitations or requests to join), promote to admin, remove members; anyone can switch between their families or leave one
 - **Secure Authentication** — Email/password sign-up, Google OAuth, biometric login UI
 - **Home Dashboard** — At-a-glance stats (documents, members, categories), recent documents, quick actions
 - **Document Viewer** — View document details with metadata, category, and owner info
 - **Search Interface** — Category-based browsing and keyword search across documents
+- **Saved Chats** — Save chat on Ask keeps a conversation; the clock at the top right lists them to carry on or delete. Only you can see them, and they go if you leave the family
 - **Upload Flow** — Multi-step upload with source selection, metadata tagging, and owner assignment
-- **Profile Drawer** — Slide-out navigation for family management, settings, and sign out
+- **Import from Gmail** ★ (web) — Connect your own Gmail; FamilyVault lists the attachments that look like documents, and imports the ones you tick. Only you see what it finds; disconnecting makes it forget
+- **Menu Drawer** — Slides in from the left from the name button on Home: Home, Manage Family, Reminders ★ and Settings, with Sign Out
+- **Reminders** ★ — Every document with an expiry date, soonest first. ★ Family Plus marks what the coming paid plan will add (reminders 90, 30 and 7 days ahead)
+- **Settings** — Profile (name and phone), Security (password, sign out everywhere), Notifications on/off, Storage (each family's use of its free 1 GB, and what you added; more space ★), Privacy, Help & FAQ with feedback, and About (version and release date)
+- **One Top Bar Everywhere** — A back arrow at the top left of every screen, with the title beside it, that works even after a refresh; one compact type and size scale (`src/constants/design.ts`) across the app
 - **23 Document Categories** — Pre-configured categories including Passport, Driving License, Health Insurance, Property Deed, Tax Return, Birth Certificate, and more
 - **In-App Confirmation Dialogs** — Custom modal dialogs for destructive actions
 - **Onboarding Flow** — 3-slide introduction explaining the app's value

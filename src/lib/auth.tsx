@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { Platform } from 'react-native';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from './supabase';
+import { forgetPushOnThisDevice } from './push';
 
 // Only import and run browser/auth-session APIs on client side (avoid SSR crashes)
 let WebBrowser: typeof import('expo-web-browser') | null = null;
@@ -120,6 +121,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
+    // Before the session goes: this device stops getting the account's notifications (034).
+    await forgetPushOnThisDevice();
     await supabase.auth.signOut();
   };
 

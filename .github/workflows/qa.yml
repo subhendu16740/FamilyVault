@@ -1,0 +1,171 @@
+# QA: upload synthetic SPECIMEN documents to DEV, ask questions about them,
+# and check the answers — plus the database, access and upload checks that
+# guard failures this project has actually had. See qa/README.md.
+#
+# WHEN IT RUNS
+#
+#   after "Deploy Edge Functions" succeeds for dev   smoke    3 questions
+#   nightly at 03:10 IST (21:40 UTC)                 nightly  8–9 questions
+#   a push that changes qa/ (any branch but main)    smoke    3 questions
+#   by hand: Actions → QA → Run workflow             any suite, including
+#                                                    languages (12 questions,
+#                                                    by hand only)
+#
+# WHY IT CANNOT EAT THE FREE GROQ BUDGET
+#
+#   - One run at a time: later runs queue instead of overlapping.
+#   - Outside the nightly run, at most TWO runs a day ask questions. Any
+#     later run that day still does every free check (database, access,
+#     upload) but asks nothing.
+#   - Inside a run, questions go one at a time, 90s apart, back off when
+#     Groq rate-limits, and stop entirely if it does so twice in a row
+#     (qa/lib/budget.mjs). A rate limit is "inconclusive", never a failure.
+#
+#   Worst day: 2 × smoke + nightly ≈ 100K tokens on openai/gpt-oss-20b —
+#   half its free 200K/day — and ≈ 40K on openai/gpt-oss-120b, the model
+#   real answers come from. If DEV and PROD share a Groq key, this is the
+#   day's worst case for PROD too; giving DEV its own key removes it.
+#
+# PROD IS NEVER TESTED. The runner refuses a PROD URL outright. Its only
+# PROD access is two read-only catalog queries through the Management API —
+# the 023 sweep and the 024 fingerprint CLAUDE.md says to run on both.
+#
+# SECRETS
+#   QA_A_EMAIL, QA_A_PASSWORD, QA_B_EMAIL, QA_B_PASSWORD  the two DEV QA accounts
+#   SUPABASE_ACCESS_TOKEN  already here for the deploy workflow; used for the
+#                          database checks and to look up DEV's anon key
+# Optional repository variable QA_SUPABASE_ANON_KEY skips that lookup.
+
+name: QA
+
+on:
+  workflow_run:
+    workflows: ['Deploy Edge Functions']
+    types: [completed]
+    branches: [dev]
+  schedule:
+    - cron: '40 21 * * *'
+  push:
+    branches-ignore: [main]
+    paths:
+      - 'qa/**'
+      - '.github/workflows/qa.yml'
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: 'smoke = 3 questions · nightly = 8–9 · full = 15 (about half the free Groq day) · languages = 12 in eight Indian languages (about 43%) · no-questions = spends no Groq budget'
+        type: choice
+        default: smoke
+        options: [smoke, nightly, full, languages, no-questions]
+
+concurrency:
+  group: qa-dev
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read # the budget gate reads this workflow's own runs
+
+jobs:
+  qa:
+    # After a deploy, only when the deploy itself succeeded.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      DEV_PROJECT_REF: tkqsfoppwlyupentuixy
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # After a deploy, test the commit that was deployed.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: qa/package-lock.json
+
+      - name: Install
+        working-directory: qa
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+        # --omit=dev: Playwright and the fonts only draw fixtures, locally.
+        run: npm ci --omit=dev --no-audit --no-fund
+
+      - name: Self-test and fixture check (offline, spends nothing)
+        working-directory: qa
+        run: |
+          node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tools/selftest.mjs
+          node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tools/check-fixtures.mjs
+
+      - name: Choose the suite (Groq budget gate)
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          REQUESTED: ${{ inputs.suite }}
+        run: |
+          case "$EVENT" in
+            schedule)          SUITE=nightly ;;
+            workflow_dispatch) SUITE="${REQUESTED:-smoke}" ;;
+            *)
+              # Earlier push / post-deploy runs today. If the count cannot be
+              # read, assume the worst: protecting the budget is the safe side.
+              TODAY=$(date -u +%F)
+              EARLIER=$(gh api -X GET "repos/$GITHUB_REPOSITORY/actions/workflows/qa.yml/runs" \
+                          -f created=">=$TODAY" -f per_page=100 \
+                          --jq "[.workflow_runs[] | select(.id != $GITHUB_RUN_ID) | select(.event == \"push\" or .event == \"workflow_run\")] | length" \
+                        || echo 99)
+              if [ "$EARLIER" -ge 2 ]; then
+                SUITE=no-questions
+                echo "::notice title=Groq budget::$EARLIER earlier QA runs today already asked questions; this run does the free checks only."
+              else
+                SUITE=smoke
+              fi ;;
+          esac
+          echo "suite=$SUITE" >> "$GITHUB_OUTPUT"
+          echo "Suite: $SUITE"
+
+      - name: DEV anon key
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          FROM_VARIABLE: ${{ vars.QA_SUPABASE_ANON_KEY }}
+        run: |
+          KEY="$FROM_VARIABLE"
+          if [ -z "$KEY" ] && [ -n "$SUPABASE_ACCESS_TOKEN" ]; then
+            KEY=$(curl -sf -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+                    "https://api.supabase.com/v1/projects/$DEV_PROJECT_REF/api-keys" \
+                  | jq -r '[.[] | select(.name == "anon")][0].api_key // empty') || true
+          fi
+          if [ -z "$KEY" ]; then
+            echo "::error::No DEV anon key. Set the QA_SUPABASE_ANON_KEY repository variable, or check SUPABASE_ACCESS_TOKEN."
+            exit 1
+          fi
+          echo "::add-mask::$KEY"
+          echo "QA_SUPABASE_ANON_KEY=$KEY" >> "$GITHUB_ENV"
+
+      - name: Run QA
+        working-directory: qa
+        env:
+          SUITE: ${{ steps.plan.outputs.suite }}
+          QA_SUPABASE_URL: https://${{ env.DEV_PROJECT_REF }}.supabase.co
+          QA_A_EMAIL: ${{ secrets.QA_A_EMAIL }}
+          QA_A_PASSWORD: ${{ secrets.QA_A_PASSWORD }}
+          QA_B_EMAIL: ${{ secrets.QA_B_EMAIL }}
+          QA_B_PASSWORD: ${{ secrets.QA_B_PASSWORD }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: node run.mjs --suite "$SUITE"
+
+      - name: Summary
+        if: always()
+        run: |
+          if [ -f qa/out/summary.md ]; then cat qa/out/summary.md >> "$GITHUB_STEP_SUMMARY"; fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-results-${{ github.run_id }}
+          path: qa/out/
+          retention-days: 30
+          if-no-files-found: ignore

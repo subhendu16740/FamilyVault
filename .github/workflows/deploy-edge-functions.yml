@@ -91,12 +91,47 @@ jobs:
           echo "Deploying to ${{ steps.target.outputs.name }} (${{ steps.target.outputs.ref }})"
 
           # --use-api bundles server-side, so the runner needs no Docker.
-          for fn in ingest-document rag-search invite-member reembed-index; do
+          for fn in ingest-document rag-search add-member link-account reembed-index gmail-connect gmail-scan gmail-import delete-account push share plans payments; do
             echo "::group::$fn"
             supabase functions deploy "$fn" \
               --project-ref "${{ steps.target.outputs.ref }}" \
               --use-api
             echo "::endgroup::"
+          done
+
+          # The two functions deployed WITHOUT the gateway's JWT check, because
+          # the callers carry no Supabase session:
+          #   gmail-callback     Google's redirect back from the consent page.
+          #                      It only relays the browser to the page that
+          #                      started the flow; gmail-connect, which does
+          #                      check, trades the code for a token.
+          #   razorpay-webhook   Razorpay's servers reporting a payment. It acts
+          #                      only on a body signed with the webhook secret.
+          for fn in gmail-callback razorpay-webhook; do
+            echo "::group::$fn (no JWT check)"
+            supabase functions deploy "$fn" \
+              --project-ref "${{ steps.target.outputs.ref }}" \
+              --use-api \
+              --no-verify-jwt
+            echo "::endgroup::"
+          done
+
+      - name: Retire removed functions
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          # Deleting a function from this repo does not delete it from the
+          # project: it stays deployed, and callable, running its old code.
+          # invite-member created invitations and sent sign-up emails; since
+          # migration 025 members are added by add-member instead, and the old
+          # endpoint must not outlive it. Deleting one already gone fails,
+          # which is the normal case after the first deploy.
+          for fn in invite-member; do
+            if supabase functions delete "$fn" --project-ref "${{ steps.target.outputs.ref }}" --yes; then
+              echo "Retired $fn"
+            else
+              echo "$fn is not deployed here (already retired)"
+            fi
           done
 
       - name: Summary
@@ -106,8 +141,15 @@ jobs:
             echo ""
             echo "- \`ingest-document\`"
             echo "- \`rag-search\`"
-            echo "- \`invite-member\`"
+            echo "- \`add-member\`, \`link-account\`"
             echo "- \`reembed-index\`"
+            echo "- \`gmail-connect\`, \`gmail-scan\`, \`gmail-import\`"
+            echo "- \`delete-account\`"
+            echo "- \`push\` (reminders on devices), \`share\` (share links)"
+            echo "- \`plans\` (when Family Plus ends: the clean-up after 30 days)"
+            echo "- \`payments\` (paying for Family Plus with Razorpay)"
+            echo "- \`gmail-callback\` (no JWT check — Google's redirect target)"
+            echo "- \`razorpay-webhook\` (no JWT check — Razorpay reporting a payment, signed)"
             echo ""
             echo "Migrations are not run by this workflow — apply SQL in the dashboard."
           } >> "$GITHUB_STEP_SUMMARY"

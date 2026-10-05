@@ -38,3 +38,25 @@ export async function storageSet(key: string, value: string): Promise<void> {
     // ignore
   }
 }
+
+export async function storageRemove(key: string): Promise<void> {
+  try {
+    if (nativeStorage) return await nativeStorage.removeItem(key);
+    if (typeof window !== 'undefined' && window.localStorage) window.localStorage.removeItem(key);
+  } catch {
+    // ignore
+  }
+}
+
+// What this device keeps for one account, keyed by its id so two people on
+// one device never read each other's. Every per-account key is named here,
+// so deleting an account (forgetAccount) removes all of them — "nothing
+// kept" includes the device.
+export const accountKey = {
+  family: (userId: string) => `fv:family:${userId}`, // the vault last chosen
+  prefs: (userId: string) => `fv:prefs:${userId}`,   // voice, languages, notifications
+};
+
+export async function forgetAccount(userId: string): Promise<void> {
+  await Promise.all(Object.values(accountKey).map((key) => storageRemove(key(userId))));
+}

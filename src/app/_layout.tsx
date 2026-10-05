@@ -17,7 +17,12 @@ function AuthGate() {
     if (authLoading) return;
 
     const seg = segments[0] as string | undefined;
-    const inProtectedRoute = seg === '(tabs)' || seg === 'document' || seg === 'family' || seg === 'settings' || seg === 'setup-family' || seg === 'notifications';
+    // A shared document (036) is for anyone with the link, signed in or not:
+    // neither sent to sign in nor sent Home.
+    if (seg === 's') return;
+    // A route missing here sends a signed-in person to /home — which, for
+    // gmail-import, would throw away the code Google just sent back.
+    const inProtectedRoute = seg === '(tabs)' || seg === 'document' || seg === 'family' || seg === 'settings' || seg === 'setup-family' || seg === 'notifications' || seg === 'gmail-import' || seg === 'reminders' || seg === 'saved-chats' || seg === 'family-tree' || seg === 'person' || seg === 'emergency' || seg === 'plus';
 
     if (!session && inProtectedRoute) {
       router.replace('/login' as any);
@@ -36,6 +41,23 @@ export default function RootLayout() {
     Feather.loadFont()
       .then(() => setFontsLoaded(true))
       .catch(() => setFontsLoaded(true));
+  }, []);
+
+  // Web: what makes FamilyVault installable (public/manifest.json) — an
+  // iPhone shows notifications only to a web app added to its Home Screen
+  // (034). Added here because the single-page export never uses +html.tsx.
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+    const add = (tag: 'link' | 'meta', attrs: Record<string, string>) => {
+      const selector = tag === 'link' ? `link[rel="${attrs.rel}"]` : `meta[name="${attrs.name}"]`;
+      if (document.head.querySelector(selector)) return;
+      const el = document.createElement(tag);
+      for (const [name, value] of Object.entries(attrs)) el.setAttribute(name, value);
+      document.head.appendChild(el);
+    };
+    add('link', { rel: 'manifest', href: '/manifest.json' });
+    add('link', { rel: 'apple-touch-icon', href: '/icon-192.png' });
+    add('meta', { name: 'theme-color', content: '#2A3D66' });
   }, []);
 
   if (!fontsLoaded) {
@@ -61,6 +83,11 @@ export default function RootLayout() {
           <Stack.Screen name="settings" />
           <Stack.Screen name="document/[id]" />
           <Stack.Screen name="notifications" />
+          <Stack.Screen name="gmail-import" />
+          <Stack.Screen name="reminders" />
+          <Stack.Screen name="saved-chats" />
+          <Stack.Screen name="family-tree" />
+          <Stack.Screen name="person/[id]" />
         </Stack>
         {/* After the Stack, so it draws over every screen. Renders nothing
             in production. */}

@@ -6,12 +6,25 @@ import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../lib/auth';
+import { useFamily } from '../lib/family-context';
 import { fetchNotifications, markNotificationRead, type NotificationRow } from '../lib/api';
+import { ScreenHeader } from '../components/screen-header';
+import { color, radius, shadow, size, space, type } from '../constants/design';
+import { usePreferences } from '../lib/preferences';
 
 const typeConfig: Record<string, { icon: string; bg: string; color: string }> = {
   expiry: { icon: 'clock', bg: '#FEF2F2', color: '#DC2626' },
   upload: { icon: 'upload', bg: '#EFF6FF', color: '#2563EB' },
-  invite: { icon: 'user-plus', bg: '#F0FDF4', color: '#16A34A' },
+  // "Rohan invited you to join Verma Family" — migration 037; answered in Manage Family.
+  invite: { icon: 'mail', bg: '#EFF6FF', color: '#2563EB' },
+  // "Priya joined Verma Family" / "… said no" (037), or "You were added to <family>" (025).
+  member: { icon: 'user-plus', bg: '#F0FDF4', color: '#16A34A' },
+  // "Today is Kamala Verma's 78th birthday" — migration 035.
+  birthday: { icon: 'gift', bg: '#FDF2F8', color: '#DB2777' },
+  // "Rohan shared your PAN by link" — migration 036; opens the document.
+  share: { icon: 'link', bg: '#EFF6FF', color: '#2563EB' },
+  // "Verma Family has Family Plus" — migration 038; opens Settings › Storage.
+  plan: { icon: 'star', bg: '#FEF3C7', color: '#B45309' },
   system: { icon: 'info', bg: '#F3F4F6', color: '#6B7280' },
 };
 
@@ -29,16 +42,20 @@ function getRelativeTime(dateStr: string): string {
 
 export default function NotificationsScreen() {
   const { user } = useAuth();
+  const { currentFamily, switchFamily } = useFamily();
+  const { notificationsEnabled, setNotificationsEnabled } = usePreferences();
   const [notifications, setNotifications] = useState<NotificationRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!user) return;
+    // Switched off in Settings: the list is hidden, so there is nothing to load.
+    if (!user || !notificationsEnabled) return;
+    setLoading(true);
     fetchNotifications(user.id)
       .then(setNotifications)
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [user?.id]);
+  }, [user?.id, notificationsEnabled]);
 
   const handlePress = useCallback(async (notif: NotificationRow) => {
     if (!user) return;
@@ -51,11 +68,30 @@ export default function NotificationsScreen() {
         );
       } catch { /* ignore */ }
     }
+    // Each notification belongs to one family, and it may not be the one on
+    // screen: the document viewer looks documents up in the current family,
+    // so a tap that opens something opens it in the notification's own. (A
+    // family the person has since left falls back to their default, as any
+    // stale choice does.)
+    const opens = !!notif.document_ref || notif.type === 'member' || notif.type === 'birthday' || notif.type === 'plan';
+    if (opens && notif.family_id && notif.family_id !== currentFamily?.id) {
+      switchFamily(notif.family_id);
+    }
     // Navigate to document if linked
     if (notif.document_ref) {
       router.push(`/document/${notif.document_ref}` as any);
+    } else if (notif.type === 'member') {
+      // Where the new family can be switched to, or left.
+      router.push('/family' as any);
+    } else if (notif.type === 'birthday') {
+      router.push('/family-tree' as any);
+    } else if (notif.type === 'plan') {
+      router.push('/settings/storage' as any);
+    } else if (notif.type === 'invite') {
+      // Not their family yet, so no switching: the invitation is answered there.
+      router.push('/family' as any);
     }
-  }, [user]);
+  }, [user, currentFamily?.id, switchFamily]);
 
   const renderItem = ({ item }: { item: NotificationRow }) => {
     const cfg = typeConfig[item.type] || typeConfig.system;
@@ -66,7 +102,7 @@ export default function NotificationsScreen() {
         activeOpacity={0.7}
       >
         <View style={[styles.iconWrap, { backgroundColor: cfg.bg }]}>
-          <Feather name={cfg.icon as any} size={20} color={cfg.color} />
+          <Feather name={cfg.icon as any} size={16} color={cfg.color} />
         </View>
         <View style={styles.content}>
           <Text style={[styles.title, !item.is_read && styles.titleUnread]} numberOfLines={1}>
@@ -82,21 +118,29 @@ export default function NotificationsScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Feather name="arrow-left" size={24} color="#4B5563" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Notifications</Text>
-        <View style={{ width: 32 }} />
-      </View>
+      <ScreenHeader title="Notifications" />
 
-      {loading ? (
+      {!notificationsEnabled ? (
         <View style={styles.center}>
-          <ActivityIndicator size="large" color="#2A3D66" />
+          <Feather name="bell-off" size={32} color="#D1D5DB" />
+          <Text style={styles.emptyTitle}>Notifications are off</Text>
+          <Text style={styles.emptySubtitle}>Nothing has been deleted. Turn them on to see your alerts.</Text>
+          <TouchableOpacity
+            style={styles.turnOnBtn}
+            onPress={() => setNotificationsEnabled(true)}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+          >
+            <Text style={styles.turnOnText}>Turn on notifications</Text>
+          </TouchableOpacity>
+        </View>
+      ) : loading ? (
+        <View style={styles.center}>
+          <ActivityIndicator color={color.primary} />
         </View>
       ) : notifications.length === 0 ? (
         <View style={styles.center}>
-          <Feather name="bell-off" size={48} color="#D1D5DB" />
+          <Feather name="bell-off" size={32} color="#D1D5DB" />
           <Text style={styles.emptyTitle}>No notifications</Text>
           <Text style={styles.emptySubtitle}>You're all caught up!</Text>
         </View>
@@ -114,53 +158,52 @@ export default function NotificationsScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F8F9FC' },
-  header: {
-    flexDirection: 'row',
+  safe: { flex: 1, backgroundColor: color.background },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: space.sm, paddingHorizontal: space.xl },
+  emptyTitle: { ...type.heading, color: color.textMuted },
+  emptySubtitle: { ...type.caption, textAlign: 'center' },
+  turnOnBtn: {
+    marginTop: space.sm,
+    minHeight: size.control,
+    paddingHorizontal: space.lg,
+    borderRadius: radius.control,
+    backgroundColor: color.primary,
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    justifyContent: 'center',
   },
-  backBtn: { padding: 4 },
-  headerTitle: { flex: 1, fontSize: 20, fontWeight: '700', color: '#2A3D66', textAlign: 'center' },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
-  emptyTitle: { fontSize: 16, fontWeight: '600', color: '#6B7280' },
-  emptySubtitle: { fontSize: 13, color: '#9CA3AF' },
-  list: { padding: 16, gap: 10 },
+  turnOnText: { ...type.button, color: '#FFFFFF' },
+  list: { padding: space.lg, gap: space.sm },
   card: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    gap: 12,
-    boxShadow: '0px 1px 4px rgba(0, 0, 0, 0.06)',
-    elevation: 2,
+    backgroundColor: color.surface,
+    borderRadius: radius.control,
+    paddingVertical: space.md,
+    paddingHorizontal: space.lg,
+    gap: space.md,
+    ...shadow.card,
   },
   cardUnread: {
     backgroundColor: '#F0F5FF',
     borderLeftWidth: 3,
-    borderLeftColor: '#2A3D66',
+    borderLeftColor: color.primary,
   },
   iconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: size.iconBox,
+    height: size.iconBox,
+    borderRadius: size.iconBox / 2,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  content: { flex: 1 },
-  title: { fontSize: 14, fontWeight: '500', color: '#374151', marginBottom: 2 },
-  titleUnread: { fontWeight: '700', color: '#1F2937' },
-  message: { fontSize: 13, color: '#6B7280', lineHeight: 18, marginBottom: 4 },
-  time: { fontSize: 11, color: '#9CA3AF' },
+  content: { flex: 1, minWidth: 0 },
+  title: { ...type.label, color: color.textBody, marginBottom: 2 },
+  titleUnread: { fontWeight: '600', color: color.text },
+  message: { ...type.caption, marginBottom: 2 },
+  time: { fontSize: 12, lineHeight: 16, color: '#9CA3AF' },
   dot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#2A3D66',
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: color.primary,
   },
 });

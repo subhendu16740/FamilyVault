@@ -1,4 +1,12 @@
 import { supabase } from './supabase';
+import { longDate, parseDocumentDate } from './dates';
+import { isSaveable, mimeTypeFor, unsupportedFileMessage } from './file-types';
+import type { Gender, KinLink, KinPerson } from '../../supabase/functions/_shared/kinship';
+import { isBloodGroup, type EmergencyCard, type EmergencyCardInput, type EmergencyContact } from './emergency';
+import {
+  DEFAULT_PLAN_LIMITS, PLUS_FOR_SALE, chatStorageFullMessage, fits, localPlusPrices, storageFullMessage,
+  type PlanLimits, type PlanName, type StorageRoom,
+} from './plans';
 import type {
   FamilyWithMembership,
   FamilyMemberWithUser,
@@ -6,6 +14,8 @@ import type {
   FamilyDocumentDetailRow,
   FamilySearchResultRow,
   Database,
+  Json,
+  Tables,
 } from './database.types';
 
 type DocumentCategory = Database['public']['Tables']['document_categories']['Row'];
@@ -14,10 +24,14 @@ type DocumentCategory = Database['public']['Tables']['document_categories']['Row
 
 export async function fetchUserFamilies(userId: string): Promise<FamilyWithMembership[]> {
   // Step 1: get memberships
+  // Oldest membership first, so the default family never changes by itself:
+  // being added to another family must not swap the vault someone sees (and
+  // uploads into) for one chosen by whoever added them.
   const { data: memberships, error: memErr } = await supabase
     .from('family_members')
-    .select('id, family_id, user_id, role')
-    .eq('user_id', userId);
+    .select('id, family_id, user_id, role, joined_at')
+    .eq('user_id', userId)
+    .order('joined_at', { ascending: true });
 
   if (memErr) throw memErr;
   if (!memberships || memberships.length === 0) return [];
@@ -347,61 +361,372 @@ export async function fetchCategories(): Promise<DocumentCategory[]> {
   return data ?? [];
 }
 
-// ─── Invitations ─────────────────────────────────────────────────
+// ─── Adding members (admin only) ─────────────────────────────────
+//
+// Nobody joins a family without saying yes (migration 037): a family admin
+// invites a person who already has an account, by the email they sign in
+// with. They are told by a notification and join only when they accept;
+// until then the family sees them as Pending approval (fetchFamilyInvites).
+// It goes through the add-member Edge Function because only the server may
+// look an account up by email.
 
-export interface InvitationRow {
-  id: string;
-  family_id: string;
-  invited_by: string;
-  invitee_email: string;
-  role: string;
-  status: string;
-  token: string;
-  expires_at: string;
-  created_at: string;
-}
+export type AddMemberOutcome =
+  /** Invited: they join when they accept. */
+  | { status: 'invited'; email: string }
+  /** An add-member deployed before 037 adds at once. */
+  | { status: 'added'; displayName: string }
+  | { status: 'already_member'; displayName: string }
+  | { status: 'already_invited' }
+  | { status: 'no_account' }
+  | { status: 'invalid_email' }
+  /** No room: members and waiting invitations are at the plan's limit (041), in the server's words. */
+  | { status: 'full'; message: string }
+  /** The server is not ready for this yet (function or migration missing). */
+  | { status: 'unavailable'; message: string };
 
-export async function fetchFamilyInvitations(familyId: string): Promise<InvitationRow[]> {
-  const { data, error } = await supabase
-    .from('invitations')
-    .select('*')
-    .eq('family_id', familyId)
-    .order('created_at', { ascending: false });
-
-  if (error) throw error;
-  return (data ?? []) as InvitationRow[];
-}
-
-export async function inviteMember(
+export async function addFamilyMember(
   familyId: string,
-  invitedBy: string,
   email: string,
-  role: string = 'viewer',
-): Promise<void> {
-  // Try Edge Function first (sends email)
-  try {
-    const { data, error: fnErr } = await supabase.functions.invoke('invite-member', {
-      body: { family_id: familyId, invited_by: invitedBy, invitee_email: email, role },
-    });
-    if (!fnErr && data?.success) return;
-  } catch {
-    // Edge Function not available — fall through to direct insert
+  details: { alias?: string; relationship?: string } = {},
+): Promise<AddMemberOutcome> {
+  const { data, error } = await supabase.functions.invoke('add-member', {
+    body: {
+      family_id: familyId,
+      email: email.trim(),
+      ...(details.alias?.trim() ? { alias: details.alias.trim() } : {}),
+      ...(details.relationship ? { relationship: details.relationship } : {}),
+    },
+  });
+  if (!error) {
+    return data?.status === 'invited'
+      ? { status: 'invited', email: data.email || email.trim().toLowerCase() }
+      : { status: 'added', displayName: data?.display_name || email };
   }
 
-  // Fallback: direct DB insert (no email sent)
-  const token = Math.random().toString(36).substring(2) + Date.now().toString(36);
-  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  const httpStatus = (error as { context?: Response })?.context?.status;
+  const body = (await readFunctionError(error)) as { status?: string; error?: string; display_name?: string } | null;
+  switch (body?.status) {
+    case 'already_member':
+      return { status: 'already_member', displayName: body.display_name || email };
+    case 'already_invited':
+      return { status: 'already_invited' };
+    case 'no_account':
+      return { status: 'no_account' };
+    case 'invalid_email':
+      return { status: 'invalid_email' };
+    case 'family_full':
+      return { status: 'full', message: body.error ?? 'This family has no room for another member.' };
+    case 'needs_migration':
+      return { status: 'unavailable', message: body.error ?? 'Adding members is not available yet.' };
+  }
+  // The gateway's own 404: this project does not have the function yet.
+  if (httpStatus === 404) {
+    return { status: 'unavailable', message: 'Adding members is not available on this server yet.' };
+  }
+  throw new Error(body?.error ?? error.message);
+}
 
-  const { error } = await supabase.from('invitations').insert({
-    family_id: familyId,
-    invited_by: invitedBy,
-    invitee_email: email,
-    role,
-    token,
-    expires_at: expiresAt,
+// Someone added to the family tree by name who has since signed up: link the
+// entry to their account rather than adding them again (migration 033). Not
+// yet a member, they are invited (037), and join as a viewer AS that person
+// when they accept, keeping their links, documents and emergency card;
+// already a member, their two entries become one at once. Through
+// link-account, which checks the caller is an admin.
+export type LinkAccountOutcome =
+  /** Invited to be this person: Pending approval until they accept. */
+  | { status: 'invited'; displayName: string; email: string }
+  /** `memberId` is who they are in the tree now: the same person when linked (before 037), their member person when merged. */
+  | { status: 'linked' | 'merged'; displayName: string; memberId: string }
+  | { status: 'no_account' }
+  | { status: 'invalid_email' }
+  /** Linking was refused, with the reason to show as it comes. */
+  | { status: 'refused'; message: string }
+  /** The server is not ready for this yet (migration 033 missing). */
+  | { status: 'unavailable'; message: string };
+
+export async function linkPersonToAccount(familyId: string, personId: string, email: string): Promise<LinkAccountOutcome> {
+  const { data, error } = await supabase.functions.invoke('link-account', {
+    body: { family_id: familyId, person_id: personId, email: email.trim() },
   });
+  if (!error) {
+    if (data?.status === 'invited') {
+      return { status: 'invited', displayName: data.display_name || email, email: data.email || email.trim().toLowerCase() };
+    }
+    return {
+      status: data?.status === 'merged' ? 'merged' : 'linked',
+      displayName: data?.display_name || email,
+      memberId: data?.member_id || personId,
+    };
+  }
 
+  const httpStatus = (error as { context?: Response })?.context?.status;
+  const body = (await readFunctionError(error)) as { status?: string; error?: string } | null;
+  switch (body?.status) {
+    case 'no_account':
+      return { status: 'no_account' };
+    case 'invalid_email':
+      return { status: 'invalid_email' };
+    case 'needs_migration':
+      return { status: 'unavailable', message: 'Linking someone to their account is not switched on yet.' };
+    case 'tree_rule': {
+      // The tree's own rule, as the database words it: "Someone can have at most two parents in the tree."
+      const rule = body.error ?? 'the family tree does not allow it.';
+      return { status: 'refused', message: `These two can't be joined into one: ${rule.charAt(0).toLowerCase()}${rule.slice(1)}` };
+    }
+    case 'already_linked':
+    case 'already_member':
+    case 'already_invited':
+    case 'no_person':
+    case 'family_full':
+      return { status: 'refused', message: body.error ?? 'This person could not be linked.' };
+  }
+  // The gateway's own 404: this project does not have link-account yet.
+  if (httpStatus === 404) {
+    return { status: 'unavailable', message: 'Linking someone to their account is not switched on yet.' };
+  }
+  throw new Error(body?.error ?? error.message);
+}
+
+// ─── Invitations (037) ───────────────────────────────────────────
+//
+// What add-member and link-account make now: the person answers, and only a
+// yes makes them a member. They see which family asked and who; the family
+// sees the address it asked, as Pending approval, until they answer. Before
+// 037 there are none, and every read here comes back empty.
+
+export interface Invitation {
+  id: string;
+  familyId: string;
+  familyName: string;
+  invitedByName: string | null;
+  /** The tree entry they would be, when the invitation came from a link. */
+  personName: string | null;
+  role: string;
+  createdAt: string;
+}
+
+/** The invitations waiting for the signed-in person, oldest first. */
+export async function fetchMyInvitations(): Promise<Invitation[]> {
+  const { data, error } = await supabase.rpc('get_my_invitations');
+  if (error) {
+    if (isMissingMigration(error)) return [];
+    throw error;
+  }
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    familyId: row.family_id,
+    familyName: row.family_name,
+    invitedByName: row.invited_by_name ?? null,
+    personName: row.person_name ?? null,
+    role: row.role,
+    createdAt: row.created_at,
+  }));
+}
+
+export type AcceptOutcome =
+  | { status: 'joined'; familyId: string; familyName: string }
+  /** Withdrawn, or someone else is that person now: nothing to accept. */
+  | { status: 'gone' };
+
+export async function acceptInvitation(inviteId: string): Promise<AcceptOutcome> {
+  const { data, error } = await supabase.rpc('accept_family_invite', { p_invite_id: inviteId });
+  if (error) {
+    if (error.code === '42501') return { status: 'gone' };
+    throw error;
+  }
+  const result = data as { status?: string; family_id?: string; family_name?: string } | null;
+  return result?.status === 'joined' && result.family_id
+    ? { status: 'joined', familyId: result.family_id, familyName: result.family_name ?? '' }
+    : { status: 'gone' };
+}
+
+export async function declineInvitation(inviteId: string): Promise<void> {
+  const { error } = await supabase.rpc('decline_family_invite', { p_invite_id: inviteId });
+  // 42501: withdrawn already — there is nothing left to say no to.
+  if (error && error.code !== '42501') throw error;
+}
+
+export interface PendingInvite {
+  id: string;
+  /** The address the admin asked: the family does not see the account behind it until they accept. */
+  email: string;
+  /** The tree entry they were asked to be, when the invitation came from a link, and its name. */
+  personId: string | null;
+  personName: string | null;
+  role: string;
+  invitedBy: string | null;
+  createdAt: string;
+}
+
+/** Who this family has asked and not heard from yet: Pending approval. */
+export async function fetchFamilyInvites(familyId: string): Promise<PendingInvite[]> {
+  const columns = 'id, email, person_id, role, invited_by, created_at';
+  const query = (select: string) => supabase
+    .from('family_invites')
+    .select(select)
+    .eq('family_id', familyId)
+    .order('created_at', { ascending: true });
+  // With the tree entry's name; without it if the embed is refused, rather
+  // than showing nobody as pending.
+  let { data, error } = await query(`${columns}, family_people!family_invites_person(display_name)`);
+  if (error && !isMissingMigration(error)) ({ data, error } = await query(columns));
+  if (error) {
+    if (isMissingMigration(error)) return [];
+    throw error;
+  }
+  return ((data ?? []) as unknown as Array<{
+    id: string; email: string; person_id: string | null; role: string; invited_by: string | null; created_at: string;
+    family_people?: { display_name: string } | null;
+  }>).map((row) => ({
+    id: row.id,
+    email: row.email,
+    personId: row.person_id,
+    personName: row.family_people?.display_name ?? null,
+    role: row.role,
+    invitedBy: row.invited_by,
+    createdAt: row.created_at,
+  }));
+}
+
+/** An admin withdraws an invitation; the notice of it goes too. */
+export async function cancelInvitation(inviteId: string): Promise<void> {
+  const { error } = await supabase.rpc('cancel_family_invite', { p_invite_id: inviteId });
   if (error) throw error;
+}
+
+// ─── Gmail import ────────────────────────────────────────────────
+//
+// A person connects their OWN Gmail account; the server lists attachments
+// that look like documents and imports the ones they tick, through the
+// normal ingestion. Everything goes through Edge Functions — gmail-connect,
+// gmail-scan, gmail-import — because the tables behind it are service-role
+// only (migration 026): nobody's mailbox findings are reachable from a
+// client, not even their own, except through a function that checks.
+
+export interface GmailStatus {
+  /** False until the server has its Google client and key secrets. */
+  configured: boolean;
+  missing?: string[];
+  connected: boolean;
+  email: string | null;
+  /** Google stopped honouring the token (revoked, or 7 days in testing). */
+  expired: boolean;
+  scan: { started_at: string | null; finished_at: string | null; messages_scanned: number } | null;
+  found: number;
+  imported: number;
+}
+
+export interface GmailItem {
+  id: string;
+  file_name: string;
+  mime_type: string;
+  size_bytes: number;
+  sender: string | null;
+  subject: string | null;
+  sent_at: string | null;
+  suggestion: 'suggested' | 'maybe' | 'unlikely';
+  reason: string | null;
+  category_guess: string | null;
+  status: 'found' | 'importing' | 'imported' | 'duplicate' | 'failed';
+  error: string | null;
+  document_id: string | null;
+  family_id: string | null;
+}
+
+export interface GmailScanProgress {
+  done: boolean;
+  messages_scanned: number;
+  found: number;
+  added: number;
+}
+
+export type GmailImportResult =
+  | { status: 'imported'; documentId: string; unreadable?: string }
+  | { status: 'duplicate'; documentId: string }
+  | { status: 'failed'; error: string };
+
+/**
+ * A Gmail function said no, with a reason the screen can act on:
+ * `unavailable` / `needs_migration` / `not_configured` (the server is not
+ * set up), `origin_not_allowed` (this web address is not on the allowlist),
+ * `expired` (connect again), `rate_limited` (wait `retryAfter` seconds),
+ * `busy` (another tab is scanning).
+ */
+export class GmailApiError extends Error {
+  status: string;
+  retryAfter?: number;
+  origin?: string | null;
+  constructor(status: string, message: string, extra: { retryAfter?: number; origin?: string | null } = {}) {
+    super(message);
+    this.status = status;
+    this.retryAfter = extra.retryAfter;
+    this.origin = extra.origin;
+  }
+}
+
+async function gmailInvoke<T>(fn: string, body: Record<string, unknown>): Promise<T> {
+  const { data, error } = await supabase.functions.invoke(fn, { body });
+  if (!error) return data as T;
+  const httpStatus = (error as { context?: Response })?.context?.status;
+  const payload = (await readFunctionError(error)) as
+    | { status?: string; error?: string; retry_after?: number; origin?: string | null }
+    | null;
+  // The gateway's own 404: the function is not deployed to this project.
+  if (httpStatus === 404 && !payload?.status) {
+    throw new GmailApiError('unavailable', 'Gmail import is not available on this server yet.');
+  }
+  throw new GmailApiError(payload?.status ?? 'error', payload?.error ?? error.message, {
+    retryAfter: payload?.retry_after,
+    origin: payload?.origin,
+  });
+}
+
+export const gmailStatus = () => gmailInvoke<GmailStatus>('gmail-connect', { action: 'status' });
+
+/** Google's consent page, for this browser to open. `returnOrigin` is where it comes back. */
+export async function gmailStartConnect(returnOrigin: string): Promise<string> {
+  const { url } = await gmailInvoke<{ url: string }>('gmail-connect', { action: 'start', return_origin: returnOrigin });
+  return url;
+}
+
+/** Back from Google: trade the code for a lasting (encrypted) permission. */
+export const gmailFinishConnect = (state: string, code: string) =>
+  gmailInvoke<{ connected: boolean; email: string }>('gmail-connect', { action: 'finish', state, code });
+
+export const gmailDisconnect = () => gmailInvoke<{ connected: boolean }>('gmail-connect', { action: 'disconnect' });
+
+/** One batch of the mailbox scan; call again until `done`. */
+export const gmailScanBatch = (restart = false) =>
+  gmailInvoke<GmailScanProgress>('gmail-scan', { action: 'scan', restart });
+
+export async function gmailListItems(): Promise<GmailItem[]> {
+  const { items } = await gmailInvoke<{ items: GmailItem[] }>('gmail-scan', { action: 'list' });
+  return items ?? [];
+}
+
+/** Import one found attachment into the family's vault. */
+export async function gmailImportItem(
+  itemId: string,
+  familyId: string,
+  options: { categoryId?: string; memberId?: string } = {},
+): Promise<GmailImportResult> {
+  try {
+    const result = await gmailInvoke<{ status: string; document_id: string; unreadable?: string }>('gmail-import', {
+      item_id: itemId,
+      family_id: familyId,
+      ...(options.categoryId ? { category_id: options.categoryId } : {}),
+      ...(options.memberId ? { belongs_to_member: options.memberId } : {}),
+    });
+    return result.status === 'duplicate'
+      ? { status: 'duplicate', documentId: result.document_id }
+      : { status: 'imported', documentId: result.document_id, unreadable: result.unreadable };
+  } catch (err) {
+    // This file could not be imported; the next one still can.
+    if (err instanceof GmailApiError && (err.status === 'failed' || err.status === 'not_available')) {
+      return { status: 'failed', error: err.message };
+    }
+    throw err;
+  }
 }
 
 // ─── Member Management (admin only) ─────────────────────────────
@@ -424,13 +749,20 @@ export async function updateMemberRole(memberId: string, role: string): Promise<
   if (error) throw error;
 }
 
-export async function revokeInvitation(invitationId: string): Promise<void> {
-  const { error } = await supabase
-    .from('invitations')
+/**
+ * Leave a family. Anyone may leave any family they are in, at any time, with
+ * nobody's permission (family_members_delete_self).
+ */
+export async function leaveFamily(familyId: string, userId: string): Promise<void> {
+  const { data, error } = await supabase
+    .from('family_members')
     .delete()
-    .eq('id', invitationId);
+    .eq('family_id', familyId)
+    .eq('user_id', userId)
+    .select('id');
 
   if (error) throw error;
+  if (!data?.length) throw new Error('You are not a member of this family.');
 }
 
 // ─── Document Upload ────────────────────────────────────────────
@@ -454,15 +786,37 @@ export async function uploadDocument(params: UploadDocumentParams): Promise<stri
     fileType, fileBlob, fileSizeBytes, categoryId, belongsToMemberId, ocrText,
   } = params;
 
+  // Refused before anything is stored. The bucket takes only these types, and
+  // a type the database cannot hold used to fail AFTER the file was uploaded.
+  if (!isSaveable(fileType)) throw new Error(unsupportedFileMessage(fileType));
+
+  // Every plan has a storage limit (038). Asked first, with this file's size,
+  // so the person hears why; the bucket refuses a full family either way.
+  const room = await fetchStorageStatus(familyId).catch(() => null);
+  if (room && !fits(room, fileSizeBytes)) {
+    await fetchPaymentsStatus();   // so the words say whether Family Plus can be bought
+    throw new StorageFullError(room, fileSizeBytes);
+  }
+
   // 1. Upload to Supabase Storage
   const storagePath = `${storageNamespace}/${Date.now()}_${fileName}`;
-  const mimeType = fileType === 'pdf' ? 'application/pdf' : `image/${fileType}`;
+  const mimeType = mimeTypeFor(fileType);
 
   const { error: storageErr } = await supabase.storage
     .from('documents')
     .upload(storagePath, fileBlob, { contentType: mimeType, upsert: false });
 
-  if (storageErr) throw new Error(`Storage upload failed: ${storageErr.message}`);
+  if (storageErr) {
+    // The bucket's policy refuses a family at its limit (038): say so in words.
+    if (/row-level security|policy/i.test(storageErr.message)) {
+      const now = await fetchStorageStatus(familyId).catch(() => null);
+      if (now && now.usedBytes >= now.limitBytes) {
+        await fetchPaymentsStatus();
+        throw new StorageFullError(now, fileSizeBytes);
+      }
+    }
+    throw new Error(`Storage upload failed: ${storageErr.message}`);
+  }
 
   // 2. Insert document record via RPC (into family schema)
   const { data, error: insertErr } = await supabase.rpc('insert_family_document', {
@@ -476,7 +830,12 @@ export async function uploadDocument(params: UploadDocumentParams): Promise<stri
     p_belongs_to_member: belongsToMemberId ?? undefined,
   });
 
-  if (insertErr) throw new Error(`Document insert failed: ${insertErr.message}`);
+  if (insertErr) {
+    // The file is in Storage already. With no document pointing at it, nobody
+    // would ever see it, count it or delete it, so take it back out.
+    await supabase.storage.from('documents').remove([storagePath]).catch(() => undefined);
+    throw new Error(`Document insert failed: ${insertErr.message}`);
+  }
 
   const docId = data as string;
 
@@ -549,6 +908,135 @@ export async function getDocumentSignedUrl(
   return data.signedUrl;
 }
 
+// ─── Share links (036) ───────────────────────────────────────────
+//
+// One document, by a link that lasts 1, 7 or 30 days, for someone outside
+// the family. The link's secret is returned once, when it is made, and is
+// never stored: only its hash. The family sees every live link on the
+// document's page; whoever made it, or an admin, can turn it off.
+
+export type ShareDays = 1 | 7 | 30;
+
+export interface ShareLink {
+  id: string;
+  note: string | null;
+  expiresAt: string;
+  createdBy: string;
+  openCount: number;
+  lastOpenedAt: string | null;
+  createdAt: string;
+}
+
+export type MakeShareOutcome =
+  | { status: 'made'; link: ShareLink; token: string }
+  /** Not theirs to share, or the document is gone, in the database's own words. */
+  | { status: 'refused'; message: string }
+  /** Migration 036 is not applied here. */
+  | { status: 'unavailable' };
+
+/** The address a link opens: the web app's /s page, the secret after '#', which browsers never send to a server. */
+export function shareLinkUrl(origin: string, token: string): string {
+  return `${origin.replace(/\/+$/, '')}/s#${token}`;
+}
+
+export async function createShareLink(
+  familyId: string,
+  documentId: string,
+  days: ShareDays,
+  note?: string,
+): Promise<MakeShareOutcome> {
+  const { data, error } = await supabase.rpc('create_document_share', {
+    p_family_id: familyId,
+    p_document_id: documentId,
+    p_days: days,
+    p_note: note?.trim() || undefined,
+  });
+  if (error) {
+    if (isMissingMigration(error)) return { status: 'unavailable' };
+    if (error.code === '42501' || error.code === '22023') return { status: 'refused', message: error.message };
+    throw error;
+  }
+  const made = data as { id: string; token: string; expires_at: string };
+  const { data: auth } = await supabase.auth.getSession();
+  return {
+    status: 'made',
+    token: made.token,
+    link: {
+      id: made.id,
+      note: note?.trim() || null,
+      expiresAt: made.expires_at,
+      createdBy: auth.session?.user.id ?? '',
+      openCount: 0,
+      lastOpenedAt: null,
+      createdAt: new Date().toISOString(),
+    },
+  };
+}
+
+/** The document's links still working, newest first; 'unavailable' before 036. */
+export async function fetchShareLinks(familyId: string, documentId: string): Promise<ShareLink[] | 'unavailable'> {
+  // Named columns: clients may not read the secret's hash, so '*' is refused.
+  const { data, error } = await supabase
+    .from('document_shares')
+    .select('id, note, expires_at, created_by, open_count, last_opened_at, created_at')
+    .eq('family_id', familyId)
+    .eq('document_id', documentId)
+    .is('revoked_at', null)
+    .gt('expires_at', new Date().toISOString())
+    .order('created_at', { ascending: false });
+  if (error) {
+    if (isMissingMigration(error)) return 'unavailable';
+    throw error;
+  }
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    note: row.note,
+    expiresAt: row.expires_at,
+    createdBy: row.created_by,
+    openCount: row.open_count,
+    lastOpenedAt: row.last_opened_at,
+    createdAt: row.created_at,
+  }));
+}
+
+export async function revokeShareLink(shareId: string): Promise<void> {
+  const { error } = await supabase.rpc('revoke_document_share', { p_share_id: shareId });
+  if (error) throw error;
+}
+
+export interface SharedDocument {
+  fileName: string;
+  fileType: string;
+  expiresAt: string;
+  /** First name of whoever shared it. */
+  sharedBy: string | null;
+  /** Both work for five minutes; opening the page again asks again. */
+  url: string;
+  downloadUrl: string;
+}
+
+/** The public page's call: no account, only the link's secret. */
+export async function openSharedDocument(token: string): Promise<SharedDocument | 'gone' | 'unavailable'> {
+  if (!/^[0-9a-f]{64}$/.test(token)) return 'gone';
+  const { data, error } = await supabase.functions.invoke('share', { body: { token } });
+  if (error) {
+    const httpStatus = (error as { context?: Response })?.context?.status;
+    const body = (await readFunctionError(error)) as { status?: string } | null;
+    if (body?.status === 'gone') return 'gone';
+    // 503: 036 not applied; a bare 404: the function is not deployed here yet.
+    if (body?.status === 'needs_migration' || (httpStatus === 404 && !body?.status)) return 'unavailable';
+    throw new Error('Could not open this link. Please try again.');
+  }
+  return {
+    fileName: data.file_name,
+    fileType: data.file_type,
+    expiresAt: data.expires_at,
+    sharedBy: data.shared_by ?? null,
+    url: data.url,
+    downloadUrl: data.download_url,
+  };
+}
+
 // ─── Notifications ───────────────────────────────────────────────
 
 export async function fetchUnreadNotificationCount(userId: string): Promise<number> {
@@ -604,4 +1092,859 @@ export async function checkExpiryNotifications(familyId: string): Promise<number
 
   if (error) throw error;
   return (data ?? 0) as number;
+}
+
+// ─── Settings: profile, security, storage, reminders, feedback ───
+
+export interface Profile {
+  displayName: string;
+  phone: string;
+}
+
+/**
+ * Your name and phone. public.users is what the family sees (member lists,
+ * "uploaded by"), and clients may write those two columns since 027; the
+ * sign-in account's metadata keeps a copy, which is what this app reads for
+ * your own name — so the change shows everywhere for you even where 027 is
+ * not applied yet.
+ */
+export async function fetchProfile(userId: string, fallback: Partial<Profile> = {}): Promise<Profile> {
+  const { data } = await supabase
+    .from('users')
+    .select('display_name, phone')
+    .eq('id', userId)
+    .maybeSingle();
+  return {
+    displayName: data?.display_name || fallback.displayName || '',
+    phone: data?.phone || fallback.phone || '',
+  };
+}
+
+export async function updateProfile(userId: string, profile: Profile): Promise<{ familySees: boolean }> {
+  const displayName = profile.displayName.trim();
+  const phone = profile.phone.trim();
+  const { error: authError } = await supabase.auth.updateUser({ data: { display_name: displayName, phone } });
+  if (authError) throw authError;
+
+  const { error } = await supabase.from('users')
+    .update({ display_name: displayName, phone: phone || null })
+    .eq('id', userId);
+  if (error) {
+    console.warn('[profile] not saved where the family sees it (is 027 applied?):', error.message);
+    return { familySees: false };
+  }
+  return { familySees: true };
+}
+
+export async function changePassword(newPassword: string): Promise<void> {
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  if (error) throw error;
+}
+
+/**
+ * Ends every session this account has, on every device, this one included —
+ * and their notifications with them (034): a lost phone must not go on
+ * showing the family's reminders. Before 034 there are none to remove.
+ */
+export async function signOutEverywhere(): Promise<void> {
+  const { data } = await supabase.auth.getUser();
+  if (data.user) {
+    const { error: pushErr } = await supabase.from('push_subscriptions').delete().eq('user_id', data.user.id);
+    if (pushErr && !isMissingMigration(pushErr)) throw pushErr;
+  }
+  const { error } = await supabase.auth.signOut({ scope: 'global' });
+  if (error) throw error;
+}
+
+/** Every document in a family, a page at a time. */
+async function fetchAllDocuments(familyId: string): Promise<FamilyDocumentRow[]> {
+  const PAGE = 200;
+  const all: FamilyDocumentRow[] = [];
+  for (let offset = 0; offset < PAGE * 50; offset += PAGE) {
+    const page = await fetchRecentDocuments(familyId, PAGE, offset);
+    all.push(...page);
+    if (page.length < PAGE) break;
+  }
+  return all;
+}
+
+/** Run `fn` over `items`, at most `limit` at once, keeping order. */
+async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
+}
+
+export interface FamilyStorage {
+  familyId: string;
+  name: string;
+  bytes: number;
+  documents: number;
+  /** The part of it this person added. */
+  yourBytes: number;
+  yourDocuments: number;
+}
+
+/**
+ * How many documents each of your families keeps, and how much of that you
+ * added: the sizes of the files as uploaded. A family's limit, and its use as
+ * the server counts it, come from fetchStorageStatus (038).
+ */
+export async function fetchStorageUsage(
+  families: { id: string; name: string }[],
+  userId: string,
+): Promise<FamilyStorage[]> {
+  return Promise.all(families.map(async (family) => {
+    const docs = await fetchAllDocuments(family.id);
+    const size = (d: FamilyDocumentRow) => d.file_size_bytes ?? 0;
+    const yours = docs.filter((d) => d.uploaded_by === userId);
+    return {
+      familyId: family.id,
+      name: family.name,
+      bytes: docs.reduce((sum, d) => sum + size(d), 0),
+      documents: docs.length,
+      yourBytes: yours.reduce((sum, d) => sum + size(d), 0),
+      yourDocuments: yours.length,
+    };
+  }));
+}
+
+// ─── Plans and storage limits (038) ──────────────────────────────
+//
+// Every plan has a storage limit: Free 1 GB, Family Plus 10 GB (039;
+// public.plan_limits). The server keeps it — the documents bucket refuses a
+// new file once a family is at its limit — and these say where a family
+// stands, so the app can tell people before it refuses them. They read 038's
+// shape too (a period beside each plan), so the app works either side of 039.
+
+export interface FamilyPlanStatus extends StorageRoom {
+  /** When a Plus plan's paid time ends; null on Free. */
+  paidUntil: string | null;
+  /**
+   * For a family whose Plus has ended and that holds more than the free limit:
+   * when the newest documents above it are removed (040). Null otherwise.
+   */
+  removalAt: string | null;
+  /** How much of usedBytes is saved chats (042); 0 before. */
+  chatsBytes: number;
+}
+
+/** A family's plan, its limit and what its files (and, since 042, saved chats) add up to; null before 038. */
+export async function fetchStorageStatus(familyId: string): Promise<FamilyPlanStatus | null> {
+  const { data, error } = await supabase.rpc('family_storage_status', { p_family_id: familyId });
+  if (error) {
+    if (isMissingMigration(error)) return null;
+    throw error;
+  }
+  const row = (data ?? [])[0];
+  if (!row) return null;
+  return {
+    plan: row.plan as PlanName,
+    paidUntil: row.paid_until ?? null,
+    limitBytes: Number(row.limit_bytes),
+    usedBytes: Number(row.used_bytes),
+    // Before 040 the row has no removal_at, and before 042 no chats_bytes.
+    removalAt: (row as { removal_at?: string | null }).removal_at ?? null,
+    chatsBytes: Number((row as { chats_bytes?: number | null }).chats_bytes ?? 0),
+  };
+}
+
+// Each set of columns arrived with a migration (040: grace_days; 041:
+// max_members and voice_answers). A column that is not there yet fails the
+// whole select, so each one missing asks again with the set before it.
+const PLAN_LIMIT_COLUMNS = [
+  'plan, storage_bytes, grace_days, max_members, voice_answers',
+  'plan, storage_bytes, grace_days',
+  'plan, storage_bytes',
+] as const;
+
+/** What each plan allows, as the database says; 039–041's numbers before 038. */
+export async function fetchPlanLimits(): Promise<PlanLimits> {
+  type Row = {
+    plan: string; storage_bytes: number; grace_days?: number | null;
+    max_members?: number | null; voice_answers?: number | null;
+  };
+  let answer: { data: unknown; error: { message?: string } | null } = { data: null, error: null };
+  for (const columns of PLAN_LIMIT_COLUMNS) {
+    answer = await supabase.from('plan_limits').select(columns);
+    if (!answer.error || !/grace_days|max_members|voice_answers/.test(answer.error.message ?? '')) break;
+  }
+  const rows = (answer.data ?? []) as Row[];
+  if (answer.error || !rows.length) return DEFAULT_PLAN_LIMITS;
+  // Under 038 Plus has two rows, monthly and yearly; the larger is the offer.
+  const of = (plan: string, fallback: number) => {
+    const sizes = rows.filter((r) => r.plan === plan).map((r) => Number(r.storage_bytes));
+    return sizes.length ? Math.max(...sizes) : fallback;
+  };
+  const grace = rows.find((r) => r.plan === 'plus')?.grace_days;
+  const members = (plan: 'free' | 'plus') => {
+    const n = rows.find((r) => r.plan === plan)?.max_members;
+    return n ? Number(n) : DEFAULT_PLAN_LIMITS.members[plan];
+  };
+  // NULL is a real answer here (every answer); a row without the column is
+  // a database before 041.
+  const voice = (plan: 'free' | 'plus') => {
+    const row = rows.find((r) => r.plan === plan);
+    if (!row || !('voice_answers' in row)) return DEFAULT_PLAN_LIMITS.voiceAnswers[plan];
+    return row.voice_answers == null ? null : Number(row.voice_answers);
+  };
+  return {
+    free: of('free', DEFAULT_PLAN_LIMITS.free),
+    plus: of('plus', DEFAULT_PLAN_LIMITS.plus),
+    graceDays: grace ? Number(grace) : DEFAULT_PLAN_LIMITS.graceDays,
+    members: { free: members('free'), plus: members('plus') },
+    voiceAnswers: { free: voice('free'), plus: voice('plus') },
+  };
+}
+
+// ─── Paying for Family Plus (044) ────────────────────────────────
+//
+// A family pays for a month or a year at a time, through Razorpay's checkout
+// (razorpay.web.ts), and each payment adds that time to its Family Plus. The
+// payments Edge Function makes the order — at PLUS_PRICE's amount, never the
+// app's — and checks the payment before adding the time; Razorpay's webhook
+// reports the same payment, so closing the browser too early loses nothing.
+// Whether a project takes payments is the function's to say (its Razorpay
+// keys are set per project), asked once per session: until then, and where
+// it cannot be asked, Family Plus is "coming soon".
+
+export type PaymentCurrency = 'INR' | 'USD';
+
+export interface PaymentsStatus {
+  available: boolean;
+  /** Razorpay's public key id, for the checkout. */
+  keyId: string | null;
+  currencies: PaymentCurrency[];
+}
+
+const PAYMENTS_OFF: PaymentsStatus = { available: false, keyId: null, currencies: [] };
+let paymentsKnown: PaymentsStatus | null = null;
+let paymentsAsking: Promise<PaymentsStatus> | null = null;
+
+/** Whether this project takes payments, asked once per session; never throws. */
+export function fetchPaymentsStatus(): Promise<PaymentsStatus> {
+  if (paymentsKnown) return Promise.resolve(paymentsKnown);
+  paymentsAsking ??= (async () => {
+    const { data, error } = await supabase.functions.invoke('payments', { body: { action: 'status' } });
+    if (error) {
+      // Not deployed here is an answer; offline is not, and is asked again next time.
+      if ((error as { context?: Response })?.context?.status === 404) paymentsKnown = PAYMENTS_OFF;
+      return PAYMENTS_OFF;
+    }
+    const currencies = Array.isArray(data?.currencies)
+      ? (data.currencies as unknown[]).filter((c): c is PaymentCurrency => c === 'INR' || c === 'USD')
+      : [];
+    paymentsKnown = { available: data?.available === true, keyId: data?.key_id ?? null, currencies };
+    return paymentsKnown;
+  })().catch(() => PAYMENTS_OFF).finally(() => { paymentsAsking = null; });
+  return paymentsAsking;
+}
+
+/** Whether Family Plus can be bought here, as last heard; PLUS_FOR_SALE until asked. */
+export function plusForSale(): boolean {
+  return paymentsKnown?.available ?? PLUS_FOR_SALE;
+}
+
+export interface PlusOrder {
+  orderId: string;
+  /** In paise or cents, as Razorpay counts. */
+  amount: number;
+  currency: PaymentCurrency;
+  keyId: string;
+  description: string;
+  prefill: { email?: string; name?: string };
+}
+
+/** A payment the server would not start or confirm, with a sentence for the person. */
+export class PaymentError extends Error {
+  status: string;
+  constructor(status: string, message: string) {
+    super(message);
+    this.name = 'PaymentError';
+    this.status = status;
+  }
+}
+
+async function paymentsInvoke<T>(body: Record<string, unknown>): Promise<T> {
+  const { data, error } = await supabase.functions.invoke('payments', { body });
+  if (!error) return data as T;
+  const httpStatus = (error as { context?: Response })?.context?.status;
+  const payload = (await readFunctionError(error)) as { status?: string; error?: string } | null;
+  if (httpStatus === 404 && !payload?.status) {
+    throw new PaymentError('not_configured', 'Paying for Family Plus is not switched on yet.');
+  }
+  throw new PaymentError(payload?.status ?? 'error', payload?.error ?? 'Something went wrong. Please try again.');
+}
+
+/** Starts paying for a month or a year of Family Plus for the family. */
+export async function createPlusOrder(familyId: string, period: 'monthly' | 'yearly', currency: PaymentCurrency): Promise<PlusOrder> {
+  const r = await paymentsInvoke<{
+    order_id: string; amount: number; currency: PaymentCurrency; key_id: string; description: string;
+    prefill?: { email?: string; name?: string };
+  }>({ action: 'order', family_id: familyId, period, currency });
+  return {
+    orderId: r.order_id, amount: r.amount, currency: r.currency, keyId: r.key_id,
+    description: r.description, prefill: r.prefill ?? {},
+  };
+}
+
+/** After the checkout: the server checks the payment and adds the time. Asking twice is harmless. */
+export async function verifyPlusPayment(p: { orderId: string; paymentId: string; signature: string }): Promise<{ paidUntil: string }> {
+  const r = await paymentsInvoke<{ status: string; paid_until: string }>({
+    action: 'verify', order_id: p.orderId, payment_id: p.paymentId, signature: p.signature,
+  });
+  return { paidUntil: r.paid_until };
+}
+
+// ─── Voice chats (041–043) ───────────────────────────────────────
+//
+// On the free plan each person has 10 voice chats of their own
+// (plan_limits.voice_answers, per person since 043): a question asked by
+// voice or an answer read aloud, one per question, counted on the server for
+// that person in that family, so another phone does not start them again.
+// After that they type and read, and Family Plus brings voice back. A chat is
+// claimed before its answer is read; fetchVoiceStatus() says how many are
+// left without using one. Before 041, or offline, voice works: the app never
+// goes quiet because it could not ask.
+
+export interface VoiceAllowance {
+  allowed: boolean;
+  /** How many voice chats the person asking has had, and may; both null on a plan with no limit. */
+  used: number | null;
+  limit: number | null;
+}
+
+export async function claimVoiceAnswer(familyId: string): Promise<VoiceAllowance | null> {
+  const { data, error } = await supabase.rpc('claim_voice_answer', { p_family_id: familyId });
+  if (error) return null;
+  const r = data as { allowed?: unknown; used?: number | null; limit?: number | null } | null;
+  if (!r || typeof r.allowed !== 'boolean') return null;
+  return { allowed: r.allowed, used: r.used ?? null, limit: r.limit ?? null };
+}
+
+export interface VoiceStatus {
+  /** How many voice chats the person asking may have, has had, and has left; all null on a plan with no limit. */
+  limit: number | null;
+  used: number | null;
+  left: number | null;
+}
+
+/**
+ * How many voice chats the person asking has left in this family, without
+ * using one (042; per person since 043), for Ask and Settings to show. Null
+ * when that cannot be told: before 042, or offline.
+ */
+export async function fetchVoiceStatus(familyId: string): Promise<VoiceStatus | null> {
+  const { data, error } = await supabase.rpc('family_voice_status', { p_family_id: familyId });
+  if (error) return null;
+  const r = data as { limit?: number | null; used?: number | null; left?: number | null } | null;
+  if (!r || !('limit' in r)) return null;
+  const n = (v: number | null | undefined) => (v == null ? null : Number(v));
+  return { limit: n(r.limit), used: n(r.used), left: n(r.left) };
+}
+
+/** The family's storage is full, in words the person can act on. */
+export class StorageFullError extends Error {
+  room: StorageRoom;
+
+  constructor(room: StorageRoom & { removalAt?: string | null }, fileBytes: number) {
+    super(storageFullMessage(room, fileBytes, {
+      price: localPlusPrices(),
+      removalOn: room.removalAt ? longDate(new Date(room.removalAt)) : undefined,
+      forSale: plusForSale(),
+    }));
+    this.name = 'StorageFullError';
+    this.room = room;
+  }
+}
+
+export interface ExpiringDocument {
+  id: string;
+  fileName: string;
+  /** Whose document it is: a person in the family tree (a member id before 031). */
+  memberId: string | null;
+  memberName: string | null;
+  expiry: Date;
+  /** Whole days from today; negative once it has run out. */
+  daysLeft: number;
+}
+
+/**
+ * Every document in the family with an expiry date on it, soonest first.
+ * The date lives in each document's extracted details, which the list does
+ * not carry, so this reads each document's details — fine for a family's
+ * papers; a vault of thousands would want one query for it.
+ */
+export async function fetchExpiringDocuments(familyId: string): Promise<ExpiringDocument[]> {
+  const docs = await fetchAllDocuments(familyId);
+  const details = await mapLimit(docs, 6, (d) => fetchDocumentById(familyId, d.id).catch(() => null));
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const found: ExpiringDocument[] = [];
+  for (const doc of details) {
+    if (!doc) continue;
+    const expiry = (doc.metadata ?? [])
+      .filter((m) => m.key === 'expiry_date')
+      .map((m) => parseDocumentDate(m.value))
+      .find((d): d is Date => d !== null);
+    if (!expiry) continue;
+    found.push({
+      id: doc.id,
+      fileName: doc.file_name,
+      memberId: doc.belongs_to_member,
+      memberName: doc.member_name,
+      expiry,
+      daysLeft: Math.round((expiry.getTime() - today.getTime()) / 86_400_000),
+    });
+  }
+  return found.sort((a, b) => a.expiry.getTime() - b.expiry.getTime());
+}
+
+export type FeedbackTopic = 'problem' | 'idea' | 'question' | 'other';
+
+/**
+ * A message from Help & FAQ. public.feedback (027) takes the sender from the
+ * session and lets nobody read it back, so this never asks for the row.
+ */
+export async function sendFeedback(message: string, topic: FeedbackTopic | null, appVersion: string, platform: string): Promise<void> {
+  const { error } = await supabase.from('feedback').insert({
+    topic,
+    message: message.trim(),
+    app_version: appVersion.slice(0, 40),
+    platform: platform.slice(0, 20),
+  });
+  if (error) throw error;
+}
+
+/** A missing table or column: the migration a feature needs is not applied here. */
+export function isMissingMigration(error: unknown): boolean {
+  const e = error as { code?: string; message?: string } | null;
+  return !!e && (e.code === '42P01' || e.code === 'PGRST205' || e.code === 'PGRST204'
+    || /does not exist|could not find the table|schema cache/i.test(e.message ?? ''));
+}
+
+// ─── Saved chats (028) ───────────────────────────────────────────
+//
+// Ask › Save chat keeps a conversation in public.saved_chats. Only its owner
+// can read it, and it is deleted with their membership of the family. Before
+// 028 every call fails with a missing table: callers check
+// isMissingMigration() and say saving is not switched on yet.
+
+export interface SavedChatMessage {
+  role: 'user' | 'ai';
+  text: string;
+  sources?: RagSearchResult['sources'];
+}
+
+export interface SavedChatSummary {
+  id: string;
+  title: string;
+  updatedAt: string;
+}
+
+export interface SavedChat extends SavedChatSummary {
+  messages: SavedChatMessage[];
+}
+
+// Well inside the table's 256 KB check. A very long chat keeps its newest turns.
+const SAVED_CHAT_MAX_MESSAGES = 100;
+const SAVED_CHAT_MAX_TEXT = 6000;
+
+/** The first question, on one line: what the chat was about. */
+export function savedChatTitle(messages: SavedChatMessage[]): string {
+  const first = (messages.find((m) => m.role === 'user')?.text ?? '').replace(/\s+/g, ' ').trim();
+  return (first.length > 80 ? `${first.slice(0, 79)}…` : first) || 'Saved chat';
+}
+
+function chatForStorage(messages: SavedChatMessage[]): SavedChatMessage[] {
+  return messages
+    .filter((m) => m.text.trim())
+    .slice(-SAVED_CHAT_MAX_MESSAGES)
+    .map((m) => ({
+      role: m.role,
+      text: m.text.slice(0, SAVED_CHAT_MAX_TEXT),
+      ...(m.sources?.length
+        ? { sources: m.sources.slice(0, 10).map(({ id, file_name, file_type, category_name }) => ({ id, file_name, file_type, category_name })) }
+        : {}),
+    }));
+}
+
+const savedChats = () => supabase.from('saved_chats');
+
+/** This person's saved chats about one family, most recently used first. */
+export async function listSavedChats(familyId: string): Promise<SavedChatSummary[]> {
+  const { data, error } = await savedChats()
+    .select('id, title, updated_at')
+    .eq('family_id', familyId)
+    .order('updated_at', { ascending: false })
+    .limit(200);
+  if (error) throw error;
+  return (data ?? []).map((r) => ({ id: r.id, title: r.title, updatedAt: r.updated_at }));
+}
+
+export async function getSavedChat(id: string): Promise<SavedChat | null> {
+  const { data, error } = await savedChats().select('id, title, messages, updated_at').eq('id', id).maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  return {
+    id: data.id,
+    title: data.title,
+    updatedAt: data.updated_at,
+    // Written only by saveChat below, in this shape.
+    messages: Array.isArray(data.messages) ? (data.messages as unknown as SavedChatMessage[]) : [],
+  };
+}
+
+/**
+ * A chat that does not fit in the family's storage (042: saved chats take
+ * the family's storage too), in words the person can act on. `room` is where
+ * the family stands, when that could be asked.
+ */
+export class ChatStorageFullError extends Error {
+  room: FamilyPlanStatus | null;
+
+  constructor(room: FamilyPlanStatus | null, serverMessage?: string) {
+    super(room
+      ? chatStorageFullMessage(room, { price: localPlusPrices(), forSale: plusForSale() })
+      : serverMessage ?? 'There is no room to save this chat: your family\'s storage is full.');
+    this.name = 'ChatStorageFullError';
+    this.room = room;
+  }
+}
+
+/** What a chat adds to the family's storage, near enough: the server counts its JSON text. */
+function chatBytes(messages: SavedChatMessage[]): number {
+  return new TextEncoder().encode(JSON.stringify(messages)).length;
+}
+
+/**
+ * Save a conversation: a new saved chat, or — given its id — the same one
+ * brought up to date. Returns the id, which is new if the old chat had been
+ * deleted meanwhile (from the list, or by leaving and rejoining the family).
+ *
+ * A new chat is checked against the family's storage first, so a full vault
+ * says why without trying; the server refuses one that does not fit anyway
+ * (HINT storage_full, 042), and a saved chat growing past the limit. Both
+ * throw ChatStorageFullError.
+ */
+export async function saveChat(familyId: string, messages: SavedChatMessage[], id?: string | null): Promise<string> {
+  const stored = chatForStorage(messages);
+  const title = savedChatTitle(stored);
+  const asJson = stored as unknown as Json;
+  const refused = async (error: { hint?: string; message?: string }): Promise<never> => {
+    if (error.hint !== 'storage_full') throw error;
+    const [room] = await Promise.all([fetchStorageStatus(familyId).catch(() => null), fetchPaymentsStatus()]);
+    throw new ChatStorageFullError(room, error.message);
+  };
+  if (id) {
+    const { data, error } = await savedChats()
+      .update({ title, messages: asJson, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select('id');
+    if (error) return refused(error);
+    if (data?.length) return id;
+  }
+  // Before 038 (no limits) or offline, the server alone decides.
+  const room = await fetchStorageStatus(familyId).catch(() => null);
+  if (room && room.usedBytes + chatBytes(stored) > room.limitBytes) {
+    await fetchPaymentsStatus();
+    throw new ChatStorageFullError(room);
+  }
+  const { data, error } = await savedChats().insert({ family_id: familyId, title, messages: asJson }).select('id').single();
+  if (error) return refused(error);
+  return data.id;
+}
+
+export async function deleteSavedChat(id: string): Promise<void> {
+  const { error } = await savedChats().delete().eq('id', id);
+  if (error) throw error;
+}
+
+// ─── Deleting your account (029) ─────────────────────────────────
+//
+// The delete-account Edge Function does the work as the service role, for the
+// person in the session and nobody else. Families nobody would be left to
+// manage are deleted with the account; the others are left, and keep their
+// documents. Nothing is kept afterwards.
+
+export interface AccountDeletionFamily {
+  familyId: string;
+  name: string;
+  role: string;
+  otherMembers: number;
+  documentCount: number;
+  /** How many of the family's documents this person added. */
+  yourDocuments: number;
+  /** Deleted with the account, rather than left. */
+  deleted: boolean;
+}
+
+/**
+ * `unavailable` (the function or migration 029 is not on this server yet) or
+ * `error`, with a sentence for the person.
+ */
+export class AccountDeletionError extends Error {
+  status: 'unavailable' | 'error';
+  constructor(status: 'unavailable' | 'error', message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
+async function deleteAccountInvoke<T>(body: Record<string, unknown>): Promise<T> {
+  const { data, error } = await supabase.functions.invoke('delete-account', { body });
+  if (!error) return data as T;
+  const httpStatus = (error as { context?: Response })?.context?.status;
+  const payload = (await readFunctionError(error)) as { status?: string; error?: string } | null;
+  // The gateway's own 404 (not deployed here), or the database update missing.
+  if ((httpStatus === 404 && !payload?.status) || payload?.status === 'needs_migration') {
+    throw new AccountDeletionError('unavailable', 'Deleting your account from the app is not switched on yet.');
+  }
+  throw new AccountDeletionError('error', payload?.error ?? error.message);
+}
+
+/** What deleting the signed-in account would do, family by family. Changes nothing. */
+export async function previewAccountDeletion(): Promise<AccountDeletionFamily[]> {
+  const { families } = await deleteAccountInvoke<{
+    families: Array<{
+      family_id: string; name: string; role: string; other_members: number;
+      document_count: number; your_documents: number; deleted: boolean;
+    }>;
+  }>({ action: 'preview' });
+  return (families ?? []).map((f) => ({
+    familyId: f.family_id,
+    name: f.name,
+    role: f.role,
+    otherMembers: f.other_members,
+    documentCount: f.document_count,
+    yourDocuments: f.your_documents,
+    deleted: f.deleted,
+  }));
+}
+
+/** Delete the signed-in account, as the preview described. There is no undo. */
+export async function deleteAccount(): Promise<{ familiesDeleted: number; filesDeleted: number }> {
+  const result = await deleteAccountInvoke<{ families_deleted: number; files_deleted: number }>({
+    action: 'delete',
+    confirm: 'DELETE',
+  });
+  return { familiesDeleted: result.families_deleted ?? 0, filesDeleted: result.files_deleted ?? 0 };
+}
+
+/**
+ * Forget the session on this device only. After a deletion there is no
+ * account for a server-side sign-out to find.
+ */
+export async function signOutThisDevice(): Promise<void> {
+  await supabase.auth.signOut({ scope: 'local' });
+}
+
+// ─── Family tree (031) ───────────────────────────────────────────
+//
+// Everyone in a family, with or without a FamilyVault account: a grandparent
+// who will never sign in, a child too young to. public.family_people holds
+// the people and public.family_links how they are related (parent, spouse,
+// sibling) — never a label: "Mother" depends on who is looking, and is
+// worked out by supabase/functions/_shared/kinship.ts. A member's own node
+// is created with their membership and carries their member id, so
+// documents already tagged to a member stay tagged to that person.
+//
+// Reads go through RLS (members of the family); writes go through RPCs that
+// check the caller is an admin (or, for their own details, that person).
+// Before 031 every call fails with a missing table or function: callers
+// check isMissingMigration() and say the tree is not switched on yet.
+
+export interface FamilyPerson extends KinPerson {
+  /** The account this person signs in with, if any. */
+  userId: string | null;
+}
+
+export interface FamilyTree {
+  people: FamilyPerson[];
+  links: KinLink[];
+}
+
+export type RelativeKind = 'parent' | 'child' | 'spouse' | 'sibling';
+
+export interface PersonDetails {
+  name: string;
+  gender: Gender;
+  /** YYYY-MM-DD, or null. */
+  birthDate: string | null;
+}
+
+export async function fetchFamilyTree(familyId: string): Promise<FamilyTree> {
+  const [people, links] = await Promise.all([
+    supabase.from('family_people').select('id, display_name, gender, birth_date, user_id').eq('family_id', familyId).order('created_at'),
+    supabase.from('family_links').select('from_person, to_person, kind').eq('family_id', familyId),
+  ]);
+  if (people.error) throw people.error;
+  if (links.error) throw links.error;
+  return {
+    people: (people.data ?? []).map((p) => ({
+      id: p.id,
+      name: p.display_name,
+      gender: p.gender === 'female' || p.gender === 'male' ? p.gender : null,
+      birthDate: p.birth_date ?? null,
+      userId: p.user_id ?? null,
+    })),
+    links: (links.data ?? []).map((l) => ({ from: l.from_person, to: l.to_person, kind: l.kind as KinLink['kind'] })),
+  };
+}
+
+/**
+ * Add someone to the tree, already connected: "the new person is the
+ * <relation> of <relative>". A child can have both parents at once
+ * (`otherParentId`). Admins only; the database checks.
+ */
+export async function addFamilyPerson(
+  familyId: string,
+  details: PersonDetails,
+  relation?: { kind: RelativeKind; relativeId: string; otherParentId?: string | null },
+): Promise<string> {
+  // Left out rather than sent as null: each has a NULL default.
+  const { data, error } = await supabase.rpc('add_family_person', {
+    p_family_id: familyId,
+    p_display_name: details.name.trim(),
+    p_gender: details.gender ?? undefined,
+    p_birth_date: details.birthDate ?? undefined,
+    p_relation: relation?.kind,
+    p_relative: relation?.relativeId,
+    p_other_parent: relation?.otherParentId ?? undefined,
+  });
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Connect someone already in the tree: `personId` is the <kind> of
+ * `relativeId` (and, for a child, of `otherParentId` too). Admins only.
+ */
+export async function linkFamilyPeople(
+  familyId: string,
+  personId: string,
+  kind: RelativeKind,
+  relativeId: string,
+  otherParentId?: string | null,
+): Promise<void> {
+  const { error } = await supabase.rpc('link_family_people', {
+    p_family_id: familyId,
+    p_person: personId,
+    p_relation: kind,
+    p_relative: relativeId,
+    p_other_parent: otherParentId ?? undefined,
+  });
+  if (error) throw error;
+}
+
+/** Name, gender, birth date. An admin, or the person themselves. */
+export async function updateFamilyPerson(personId: string, details: PersonDetails): Promise<void> {
+  // A gender or birth date left out is cleared: the function's defaults are NULL.
+  const { error } = await supabase.rpc('update_family_person', {
+    p_person_id: personId,
+    p_display_name: details.name.trim(),
+    p_gender: details.gender ?? undefined,
+    p_birth_date: details.birthDate ?? undefined,
+  });
+  if (error) throw error;
+}
+
+/**
+ * Take someone out of the tree, with their links. Their documents stay in
+ * the family, no longer marked as theirs. Someone with an account is taken
+ * out by removing them from the family instead. Admins only.
+ */
+export async function removeFamilyPerson(personId: string): Promise<void> {
+  const { error } = await supabase.rpc('remove_family_person', { p_person_id: personId });
+  if (error) throw error;
+}
+
+// ─── Emergency cards (032) ───────────────────────────────────────
+//
+// One card per person in the tree: blood group, allergies, conditions,
+// medicines, the family doctor, health insurance, people to call. Every
+// member reads every card (RLS); save_emergency_card() writes, for an admin
+// or the person themselves, and an empty card is deleted. A person's card
+// goes with their membership when they leave the family. Before 032 every
+// call fails with a missing table or function: callers check
+// isMissingMigration() and say cards are not switched on yet.
+
+function toEmergencyCard(row: Tables<'family_emergency_cards'>): EmergencyCard {
+  const contacts = Array.isArray(row.contacts) ? (row.contacts as unknown[]) : [];
+  return {
+    personId: row.person_id,
+    bloodGroup: isBloodGroup(row.blood_group) ? row.blood_group : null,
+    allergies: row.allergies,
+    conditions: row.conditions,
+    medicines: row.medicines,
+    doctorName: row.doctor_name,
+    doctorPhone: row.doctor_phone,
+    insurer: row.insurer,
+    policyNumber: row.policy_number,
+    contacts: contacts
+      .map((c) => (c ?? {}) as Partial<Record<keyof EmergencyContact, unknown>>)
+      .filter((c) => typeof c.name === 'string' && typeof c.phone === 'string')
+      .map((c) => ({ name: c.name as string, relation: typeof c.relation === 'string' ? c.relation : null, phone: c.phone as string })),
+    notes: row.notes,
+    updatedBy: row.updated_by,
+    updatedAt: row.updated_at,
+  };
+}
+
+/** Every card in the family. People without one are simply not in the list. */
+export async function fetchEmergencyCards(familyId: string): Promise<EmergencyCard[]> {
+  const { data, error } = await supabase.from('family_emergency_cards').select('*').eq('family_id', familyId);
+  if (error) throw error;
+  return (data ?? []).map(toEmergencyCard);
+}
+
+/** One person's card, or null when they have none yet. */
+export async function fetchEmergencyCard(familyId: string, personId: string): Promise<EmergencyCard | null> {
+  const { data, error } = await supabase
+    .from('family_emergency_cards')
+    .select('*')
+    .eq('family_id', familyId)
+    .eq('person_id', personId)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? toEmergencyCard(data) : null;
+}
+
+/**
+ * Save the whole card: fields left blank are cleared, and a card with
+ * nothing on it is deleted. An admin, or the person themselves; the
+ * database checks, and its messages are written to be shown as they are.
+ */
+export async function saveEmergencyCard(personId: string, card: EmergencyCardInput): Promise<void> {
+  const payload = {
+    blood_group: card.bloodGroup,
+    allergies: card.allergies,
+    conditions: card.conditions,
+    medicines: card.medicines,
+    doctor_name: card.doctorName,
+    doctor_phone: card.doctorPhone,
+    insurer: card.insurer,
+    policy_number: card.policyNumber,
+    contacts: card.contacts.map((c) => ({ name: c.name, relation: c.relation, phone: c.phone })),
+    notes: card.notes,
+  };
+  const { error } = await supabase.rpc('save_emergency_card', {
+    p_person_id: personId,
+    p_card: payload as unknown as Json,
+  });
+  if (error) throw error;
+}
+
+/** The documents marked as one person's, newest first. */
+export async function fetchPersonDocuments(familyId: string, personId: string): Promise<FamilyDocumentRow[]> {
+  const docs = await fetchAllDocuments(familyId);
+  return docs.filter((d) => d.belongs_to_member === personId);
 }

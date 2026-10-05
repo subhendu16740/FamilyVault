@@ -48,7 +48,12 @@ const PHRASES: Record<string, Record<string, string>> = {
     read_again: 'Read again',
     stop: 'Stop',
     empty_title: 'Tap the microphone and ask about your documents',
+    empty_title_typed: 'Type a question about your documents',
     empty_sub: 'For example: when does my passport expire?',
+    voice_limit: 'The answer is on the screen. You have used your free voice chats; Family Plus brings voice back.',
+    voice_limit_mic: 'You have used your free voice chats. Please type your question. Family Plus brings voice back.',
+    type_to_ask: 'Type your question',
+    voice_sample: 'This is how your answers will sound.',
   },
   hi: {
     tap_to_ask: 'माइक दबाएँ और पूछें',
@@ -62,7 +67,12 @@ const PHRASES: Record<string, Record<string, string>> = {
     read_again: 'फिर से सुनें',
     stop: 'रोकें',
     empty_title: 'माइक दबाएँ और अपने दस्तावेज़ों के बारे में पूछें',
+    empty_title_typed: 'अपने दस्तावेज़ों के बारे में सवाल लिखें',
     empty_sub: 'जैसे: मेरा पासपोर्ट कब खत्म हो रहा है?',
+    voice_limit: 'जवाब स्क्रीन पर लिखा है। आपकी मुफ़्त आवाज़ वाली बातचीत पूरी हो गई; Family Plus से आवाज़ वापस मिलेगी।',
+    voice_limit_mic: 'आपकी मुफ़्त आवाज़ वाली बातचीत पूरी हो गई। कृपया अपना सवाल लिखकर पूछें। Family Plus से आवाज़ वापस मिलेगी।',
+    type_to_ask: 'अपना सवाल लिखें',
+    voice_sample: 'आपके जवाब इस आवाज़ में सुनाई देंगे।',
   },
 };
 

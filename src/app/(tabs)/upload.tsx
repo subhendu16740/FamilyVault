@@ -1,41 +1,50 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, StyleSheet,
-  Alert, ActivityIndicator, Image, Modal, Pressable,
+  Alert, ActivityIndicator, Image, Modal, Pressable, Platform,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { useFamily } from '../../lib/family-context';
+import { useDocumentOwners } from '../../lib/family-people';
 import { useAuth } from '../../lib/auth';
-import { fetchCategories, uploadDocument } from '../../lib/api';
+import { StorageFullError, fetchCategories, uploadDocument } from '../../lib/api';
+import { plusPage, useFamilyPlan } from '../../lib/family-plan';
+import type { PlanName } from '../../lib/plans';
 import {
   extractTextFromImage, isImageFile, ocrLanguageGapOnThisDevice, type OcrProgress,
 } from '../../lib/ocr';
 import { usePreferences } from '../../lib/preferences';
 import { describeOcrLanguages } from '../../lib/ocr-languages';
+import {
+  detectFileType, isSaveable, mimeTypeFor, nameWithType, unsupportedFileMessage, type SaveableType,
+} from '../../lib/file-types';
 import type { Database } from '../../lib/database.types';
+import { ScreenHeader, PlusTag } from '../../components/screen-header';
+import { color, radius, shadow, size, space, type } from '../../constants/design';
 
 type DocumentCategory = Database['public']['Tables']['document_categories']['Row'];
 
 interface PickedFile {
   uri: string;
   name: string;
-  type: string;       // 'pdf' | 'jpg' | 'jpeg' | 'png'
+  type: SaveableType;
   mimeType: string;
   size: number;
 }
 
-function getFileExtension(name: string): string {
-  return name.split('.').pop()?.toLowerCase() ?? 'unknown';
-}
-
 export default function UploadScreen() {
   const { user } = useAuth();
-  const { currentFamily, members } = useFamily();
+  const { currentFamily } = useFamily();
+  const { routeFor } = useFamilyPlan();
+  // Everyone in the family tree (you first); the members, before migration 031.
+  const owners = useDocumentOwners();
+  // From a person's page: "Add a document for Nani".
+  const { person } = useLocalSearchParams<{ person?: string }>();
   const { documentLanguages } = usePreferences();
   // Shown while scanning, so it is obvious which languages are being read —
   // and obvious what to change in Settings if a page comes back as nonsense.
@@ -50,6 +59,9 @@ export default function UploadScreen() {
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<{ docId: string } | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // Which wall was hit: the family's storage limit (038) on this plan, or
+  // anything else (null). A free family is offered the Family Plus page.
+  const [fullPlan, setFullPlan] = useState<PlanName | null>(null);
   const [ocrText, setOcrText] = useState<string | null>(null);
   const [ocrProgress, setOcrProgress] = useState<OcrProgress | null>(null);
   const [ocrRunning, setOcrRunning] = useState(false);
@@ -59,10 +71,9 @@ export default function UploadScreen() {
   }, []);
 
   useEffect(() => {
-    if (members.length > 0 && !selectedPerson) {
-      setSelectedPerson(members[0].id);
-    }
-  }, [members]);
+    if (person && owners.some((o) => o.id === person)) setSelectedPerson(person);
+    else if (owners.length > 0 && !owners.some((o) => o.id === selectedPerson)) setSelectedPerson(owners[0].id);
+  }, [owners, person]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (categories.length > 0 && !selectedCategory) {
@@ -71,6 +82,32 @@ export default function UploadScreen() {
   }, [categories]);
 
   // ─── File Pickers ─────────────────────────────────────────────
+
+  // Every picker's result goes through here, so they cannot disagree about
+  // what a file is. The type comes from its MIME type or name, never from a
+  // web blob: uri (see file-types.ts), and a file the vault cannot keep is
+  // turned away now rather than failing at Save.
+  const takeFile = (
+    picked: { uri: string; name?: string | null; mimeType?: string | null; size?: number | null },
+    fallbackStem: string,
+  ) => {
+    const kind = detectFileType(picked);
+    if (!isSaveable(kind)) {
+      setFullPlan(null);
+      setErrorMsg(unsupportedFileMessage(kind));
+      return;
+    }
+    const file: PickedFile = {
+      uri: picked.uri,
+      name: nameWithType(picked.name, kind, fallbackStem),
+      type: kind,
+      mimeType: mimeTypeFor(kind),
+      size: picked.size ?? 0,
+    };
+    setPickedFile(file);
+    setOcrText(null);
+    runOcr(file);
+  };
 
   const pickDocument = async () => {
     try {
@@ -81,18 +118,10 @@ export default function UploadScreen() {
 
       if (result.canceled || !result.assets?.length) return;
       const asset = result.assets[0];
-      const ext = getFileExtension(asset.name);
-
-      const file: PickedFile = {
-        uri: asset.uri,
-        name: asset.name,
-        type: ext,
-        mimeType: asset.mimeType ?? `application/${ext}`,
-        size: asset.size ?? 0,
-      };
-      setPickedFile(file);
-      setOcrText(null);
-      runOcr(file);
+      takeFile(
+        { uri: asset.uri, name: asset.name, mimeType: asset.mimeType, size: asset.size },
+        `document_${Date.now()}`,
+      );
     } catch (err) {
       Alert.alert('Error', 'Failed to pick document.');
     }
@@ -109,18 +138,10 @@ export default function UploadScreen() {
 
     if (result.canceled || !result.assets?.length) return;
     const asset = result.assets[0];
-    const ext = asset.uri.split('.').pop()?.toLowerCase() ?? 'jpg';
-
-    const file: PickedFile = {
-      uri: asset.uri,
-      name: `scan_${Date.now()}.${ext}`,
-      type: ext,
-      mimeType: `image/${ext}`,
-      size: asset.fileSize ?? 0,
-    };
-    setPickedFile(file);
-    setOcrText(null);
-    runOcr(file);
+    takeFile(
+      { uri: asset.uri, name: null, mimeType: asset.mimeType, size: asset.fileSize },
+      `scan_${Date.now()}`,
+    );
   };
 
   const pickFromGallery = async () => {
@@ -137,18 +158,10 @@ export default function UploadScreen() {
 
     if (result.canceled || !result.assets?.length) return;
     const asset = result.assets[0];
-    const ext = asset.uri.split('.').pop()?.toLowerCase() ?? 'jpg';
-
-    const file: PickedFile = {
-      uri: asset.uri,
-      name: asset.fileName ?? `photo_${Date.now()}.${ext}`,
-      type: ext,
-      mimeType: `image/${ext}`,
-      size: asset.fileSize ?? 0,
-    };
-    setPickedFile(file);
-    setOcrText(null);
-    runOcr(file);
+    takeFile(
+      { uri: asset.uri, name: asset.fileName, mimeType: asset.mimeType, size: asset.fileSize },
+      `photo_${Date.now()}`,
+    );
   };
 
   // ─── OCR Processing ────────────────────────────────────────────
@@ -175,6 +188,7 @@ export default function UploadScreen() {
 
   const handleUpload = async () => {
     if (!pickedFile || !currentFamily || !user) {
+      setFullPlan(null);
       setErrorMsg('Missing file, family, or user session. Please try again.');
       return;
     }
@@ -201,6 +215,7 @@ export default function UploadScreen() {
       setUploadResult({ docId });
     } catch (err: any) {
       console.error('Upload error:', err);
+      setFullPlan(err instanceof StorageFullError ? err.room.plan : null);
       setErrorMsg(err.message ?? 'Something went wrong.');
     } finally {
       setUploading(false);
@@ -213,15 +228,7 @@ export default function UploadScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-            <Feather name="arrow-left" size={24} color="#4B5563" />
-          </TouchableOpacity>
-          <Text style={styles.title}>Upload Document</Text>
-        </View>
-      </View>
+      <ScreenHeader title="Upload Document" />
 
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
         {!pickedFile ? (
@@ -230,14 +237,14 @@ export default function UploadScreen() {
             <Text style={styles.sectionTitle}>Choose source</Text>
 
             <View style={styles.primaryActions}>
-              <TouchableOpacity onPress={pickFromCamera} activeOpacity={0.85}>
+              <TouchableOpacity onPress={pickFromCamera} activeOpacity={0.85} style={styles.scanTouch}>
                 <LinearGradient
                   colors={['#2A3D66', '#4A6491']}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                   style={styles.primaryBtn}
                 >
-                  <Feather name="camera" size={44} color="#FFFFFF" />
+                  <Feather name="camera" size={28} color="#FFFFFF" />
                   <Text style={styles.primaryBtnText}>Scan</Text>
                 </LinearGradient>
               </TouchableOpacity>
@@ -247,16 +254,38 @@ export default function UploadScreen() {
                 style={styles.primaryBtnOutline}
                 activeOpacity={0.85}
               >
-                <Feather name="folder" size={44} color="#2A3D66" />
+                <Feather name="folder" size={28} color={color.primary} />
                 <Text style={styles.primaryBtnOutlineText}>Browse Files</Text>
               </TouchableOpacity>
             </View>
 
             <View style={styles.secondaryActions}>
-              <TouchableOpacity style={styles.secondaryBtn} onPress={pickFromGallery}>
-                <Feather name="image" size={28} color="#4B5563" />
+              <TouchableOpacity
+                style={styles.secondaryBtn}
+                onPress={pickFromGallery}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+              >
+                <Feather name="image" size={22} color={color.primary} />
                 <Text style={styles.secondaryBtnText}>Gallery</Text>
               </TouchableOpacity>
+              {/* Web only: connecting Gmail from the phone app needs a native
+                  auth session, not built yet (see gmail-import.tsx).
+                  ★: part of Family Plus; a free family is shown the Family
+                  Plus page instead. The tag sits under the label. */}
+              {Platform.OS === 'web' && (
+                <TouchableOpacity
+                  style={styles.secondaryBtn}
+                  onPress={async () => router.push((await routeFor('gmail', '/gmail-import')) as any)}
+                  activeOpacity={0.8}
+                  accessibilityRole="button"
+                  accessibilityLabel="From Gmail, part of Family Plus"
+                >
+                  <Feather name="mail" size={22} color={color.primary} />
+                  <Text style={styles.secondaryBtnText}>From Gmail</Text>
+                  <PlusTag />
+                </TouchableOpacity>
+              )}
             </View>
 
             {/* Supported formats hint */}
@@ -336,33 +365,34 @@ export default function UploadScreen() {
               style={styles.changeFileBtn}
               onPress={() => { setPickedFile(null); setOcrText(null); setOcrProgress(null); }}
             >
-              <Feather name="refresh-cw" size={14} color="#2A3D66" />
+              <Feather name="refresh-cw" size={16} color={color.primary} />
               <Text style={styles.changeFileBtnText}>Choose different file</Text>
             </TouchableOpacity>
 
             {/* Owner */}
             <Text style={styles.sectionTitle}>Who does this belong to?</Text>
             <View style={styles.chipsWrap}>
-              {members.map((m) => {
-                const label = m.alias || m.users.display_name;
-                const sub = m.relationship ? ` (${m.relationship})` : '';
+              {owners.map((o) => {
+                const sub = o.label ? ` (${o.label})` : '';
                 return (
                   <TouchableOpacity
-                    key={m.id}
-                    onPress={() => setSelectedPerson(m.id)}
+                    key={o.id}
+                    onPress={() => setSelectedPerson(o.id)}
                     style={[
                       styles.chip,
-                      selectedPerson === m.id && styles.chipSelected,
+                      selectedPerson === o.id && styles.chipSelected,
                     ]}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: selectedPerson === o.id }}
                   >
-                    {selectedPerson === m.id && (
+                    {selectedPerson === o.id && (
                       <Feather name="check" size={14} color="#FFFFFF" style={styles.chipCheck} />
                     )}
                     <Text style={[
                       styles.chipText,
-                      selectedPerson === m.id && styles.chipTextSelected,
+                      selectedPerson === o.id && styles.chipTextSelected,
                     ]}>
-                      {label}{sub}
+                      {o.name}{sub}
                     </Text>
                   </TouchableOpacity>
                 );
@@ -370,7 +400,7 @@ export default function UploadScreen() {
             </View>
 
             {/* Category */}
-            <Text style={[styles.sectionTitle, { marginTop: 24 }]}>Category</Text>
+            <Text style={[styles.sectionTitle, styles.sectionTitleLater]}>Category</Text>
             <View style={styles.chipsWrap}>
               {categories.slice(0, 12).map((cat) => (
                 <TouchableOpacity
@@ -394,7 +424,7 @@ export default function UploadScreen() {
             {/* Upload Button */}
             <TouchableOpacity
               activeOpacity={0.85}
-              style={{ marginTop: 32 }}
+              style={styles.saveBtnWrap}
               onPress={handleUpload}
               disabled={uploading || ocrRunning}
             >
@@ -423,7 +453,7 @@ export default function UploadScreen() {
         <Pressable style={styles.overlay} onPress={() => {}}>
           <View style={styles.dialog}>
             <View style={styles.dialogIconWrap}>
-              <Feather name="check-circle" size={40} color="#22C55E" />
+              <Feather name="check-circle" size={32} color="#22C55E" />
             </View>
             <Text style={styles.dialogTitle}>Uploaded!</Text>
             <Text style={styles.dialogMsg}>Document saved to your vault.</Text>
@@ -455,16 +485,31 @@ export default function UploadScreen() {
         <Pressable style={styles.overlay} onPress={() => setErrorMsg(null)}>
           <View style={styles.dialog}>
             <View style={styles.dialogIconWrap}>
-              <Feather name="alert-circle" size={40} color="#EF4444" />
+              <Feather name="alert-circle" size={32} color="#EF4444" />
             </View>
-            <Text style={styles.dialogTitle}>Upload Failed</Text>
+            <Text style={styles.dialogTitle}>{fullPlan ? 'Storage full' : 'Upload Failed'}</Text>
             <Text style={styles.dialogMsg}>{errorMsg}</Text>
-            <TouchableOpacity
-              style={styles.dialogBtnFilled}
-              onPress={() => setErrorMsg(null)}
-            >
-              <Text style={styles.dialogBtnFilledText}>OK</Text>
-            </TouchableOpacity>
+            {fullPlan === 'free' ? (
+              <View style={styles.dialogBtns}>
+                <TouchableOpacity
+                  style={styles.dialogBtnOutline}
+                  onPress={() => { setErrorMsg(null); router.push(plusPage('storage') as any); }}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.dialogBtnOutlineText}>See Family Plus</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.dialogBtnFilled} onPress={() => setErrorMsg(null)} accessibilityRole="button">
+                  <Text style={styles.dialogBtnFilledText}>OK</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={styles.dialogBtnWide}
+                onPress={() => setErrorMsg(null)}
+              >
+                <Text style={styles.dialogBtnFilledText}>OK</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </Pressable>
       </Modal>
@@ -475,78 +520,74 @@ export default function UploadScreen() {
 // ─── Styles ───────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F8F9FC' },
-  header: {
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 24,
-    paddingTop: 8,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  backBtn: { padding: 4 },
-  title: { fontSize: 22, fontWeight: '700', color: '#2A3D66' },
+  safe: { flex: 1, backgroundColor: color.background },
   scroll: { flex: 1 },
-  body: { padding: 24 },
-  sectionTitle: { fontSize: 16, fontWeight: '600', color: '#1F2937', marginBottom: 16 },
-  primaryActions: { flexDirection: 'row', gap: 16, marginBottom: 16 },
+  body: { padding: space.lg },
+  sectionTitle: { ...type.heading, marginBottom: space.md },
+  sectionTitleLater: { marginTop: space.xl },
+  primaryActions: { flexDirection: 'row', gap: space.md, marginBottom: space.md },
+  // Scan narrow, Browse Files wide, 2 to 5. The first version looked like this
+  // by accident — Scan's wrapper had no flex, so it shrank to its label — and
+  // people liked it; the ratio makes it hold on every screen width.
+  scanTouch: { flex: 2 },
   primaryBtn: {
     flex: 1,
-    borderRadius: 24,
-    padding: 24,
+    borderRadius: radius.card,
+    paddingVertical: space.lg,
+    paddingHorizontal: space.md,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 12,
-    minHeight: 160,
-    boxShadow: '0px 4px 10px rgba(42, 61, 102, 0.25)',
-    elevation: 6,
+    gap: space.sm,
+    minHeight: 112,
+    boxShadow: '0px 2px 8px rgba(42, 61, 102, 0.2)',
+    elevation: 3,
   },
-  primaryBtnText: { color: '#FFFFFF', fontWeight: '600', fontSize: 16 },
+  primaryBtnText: { ...type.button, color: '#FFFFFF' },
   primaryBtnOutline: {
-    flex: 1,
-    borderRadius: 24,
-    padding: 24,
+    flex: 5,
+    borderRadius: radius.card,
+    padding: space.lg,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 12,
-    minHeight: 160,
-    borderWidth: 2,
-    borderColor: '#2A3D66',
-    backgroundColor: '#FFFFFF',
+    gap: space.sm,
+    minHeight: 112,
+    borderWidth: 1,
+    borderColor: color.primary,
+    backgroundColor: color.surface,
   },
-  primaryBtnOutlineText: { color: '#2A3D66', fontWeight: '600', fontSize: 16 },
-  secondaryActions: { flexDirection: 'row', gap: 12, marginBottom: 16 },
+  primaryBtnOutlineText: { ...type.button, color: color.primary },
+  secondaryActions: { flexDirection: 'row', gap: space.md, marginBottom: space.md },
   secondaryBtn: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: color.surface,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 20,
-    padding: 16,
+    borderColor: color.border,
+    borderRadius: radius.card,
+    paddingVertical: space.md,
+    paddingHorizontal: space.sm,
     alignItems: 'center',
-    gap: 8,
-    minHeight: 80,
     justifyContent: 'center',
-    boxShadow: '0px 2px 6px rgba(0, 0, 0, 0.05)',
-    elevation: 2,
+    gap: 6,
+    minHeight: 80,
+    ...shadow.card,
   },
-  secondaryBtnText: { fontSize: 12, color: '#374151' },
+  secondaryBtnText: type.label,
   hintCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#F3F4F6',
-    borderRadius: 12,
-    padding: 12,
+    gap: space.sm,
+    backgroundColor: color.divider,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: space.md,
   },
-  hintText: { fontSize: 13, color: '#6B7280' },
+  hintText: type.caption,
   docPreview: {
-    backgroundColor: '#F3F4F6',
-    borderRadius: 20,
-    height: 220,
+    backgroundColor: color.divider,
+    borderRadius: radius.card,
+    height: 200,
     overflow: 'hidden',
-    marginBottom: 12,
+    marginBottom: space.md,
   },
   previewImage: {
     width: '100%',
@@ -561,54 +602,51 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: color.surface,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
+    marginBottom: space.sm,
   },
-  previewLabel: { fontSize: 13, color: '#9CA3AF' },
+  previewLabel: type.caption,
   fileInfoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 14,
+    gap: space.sm,
+    backgroundColor: color.surface,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: space.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    marginBottom: 8,
+    borderColor: color.border,
+    marginBottom: space.sm,
   },
-  fileInfoName: { flex: 1, fontSize: 14, fontWeight: '500', color: '#1F2937' },
-  fileInfoSize: { fontSize: 12, color: '#9CA3AF' },
+  fileInfoName: { ...type.label, flex: 1 },
+  fileInfoSize: type.meta,
   ocrCard: {
-    backgroundColor: '#EFF6FF',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 8,
+    backgroundColor: color.tint,
+    borderRadius: 10,
+    padding: space.md,
+    marginBottom: space.sm,
     gap: 10,
   },
   ocrHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: space.sm,
   },
-  ocrLabel: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#2A3D66',
-  },
+  ocrLabel: { ...type.caption, fontWeight: '500', color: color.primary },
   ocrGapCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 8,
+    gap: space.sm,
     backgroundColor: '#FFF7E6',
     borderWidth: 1,
     borderColor: '#F5D9A0',
-    borderRadius: 12,
-    padding: 12,
-    marginTop: 12,
+    borderRadius: 10,
+    padding: space.md,
+    marginTop: space.md,
   },
-  ocrGapText: { flex: 1, fontSize: 12, color: '#7A5200', lineHeight: 17 },
+  ocrGapText: { ...type.caption, flex: 1, color: '#7A5200' },
   ocrBarBg: {
     height: 6,
     borderRadius: 3,
@@ -618,92 +656,97 @@ const styles = StyleSheet.create({
   ocrBarFill: {
     height: '100%',
     borderRadius: 3,
-    backgroundColor: '#2A3D66',
+    backgroundColor: color.primary,
   },
   ocrDoneCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: space.sm,
     backgroundColor: '#F0FDF4',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 8,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: space.md,
+    marginBottom: space.sm,
   },
-  ocrDoneText: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#16A34A',
-  },
+  ocrDoneText: { ...type.caption, fontWeight: '500', color: '#16A34A' },
   changeFileBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: space.sm,
     alignSelf: 'flex-start',
-    paddingVertical: 8,
-    marginBottom: 24,
+    minHeight: size.control,
+    marginBottom: space.md,
   },
-  changeFileBtnText: { fontSize: 13, color: '#2A3D66', fontWeight: '500' },
-  chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  changeFileBtnText: { ...type.label, color: color.primary },
+  chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 999,
-    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 14,
+    borderRadius: radius.pill,
+    backgroundColor: color.surface,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    minHeight: 44,
+    borderColor: color.inputBorder,
+    minHeight: 40,
   },
-  chipSelected: { backgroundColor: '#2A3D66', borderColor: '#2A3D66' },
-  chipCheck: { marginRight: 4 },
-  chipText: { fontSize: 13, fontWeight: '500', color: '#374151' },
+  chipSelected: { backgroundColor: color.primary, borderColor: color.primary },
+  chipCheck: { marginRight: space.xs },
+  chipText: { fontSize: 14, lineHeight: 20, fontWeight: '500', color: color.textBody },
   chipTextSelected: { color: '#FFFFFF' },
+  saveBtnWrap: { marginTop: space.xl },
   saveBtn: {
-    borderRadius: 20,
+    borderRadius: radius.control,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 56,
+    minHeight: size.control,
   },
   saveBtnDisabled: { opacity: 0.7 },
-  saveBtnText: { color: '#FFFFFF', fontSize: 17, fontWeight: '600' },
+  saveBtnText: { ...type.button, color: '#FFFFFF' },
   uploadingRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 24,
+    padding: space.xl,
   },
   dialog: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 28,
+    backgroundColor: color.surface,
+    borderRadius: radius.card,
+    padding: space.xl,
     width: '100%',
     maxWidth: 340,
     alignItems: 'center',
   },
-  dialogIconWrap: { marginBottom: 16 },
-  dialogTitle: { fontSize: 20, fontWeight: '700', color: '#1F2937', marginBottom: 8 },
-  dialogMsg: { fontSize: 14, color: '#6B7280', textAlign: 'center', marginBottom: 24 },
-  dialogBtns: { flexDirection: 'row', gap: 12, width: '100%' },
+  dialogIconWrap: { marginBottom: space.md },
+  dialogTitle: { ...type.title, color: color.text, marginBottom: space.xs },
+  dialogMsg: { ...type.body, color: color.textMuted, textAlign: 'center', marginBottom: space.xl },
+  dialogBtns: { flexDirection: 'row', gap: space.md, width: '100%' },
   dialogBtnOutline: {
     flex: 1,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: '#2A3D66',
+    borderRadius: radius.control,
+    borderWidth: 1,
+    borderColor: color.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 14,
+    minHeight: size.control,
   },
-  dialogBtnOutlineText: { fontSize: 15, fontWeight: '600', color: '#2A3D66' },
+  dialogBtnOutlineText: { ...type.button, color: color.primary },
   dialogBtnFilled: {
     flex: 1,
-    borderRadius: 14,
-    backgroundColor: '#2A3D66',
+    borderRadius: radius.control,
+    backgroundColor: color.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 14,
+    minHeight: size.control,
   },
-  dialogBtnFilledText: { fontSize: 15, fontWeight: '600', color: '#FFFFFF' },
+  dialogBtnWide: {
+    alignSelf: 'stretch',
+    borderRadius: radius.control,
+    backgroundColor: color.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: size.control,
+  },
+  dialogBtnFilledText: { ...type.button, color: '#FFFFFF' },
 });
