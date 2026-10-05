@@ -169,7 +169,7 @@ body { -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; 
   background: linear-gradient(135deg, #2A3D66 0%, #4A6491 100%);
   box-shadow: 0 24px 60px -18px rgba(42, 61, 102, 0.55), inset 0 1px 0 rgba(255,255,255,0.18);
 }
-.logo-tile svg { width: 58%; height: 58%; }
+.logo-tile svg { width: 100%; height: 100%; }
 .brand { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
 .brand .logo-tile { width: 168px; height: 168px; }
 .wordmark { margin-top: 34px; font: 750 104px/1 var(--display); letter-spacing: -0.045em; color: var(--navy); font-variation-settings: 'opsz' 96; }

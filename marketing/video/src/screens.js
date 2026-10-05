@@ -25,14 +25,16 @@ const CATEGORIES = [
 // ─── Small parts ─────────────────────────────────────────────────────────
 
 export function logoMark(color = '#fff') {
-  return `<svg viewBox="0 0 48 48" aria-hidden="true"><g fill="${color}">
-    <path d="M24 5.5 43 15.2c.9.5.6 1.8-.4 1.8H5.4c-1 0-1.3-1.3-.4-1.8Z"/>
-    <rect x="7.5" y="19" width="33" height="3.4" rx="1.4"/>
-    <rect x="10.4" y="24.4" width="4" height="13" rx="1.6"/>
-    <rect x="18.2" y="24.4" width="4" height="13" rx="1.6"/>
-    <rect x="25.8" y="24.4" width="4" height="13" rx="1.6"/>
-    <rect x="33.6" y="24.4" width="4" height="13" rx="1.6"/>
-    <rect x="5.5" y="39.4" width="37" height="4" rx="2"/></g></svg>`;
+  // The app's own mark (public/icon-512.png), traced at its 512px geometry:
+  // pediment, architrave, four columns, base.
+  return `<svg viewBox="0 0 512 512" aria-hidden="true"><g fill="${color}">
+    <path d="M256 100 412 185H100Z"/>
+    <rect x="116" y="197" width="280" height="24" rx="6"/>
+    <rect x="138" y="232" width="38" height="139" rx="8"/>
+    <rect x="204" y="232" width="38" height="139" rx="8"/>
+    <rect x="270" y="232" width="38" height="139" rx="8"/>
+    <rect x="336" y="232" width="38" height="139" rx="8"/>
+    <rect x="104" y="382" width="304" height="27" rx="6"/></g></svg>`;
 }
 
 function spinner(color = '#2A3D66', size = 20, cls = '') {
