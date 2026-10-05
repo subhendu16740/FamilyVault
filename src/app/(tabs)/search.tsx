@@ -220,12 +220,12 @@ export default function SearchScreen() {
     });
   }, [voiceLanguage]);
 
-  // Voice chats (041, 042): a free family's first 10 — a question asked by
-  // voice or an answer read aloud, one per question — then it types and
-  // reads, and Family Plus brings voice back. How many are left is always on
-  // show in voice mode. Each new answer is claimed before it is read; one
-  // heard already is read again without counting. When the server cannot be
-  // asked, the answer is read.
+  // Voice chats (041–043): on the free plan each person has 10 of their own —
+  // a question asked by voice or an answer read aloud, one per question —
+  // then they type and read, and Family Plus brings voice back. How many are
+  // left is always on show in voice mode. Each new answer is claimed before
+  // it is read; one heard already is read again without counting. When the
+  // server cannot be asked, the answer is read.
   const heardIds = useRef(new Set<string>());
   const [voiceQuota, setVoiceQuotaState] = useState<{ left: number; limit: number } | null>(null);
   const voiceQuotaRef = useRef<{ left: number; limit: number } | null>(null);
@@ -311,7 +311,7 @@ export default function SearchScreen() {
     setVoiceNotice(null);
     // A spoken question gets a spoken answer. A typed one in voice mode too:
     // the setting is about hearing answers, not only about the mic — so this
-    // holds even on a browser with no recogniser. Not once the family's free
+    // holds even on a browser with no recogniser. Not once this person's free
     // voice chats are used: then the answer is written for the screen.
     const voiceWanted = voiceMode || !!opts.spoken;
     const wantVoice = voiceWanted && voiceQuotaRef.current?.left !== 0;
@@ -647,14 +647,14 @@ export default function SearchScreen() {
           </View>
         )}
 
-        {/* Voice chats: how many a free family has left, always, in voice mode. */}
+        {/* Voice chats: how many this person has left on the free plan, always, in voice mode. */}
         {voiceMode && voiceQuota && (
           <View style={[styles.indexStrip, styles.voiceStrip]}>
             <Feather name={noVoiceLeft ? 'mic-off' : 'mic'} size={14} color={color.primary} />
             <Text style={styles.indexStripText}>
               {noVoiceLeft
-                ? `Your family has used its ${voiceQuota.limit} free voice chats. Type to ask; answers stay on the screen.`
-                : `${voiceQuota.left} of ${voiceQuota.limit} free voice chats left for your family.`}
+                ? `You have used your ${voiceQuota.limit} free voice chats. Type to ask; answers stay on the screen.`
+                : `You have ${voiceQuota.left} of ${voiceQuota.limit} free voice chats left.`}
             </Text>
             <TouchableOpacity onPress={() => router.push(plusPage('voice') as any)} accessibilityRole="link" hitSlop={8}>
               <Text style={styles.voiceStripLink}>Family Plus ›</Text>

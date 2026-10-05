@@ -71,8 +71,8 @@ export default function SettingsScreen() {
     voiceMode, voiceLanguage: voiceLang, documentLanguages, notificationsEnabled,
     setVoiceMode, setVoiceLanguage, setDocumentLanguages,
   } = usePreferences();
-  // A free family has its first voice chats free (041, 042); say how many
-  // are left where voice is switched on.
+  // On the free plan each person has their own voice chats (041–043); say
+  // how many are left where voice is switched on.
   const { isFree } = useFamilyPlan();
   const [limits, setLimits] = useState<PlanLimits>(DEFAULT_PLAN_LIMITS);
   const [voiceChats, setVoiceChats] = useState<VoiceStatus | null>(null);
@@ -286,9 +286,9 @@ export default function SettingsScreen() {
                 <Text style={styles.plusNoteText}>
                   {voiceChats?.limit != null
                     ? voiceChats.left === 0
-                      ? `Your family has used its ${voiceChats.limit} free voice chats. Family Plus brings voice back: every question by voice, every answer read aloud.`
-                      : `Your family has ${voiceChats.left} of ${voiceChats.limit} free voice chats left: a question asked by voice or an answer read aloud, one per question. Family Plus has no limit.`
-                    : `A free family has its first ${freeVoiceChats} voice chats free: a question asked by voice or an answer read aloud, one per question. Family Plus has no limit.`}
+                      ? `You have used your ${voiceChats.limit} free voice chats. Family Plus brings voice back: every question by voice, every answer read aloud.`
+                      : `You have ${voiceChats.left} of ${voiceChats.limit} free voice chats left: a question asked by voice or an answer read aloud, one per question. Everyone in the family has their own ${voiceChats.limit}. Family Plus has no limit.`
+                    : `On the free plan, each person has ${freeVoiceChats} free voice chats: a question asked by voice or an answer read aloud, one per question. Family Plus has no limit.`}
                 </Text>
               </View>
             )}

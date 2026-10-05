@@ -203,9 +203,9 @@ const plansFnJudge = ({ status, data }) => {
     ? ['pass', `ran; nothing of QA Vault A's was due (${data.families} famil${data.families === 1 ? 'y' : 'ies'} on DEV)`]
     : ['fail', `HTTP ${status}: ${JSON.stringify(data).slice(0, 160)}`];
 };
-// What each plan allows (041): the count of answers read aloud and the
-// plan helper are the server's; a member claims answers for their own family
-// only, and nobody raises a plan's member limit. Skipped until 041 is on DEV
+// What each plan allows (041): the count of voice chats and the plan helper
+// are the server's; a member claims voice chats in their own family only, and
+// nobody raises a plan's member limit. Skipped until 041 is on DEV
 // (PGRST204: plan_limits has no max_members column yet).
 const limitsJudge = (expect) => (outcome) => {
   if (missingTable(outcome.error) || ['PGRST202', 'PGRST204'].includes(String(outcome.error?.code))) {
@@ -218,6 +218,12 @@ const limitsJudge = (expect) => (outcome) => {
 // the server's. Skipped until 042 is on DEV (PGRST202: no such function).
 const chatsVoiceJudge = (expect) => (outcome) => {
   if (String(outcome.error?.code) === 'PGRST202') return ['skipped', 'migration 042 is not applied to DEV yet'];
+  return judge(expect, outcome);
+};
+// Voice chats per person (043): each person's count is in member_usage,
+// which no client reads. Skipped until 043 is on DEV (the table is missing).
+const perPersonJudge = (expect) => (outcome) => {
+  if (missingTable(outcome.error)) return ['skipped', 'migration 043 is not applied to DEV yet'];
   return judge(expect, outcome);
 };
 // A well-formed device key and secret: RFC 8291's own example.
@@ -510,26 +516,27 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
   const onPlans = (run) => async () => (plansMissing ? { missing: true } : run());
 
   // ── What each plan allows (041): account A reads every plan's limits, and
-  // claims one answer read aloud for its own family — the positive control
-  // for the probes below. The numbers are checked against each other, not
-  // pinned: they change in the Table editor. Each run claims one of QA Vault
-  // A's free answers; once they are used the answer is a no, which is right.
+  // claims one voice chat in its own family — the positive control for the
+  // probes below. The numbers are checked against each other, not pinned:
+  // they change in the Table editor. Each run claims one of account A's own
+  // free voice chats (per person since 043); once they are used the answer
+  // is a no, which is right.
   {
     const { data: rows, error } = await a.client.from('plan_limits').select('plan, max_members, voice_answers');
     if (error && (['PGRST204', '42703'].includes(String(error.code)) || /max_members|voice_answers/.test(error.message ?? ''))) {
-      results.add('access', 'control:limits', "Control — account A reads every plan's member and read-aloud limits", 'skipped', { why: 'migration 041 is not applied to DEV yet' });
+      results.add('access', 'control:limits', "Control — account A reads every plan's member and voice-chat limits", 'skipped', { why: 'migration 041 is not applied to DEV yet' });
     } else {
       const plans = Object.fromEntries((rows ?? []).map((r) => [r.plan, r]));
       const limitsOk = !error && ['free', 'plus'].every((p) => Number.isInteger(plans[p]?.max_members) && plans[p].max_members >= 1);
-      results.add('access', 'control:limits', "Control — account A reads every plan's member and read-aloud limits", limitsOk ? 'pass' : 'fail',
-        { why: error ? short(error) : `members ${plans.free?.max_members}/${plans.plus?.max_members}, read aloud ${plans.free?.voice_answers ?? 'all'}/${plans.plus?.voice_answers ?? 'all'}` });
+      results.add('access', 'control:limits', "Control — account A reads every plan's member and voice-chat limits", limitsOk ? 'pass' : 'fail',
+        { why: error ? short(error) : `members ${plans.free?.max_members}/${plans.plus?.max_members}, voice chats ${plans.free?.voice_answers ?? 'no limit'}/${plans.plus?.voice_answers ?? 'no limit'}` });
       const { data: claim, error: claimErr } = await a.client.rpc('claim_voice_answer', { p_family_id: A.family });
       const limit = plans[planOfA ?? 'free']?.voice_answers ?? null;
       const used = claim?.used == null ? null : Number(claim.used);
       const claimOk = !claimErr && claim && (claim.limit ?? null) === limit && (limit == null
         ? claim.allowed === true && used == null
         : (claim.allowed ? used >= 1 && used <= limit : used === limit));
-      results.add('access', 'control:voice', 'Control — account A claims an answer read aloud for its own family, never past its plan\'s number', claimOk ? 'pass' : 'fail',
+      results.add('access', 'control:voice', 'Control — account A claims a voice chat in its own family, never past its plan\'s number', claimOk ? 'pass' : 'fail',
         { why: claimErr ? short(claimErr) : JSON.stringify(claim) });
     }
   }
@@ -786,9 +793,9 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     ['B', "take documents from QA Vault A (server-only)", lapseJudge('refused'), rpc(b, 'plan_take_excess', { p_family_id: A.family, p_max: 500 })],
     ['B', "close QA Vault A's clean-up (server-only)", lapseJudge('refused'), rpc(b, 'plan_settle', { p_family_id: A.family })],
     ['B', 'make the plans function remove a document of account A\'s', plansFnJudge, fn(b, 'plans', { action: 'cleanup' })],
-    ['anon', 'hear an answer read aloud on QA Vault A\'s allowance', limitsJudge('refused'), rpc(anon, 'claim_voice_answer', { p_family_id: A.family })],
-    ['B', "use up QA Vault A's answers read aloud", limitsJudge('refused'), rpc(b, 'claim_voice_answer', { p_family_id: A.family })],
-    ['B', "read QA Vault A's count of answers read aloud", limitsJudge('refused-or-empty'), () => b.client.from('family_usage').select('voice_answers').eq('family_id', A.family)],
+    ['anon', 'use a voice chat in QA Vault A', limitsJudge('refused'), rpc(anon, 'claim_voice_answer', { p_family_id: A.family })],
+    ['B', "use up voice chats in QA Vault A", limitsJudge('refused'), rpc(b, 'claim_voice_answer', { p_family_id: A.family })],
+    ['B', "read QA Vault A's members' voice-chat counts", perPersonJudge('refused-or-empty'), () => b.client.from('member_usage').select('voice_answers').eq('family_id', A.family)],
     ['B', "ask which plan QA Vault A is on (server-only)", limitsJudge('refused'), rpc(b, 'family_plan_now', { p_family_id: A.family })],
     ['B', "raise every plan's member limit", limitsJudge('refused'), () => b.client.from('plan_limits').update({ max_members: 100 }).eq('plan', 'free')],
     ['anon', "read how many voice chats QA Vault A has left", chatsVoiceJudge('refused'), rpc(anon, 'family_voice_status', { p_family_id: A.family })],

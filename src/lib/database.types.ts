@@ -594,32 +594,6 @@ export type Database = {
           },
         ]
       }
-      family_usage: {
-        Row: {
-          family_id: string
-          updated_at: string
-          voice_answers: number
-        }
-        Insert: {
-          family_id: string
-          updated_at?: string
-          voice_answers?: number
-        }
-        Update: {
-          family_id?: string
-          updated_at?: string
-          voice_answers?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "family_usage_family_id_fkey"
-            columns: ["family_id"]
-            isOneToOne: true
-            referencedRelation: "families"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       feedback: {
         Row: {
           app_version: string | null
@@ -852,6 +826,35 @@ export type Database = {
             columns: ["invited_by"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      member_usage: {
+        Row: {
+          family_id: string
+          updated_at: string
+          user_id: string
+          voice_answers: number
+        }
+        Insert: {
+          family_id: string
+          updated_at?: string
+          user_id: string
+          voice_answers?: number
+        }
+        Update: {
+          family_id?: string
+          updated_at?: string
+          user_id?: string
+          voice_answers?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "member_usage_family_id_fkey"
+            columns: ["family_id"]
+            isOneToOne: false
+            referencedRelation: "families"
             referencedColumns: ["id"]
           },
         ]

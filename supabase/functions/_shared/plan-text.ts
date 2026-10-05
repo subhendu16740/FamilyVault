@@ -45,7 +45,7 @@ export interface PlanLimits {
   graceDays: number;
   /** Members — people who sign in — a family may have, per plan (041). The family tree has no limit. */
   members: { free: number; plus: number };
-  /** Answers read aloud a family gets, per plan; null: every answer (041). */
+  /** Voice chats each person gets, per plan; null: no limit (041; per person since 043). */
   voiceAnswers: { free: number | null; plus: number | null };
 }
 

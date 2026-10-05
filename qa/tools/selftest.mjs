@@ -539,7 +539,7 @@ await test('plans: every limit is finite, and a full vault says why and what to 
   const GB = 1024 ** 3, MB = 1024 ** 2;
   // What 039–041 leave in plan_limits: one row per plan, Plus ten times
   // Free, 30 days after Plus ends before anything above Free goes, 4 members
-  // on every plan, and a free family's first 10 answers read aloud.
+  // on every plan, and 10 voice chats for each person on Free (043).
   assert.deepEqual(DEFAULT_PLAN_LIMITS, {
     free: GB, plus: 10 * GB, graceDays: 30,
     members: { free: 4, plus: 4 },
