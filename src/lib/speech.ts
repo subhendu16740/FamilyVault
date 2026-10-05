@@ -9,7 +9,7 @@ import * as Speech from 'expo-speech';
 import { Platform } from 'react-native';
 import { storageGet, storageRemove, storageSet } from './storage';
 
-export { recognitionSupported, listen, stopListening } from './speech-recognition';
+export { recognitionSupported, listen, stopListening, cancelListening } from './speech-recognition';
 export type { ListenHandlers, SpeechErrorCode } from './speech-recognition-types';
 
 export interface SpeakHandlers {

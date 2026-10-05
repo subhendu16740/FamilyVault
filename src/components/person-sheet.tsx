@@ -3,7 +3,9 @@
 //
 // A new person is always added already connected ("the father of Rohan"), so
 // the tree never fills up with people floating nowhere. Gender is asked only
-// to name relations (mother or father, Dadi or Nani) and can be left unsaid.
+// to name relations (mother or father, aunt or uncle) and can be left unsaid.
+// A nickname (045) is the family's own name for them, typed in, never made up
+// for them: everyone in the family sees it, and Ask understands it.
 // Errors are shown in the sheet, never with Alert.alert, which does nothing
 // on the web.
 
@@ -11,7 +13,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import {
-  addFamilyPerson, linkFamilyPeople, updateFamilyPerson,
+  addFamilyPerson, linkFamilyPeople, setFamilyPersonNickname, updateFamilyPerson,
   type FamilyTree, type RelativeKind,
 } from '../lib/api';
 import { formatDateInput, parseDocumentDate } from '../lib/dates';
@@ -72,6 +74,7 @@ function fromIsoDate(iso: string | null | undefined): string {
 export function PersonSheet({ state, familyId, tree, graph, meId, onClose, onSaved }: Props) {
   const subject = state && state.mode !== 'add' ? tree.people.find((p) => p.id === state.personId) ?? null : null;
   const [name, setName] = useState('');
+  const [nickname, setNickname] = useState('');
   const [gender, setGender] = useState<Gender>(null);
   const [birth, setBirth] = useState('');
   const [relation, setRelation] = useState<RelativeKind | null>(null);
@@ -91,11 +94,13 @@ export function PersonSheet({ state, familyId, tree, graph, meId, onClose, onSav
     setPickAny(false);
     if (state.mode === 'add') {
       setName('');
+      setNickname('');
       setGender(null);
       setBirth('');
       setRelativeId(state.relativeId ?? meId);
     } else {
       setName(subject?.name ?? '');
+      setNickname(subject?.nickname ?? '');
       setGender(subject?.gender ?? null);
       setBirth(fromIsoDate(subject?.birthDate));
       setRelativeId(meId && meId !== state.personId ? meId : null);
@@ -149,6 +154,7 @@ export function PersonSheet({ state, familyId, tree, graph, meId, onClose, onSav
     if (asksDetails) {
       if (!details.name) { setProblem('Type their name.'); return; }
       if (details.name.length > 80) { setProblem('That name is too long.'); return; }
+      if (nickname.trim().length > 40) { setProblem('A nickname can be at most 40 characters.'); return; }
       const iso = toIsoDate(birth);
       if (iso === 'invalid') { setProblem('That date of birth doesn\'t look right. Type the day, month and full year, like 26081962.'); return; }
       if (iso === 'future') { setProblem('That date of birth is in the future.'); return; }
@@ -179,6 +185,12 @@ export function PersonSheet({ state, familyId, tree, graph, meId, onClose, onSav
       if (mode === 'edit') {
         await updateFamilyPerson(state.personId, details);
       }
+      // The nickname has a function of its own (045), so a project without it
+      // still saves everything else. Only sent when it changed.
+      const named = state.mode === 'edit' ? state.personId : mode === 'add' ? personId : null;
+      if (named && tree.nicknames && nickname.trim() !== (subject?.nickname ?? '').trim()) {
+        await setFamilyPersonNickname(named, nickname);
+      }
       onSaved();
     } catch (err: any) {
       setProblem(err?.message || 'Could not save. Please try again.');
@@ -203,13 +215,23 @@ export function PersonSheet({ state, familyId, tree, graph, meId, onClose, onSav
         <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           {mode === 'add' && (
             <Text style={styles.intro}>
-              They don't need an account. You can mark documents as theirs, and ask about them by relation — "Nani's
+              They don't need an account. You can mark documents as theirs, and ask about them by relation or nickname — "Nani's
               pension papers".
             </Text>
           )}
 
           {asksDetails && (
             <Field label="Name" value={name} onChangeText={setName} placeholder="Their full name" autoCapitalize="words" />
+          )}
+          {asksDetails && tree.nicknames && (
+            <Field
+              label="Nickname (optional)"
+              value={nickname}
+              onChangeText={setNickname}
+              placeholder="What the family calls them, like Pinky or Maa"
+              maxLength={40}
+              hint={'Everyone in the family sees it, and Ask understands it: "Pinky\'s passport".'}
+            />
           )}
 
           {asksRelation && relatives.length > 0 && (
@@ -272,7 +294,7 @@ export function PersonSheet({ state, familyId, tree, graph, meId, onClose, onSav
                   <Chip key={g.label} label={g.label} on={gender === g.value} onPress={() => setGender(g.value)} />
                 ))}
               </View>
-              <Text style={styles.hint}>Used only to name relations: mother or father, Dadi or Nani.</Text>
+              <Text style={styles.hint}>Used only to name relations: mother or father, aunt or uncle.</Text>
               <Field
                 label="Date of birth (optional)"
                 value={birth}
@@ -280,7 +302,7 @@ export function PersonSheet({ state, familyId, tree, graph, meId, onClose, onSav
                 placeholder="DD/MM/YYYY"
                 keyboardType="number-pad"
                 maxLength={10}
-                hint="Tells elder from younger: Tau or Chacha, Didi or Behen."
+                hint="Shows their age, and tells elder from younger."
               />
             </>
           )}

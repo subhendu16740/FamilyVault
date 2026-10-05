@@ -274,6 +274,27 @@ export async function runMemberChecks(cfg, { a, b, vaultA }, results) {
       const { error: selfErr } = await b.client.rpc('update_family_person', { p_person_id: mine.id, p_display_name: person?.display_name ?? 'QA insider', p_gender: null, p_birth_date: null });
       check('member-edits-self', 'A member may edit their own details in the tree', !selfErr, selfErr ? short(selfErr) : 'saved');
 
+      // ── Nicknames (045): the family's own name for someone. B gives itself
+      // one, which the family sees, and cannot change the admin's.
+      const myNickname = `QA ${cfg.runId}`.slice(0, 40);
+      const { error: nickErr } = await b.client.rpc('set_family_person_nickname', { p_person_id: mine.id, p_nickname: myNickname });
+      if (String(nickErr?.code) === 'PGRST202') {
+        results.add('members', 'nicknames', 'Nickname checks', 'skipped', { why: 'migration 045 is not applied to DEV yet' });
+      } else {
+        const { data: seenNick } = await a.client.from('family_people').select('nickname').eq('id', mine.id).maybeSingle();
+        check('member-sets-own-nickname', 'A member may give themselves a nickname, and the family sees it',
+          !nickErr && seenNick?.nickname === myNickname, nickErr ? short(nickErr) : `"${seenNick?.nickname}"`);
+
+        const { data: adminNick } = await a.client.from('family_people').select('id, nickname')
+          .eq('family_id', vaultA.id).eq('user_id', a.user.id).maybeSingle();
+        const { error: otherNickErr } = await b.client.rpc('set_family_person_nickname', { p_person_id: adminNick?.id ?? randomUUID(), p_nickname: 'QA intrusion' });
+        if (!otherNickErr && adminNick) await a.client.rpc('set_family_person_nickname', { p_person_id: adminNick.id, p_nickname: adminNick.nickname ?? '' });   // undo
+        check('viewer-cannot-change-nickname', "A viewer cannot change someone else's nickname", refusedByAuth(otherNickErr),
+          otherNickErr ? short(otherNickErr) : 'the nickname was CHANGED (and put back)');
+
+        await b.client.rpc('set_family_person_nickname', { p_person_id: mine.id, p_nickname: '' });
+      }
+
       // ── Emergency cards (032): B writes its own, reads the family's, and
       // cannot change the admin's.
       const { error: ownErr } = await b.client.rpc('save_emergency_card', { p_person_id: mine.id, p_card: { blood_group: 'O+', notes: `QA SPECIMEN ${cfg.runId}` } });

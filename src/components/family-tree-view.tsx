@@ -86,7 +86,9 @@ export function OnAppKey() {
 
 function PersonCard({ person, props }: { person: KinPerson; props: TreeViewProps }) {
   const me = person.id === props.meId;
-  const label = me ? 'You' : props.labelFor(person.id);
+  // The relation from where the viewer stands, and the family's own nickname (045).
+  const label = [me ? 'You' : props.labelFor(person.id), person.nickname ? `"${person.nickname}"` : null]
+    .filter(Boolean).join(' · ') || null;
   const badge = props.badgeFor?.(person.id) ?? null;
   const onApp = props.onAppFor?.(person.id) ?? false;
   const ref = useRef<View>(null);

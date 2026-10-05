@@ -31,7 +31,7 @@ function faq(payments: PaymentsStatus | null): { q: string; a: string }[] {
     },
     {
       q: 'Can I ask by speaking?',
-      a: `Yes. Turn on the Voice assistant in Settings, under Accessibility. Then tap the microphone on Search and say your question, and the answer is read out loud. On the free plan, each person has ${DEFAULT_PLAN_LIMITS.voiceAnswers.free} free voice chats of their own — a question asked by voice or an answer read aloud, one per question — and Search shows how many you have left. After that you type, and the answer is on the screen; ★ Family Plus has no limit. Settings › Accessibility › Voice chooses who reads the answers, from the voices on your phone or computer.`,
+      a: `Yes. Turn on the Voice assistant in Settings, under Accessibility. Then tap the microphone on Search and say your question, and the answer is read out loud. Said something by mistake? Tap Cancel while it is still listening, and nothing is asked. On the free plan, each person has ${DEFAULT_PLAN_LIMITS.voiceAnswers.free} free voice chats of their own — a question asked by voice or an answer read aloud, one per question — and Search shows how many you have left. After that you type, and the answer is on the screen; ★ Family Plus has no limit. Settings › Accessibility › Voice chooses who reads the answers, from the voices on your phone or computer.`,
     },
     {
       q: 'Who can see my documents?',
@@ -51,7 +51,7 @@ function faq(payments: PaymentsStatus | null): { q: string; a: string }[] {
     },
     {
       q: 'Who is in the family tree?',
-      a: 'Everyone in your family, with or without an account — a grandmother who will never sign in included. Admins add people and say how they are related; everyone in the family sees the tree, with each person named from where you stand (Nani, Bua, Mama…). A green phone on someone\'s picture means they are on FamilyVault with their own account; nobody else needs one. You can change your own name and date of birth. Mark a document as someone\'s and you can ask about it by relation, like "Nani\'s pension papers".',
+      a: 'Everyone in your family, with or without an account — a grandmother who will never sign in included. Admins add people and say how they are related; everyone in the family sees the tree, with how each person is related to you (mother, aunt, cousin…) and any nickname the family gave them, like "Pinky". A green phone on someone\'s picture means they are on FamilyVault with their own account; nobody else needs one. You can change your own name, nickname and date of birth. Mark a document as someone\'s and you can ask about it by relation or nickname, like "Nani\'s pension papers" or "Pinky\'s passport".',
     },
     {
       q: 'Someone in our tree has just signed up. How do I connect them?',
