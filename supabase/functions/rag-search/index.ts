@@ -10,7 +10,7 @@ import { runReembed, afterResponse } from '../_shared/reembed.ts';
 import { groqChat, groqText, hasGroqKey } from '../_shared/groq.ts';
 import { buildGraph, relativesNamedIn, type KinGraph, type NamedRelative } from '../_shared/kinship.ts';
 import { ticketCodeNotes, ticketSearchTerms } from '../_shared/tickets.ts';
-import { digitsFromWords } from '../_shared/numbers.ts';
+import { digitsFromWords, restoreCodes } from '../_shared/numbers.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -1047,8 +1047,9 @@ Copy every number exactly as the document writes it, in digits: train, PNR, seat
       return { answer: buildFallbackAnswer(chunks, 'unavailable'), degraded: true, model };
     }
 
-    // Digits written as words despite the prompt go back to digits (_shared/numbers.ts).
-    return { answer: digitsFromWords(text), degraded: false, model };
+    // Numbers spelled out despite the prompt (_shared/numbers.ts): a code goes
+    // back to exactly how the passages write it, and other digits to digits.
+    return { answer: digitsFromWords(restoreCodes(text, context)), degraded: false, model };
 
   } catch (err) {
     console.warn('[rag] Groq generation failed:', err);

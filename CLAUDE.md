@@ -1278,11 +1278,17 @@ so storage policies live only in `019`.
   document writes them, in digits — train, PNR, seat, policy, account and ID
   numbers, amounts. Told to write voice answers for the ear, the model once
   wrote a train number in words and swapped two of its digits, so the prompt
-  now forbids it, and `digitsFromWords()` (`_shared/numbers.ts`, pure, pinned
-  by the self-test) turns any run of three or more digits written as words
-  (English or Hindi), or four or more single digits spaced apart, back into
-  digits before the answer leaves. How a number sounds is the app's job, done
-  in code from the digits (`toSpeech()`), so the order can never change.
+  now forbids it, and `_shared/numbers.ts` (pure, pinned by the self-test)
+  is the safety net before the answer leaves: `restoreCodes()` puts a code
+  spelled out ("one six seven eight two A B", "A B C D E 1 2 3 4 F") back
+  exactly as the passages write it ("16782AB", "ABCDE1234F", "MH-12-AB-1234")
+  — only when, joined up, it is a code in them, so nothing is invented and a
+  number with swapped digits is not "corrected" into another — then
+  `digitsFromWords()` turns any other run of three or more digits written as
+  words (English or Hindi), or four or more single digits spaced apart, into
+  digits. How a number sounds is the app's job, done in code from the digits
+  (`toSpeech()`: codes character by character, long ones in fours), so the
+  order can never change.
   **Voice / language:** the request may carry `language` (BCP-47) and
   `voice: true`. A non-English question is condensed *into English* before
   retrieval (the index is English) and the answer is written in the person's
