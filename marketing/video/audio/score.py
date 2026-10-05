@@ -5,7 +5,9 @@
 Every sound here is generated (numpy + scipy), so the video carries no
 third-party audio licence. The picture decides the timing: src/main.js emits a
 cue for each tap, notification and scene change, and this script places sound
-on exactly those frames.
+on exactly those frames. The two spoken lines, Maa's question and the app
+reading its answer, are the WAVs in audio/voices/ (made by tools/voices.py);
+the music dips under them, and --sfx-only keeps them.
 
 The music follows the story in three moods:
   night   (0 -> brand reveal)  D minor pad, a low pulse, a ticking clock during
@@ -17,13 +19,16 @@ The music follows the story in three moods:
                                on F for the end card
 """
 import json
+import pathlib
 import sys
+import wave
 
 import numpy as np
 from scipy import signal
 
 SR = 48_000
 RNG = np.random.default_rng(7)
+VOICES = pathlib.Path(__file__).resolve().parent / 'voices'
 
 
 # ─── Building blocks ────────────────────────────────────────────────────────
@@ -296,6 +301,54 @@ def sfx_mic():
     return out * 0.22
 
 
+# ─── Voices ─────────────────────────────────────────────────────────────────
+
+def voice_line(c):
+    """A spoken line from audio/voices/, cut to the cue's from/to (seconds into
+    the line) and coloured by who is speaking: Maa as she is, the app through a
+    phone's speaker, and at night the same speaker heard across a room.
+    Returns the sound (room tail included), its gain and how long the words run."""
+    with wave.open(str(VOICES / f"{c['line']}-hi.wav")) as w:
+        rate = w.getframerate()
+        x = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16) / 32768.0
+    a = int(c.get('from', 0) * rate)
+    b = int(c['to'] * rate) if 'to' in c else len(x)
+    x = x[a:b].copy()
+    edge = int(0.012 * rate)
+    x[:edge] *= np.linspace(0, 1, edge)
+    x[-edge:] *= np.linspace(1, 0, edge)
+    x = signal.resample_poly(x, SR, rate)
+    words = len(x) / SR
+    if c.get('phone'):
+        x = lowpass(highpass(x, 320, 2), 5200, 2)
+        x = np.tanh(x * 1.6) / np.tanh(1.6)
+        x = np.concatenate([x, np.zeros(int(1.4 * SR))])
+        return reverb(np.vstack([x, x]), 1.3, 0.28, predelay=0.03), 0.85, words
+    if c['line'] == 'answer':
+        x = lowpass(highpass(x, 160, 2), 9000, 2)
+    else:
+        x = highpass(x, 80, 2)
+    x = np.concatenate([x, np.zeros(int(0.8 * SR))])
+    return reverb(np.vstack([x, x]), 0.7, 0.07, predelay=0.012), 0.9, words
+
+
+def duck(n, spans, depth_db, attack=0.25, release=0.6):
+    """A gain curve that dips by depth_db over each (start, end) span."""
+    floor = 10 ** (-depth_db / 20)
+    gain = np.ones(n)
+    for a, b in spans:
+        i0, i1 = int((a - attack) * SR), int(a * SR)
+        j0, j1 = int(b * SR), int((b + release) * SR)
+        ramp_in = np.linspace(1, floor, max(1, i1 - i0))
+        ramp_out = np.linspace(floor, 1, max(1, j1 - j0))
+        seg = np.concatenate([ramp_in, np.full(max(0, j0 - i1), floor), ramp_out])
+        lo = max(0, i0)
+        hi = min(n, i0 + len(seg))
+        if hi > lo:
+            gain[lo:hi] = np.minimum(gain[lo:hi], seg[lo - i0:hi - i0])
+    return gain
+
+
 # ─── Music ──────────────────────────────────────────────────────────────────
 
 def night_music(bus, t0, t1, hit, ring_stop):
@@ -405,6 +458,8 @@ def main():
     n = int((total + 0.5) * SR)
     music = np.zeros((2, n))
     fx = np.zeros((2, n))
+    voice = np.zeros((2, n))
+    spoken = []
 
     reveal, day, night2, end = sec['reveal'], sec['day'], sec['night2'], sec['end']
     hit, ring_stop = first('hit'), first('ring-stop')
@@ -438,6 +493,10 @@ def main():
             for k in range(count):
                 if RNG.random() < 0.85:
                     place(fx, c['t'] + k * step + RNG.uniform(0, step * 0.3), sfx_key(), 0.22, pan=RNG.uniform(-0.2, 0.2))
+        elif kind == 'voice':
+            sig, gain, words = voice_line(c)
+            place(voice, c['t'], sig, gain)
+            spoken.append((c['t'], c['t'] + words))
         elif kind in makers:
             sig, gain = makers[kind](c)
             place(fx, c['t'] - (0.35 if kind == 'whoosh' else 0.0), sig, gain)
@@ -451,7 +510,8 @@ def main():
 
     music = reverb(music, 2.6, 0.30)
     fx = reverb(fx, 1.4, 0.16)
-    mix = music + fx
+    # Whoever is speaking is heard: the music steps back, the effects a little.
+    mix = music * duck(n, spoken, 15) + fx * duck(n, spoken, 4) + voice
     # Gentle fades and a soft limiter.
     fi, fo = int(0.25 * SR), int(1.6 * SR)
     mix[:, :fi] *= np.linspace(0, 1, fi)
@@ -468,7 +528,7 @@ def main():
         w.setsampwidth(2)
         w.setframerate(SR)
         w.writeframes(pcm.tobytes())
-    print(f'{out_path}: {total:.2f}s, {"sfx only" if sfx_only else "music + sfx"}')
+    print(f'{out_path}: {total:.2f}s, {"sfx + voices" if sfx_only else "music + sfx + voices"}')
 
 
 if __name__ == '__main__':

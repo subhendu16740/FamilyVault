@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Scores a rendered video and writes the deliverables:
-#   out/familyvault-intro-<tag>.mp4            music + sound effects
-#   out/familyvault-intro-<tag>-sfx-only.mp4   sound effects only, for adding
-#                                              a platform's own music track
+#   out/familyvault-intro-<tag>.mp4            music, sound effects and voices
+#   out/familyvault-intro-<tag>-sfx-only.mp4   sound effects and voices, no
+#                                              music, for adding a platform's
+#                                              own music track
 # usage: tools/mux.sh [16x9|9x16]   (after tools/render.mjs has written out/video-<tag>.mp4)
 set -euo pipefail
 cd "$(dirname "$0")/.."

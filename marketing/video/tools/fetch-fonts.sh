@@ -11,13 +11,21 @@ FAMILIES=(
   'Roboto:wght@400;500;600;700'
   'Noto+Sans+Devanagari:wght@400;500;600;700'
   'Caveat:wght@500;700'
+  # The other scripts of the voice languages (src/lib/voice-languages.ts).
+  'Noto+Sans+Bengali:wght@600'
+  'Noto+Sans+Tamil:wght@600'
+  'Noto+Sans+Telugu:wght@600'
+  'Noto+Sans+Gujarati:wght@600'
+  'Noto+Sans+Kannada:wght@600'
+  'Noto+Sans+Malayalam:wght@600'
+  'Noto+Sans+Gurmukhi:wght@600'
 )
 : > fonts/fonts.css
 for fam in "${FAMILIES[@]}"; do
   css=$(curl -fsSL -A "$UA" "https://fonts.googleapis.com/css2?family=${fam}&display=block")
   # Keep only the subsets the video uses.
   css=$(printf '%s\n' "$css" | awk '
-    /^\/\* / { keep = ($2=="latin" || $2=="latin-ext" || $2=="devanagari") }
+    /^\/\* / { keep = ($2=="latin" || $2=="latin-ext" || $2=="devanagari" || $2=="bengali" || $2=="tamil" || $2=="telugu" || $2=="gujarati" || $2=="kannada" || $2=="malayalam" || $2=="gurmukhi") }
     { if (keep) print }')
   for url in $(printf '%s\n' "$css" | grep -o 'https://fonts.gstatic.com/[^)]*'); do
     file=$(printf '%s' "$url" | sed 's#https://fonts.gstatic.com/s/##; s#/#_#g')

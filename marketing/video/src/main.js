@@ -8,6 +8,8 @@
 // Opened directly in a browser it plays in real time: space to pause, arrow
 // keys to scrub, a number key to jump to that tenth of the film.
 import { phone, scrambleCards, textBlocks, callouts, subtitles } from './screens.js';
+// How long Maa's question and the spoken answer run (tools/voices.py).
+import { VOICES } from './voices.js';
 
 const gsap = window.gsap;
 gsap.registerPlugin(window.TextPlugin);
@@ -30,7 +32,7 @@ const L = PORTRAIT ? {
   resPhone: [540, 1176, 0.94], coScale: 0.88,
   cards: { mail: [520, 590, -3], work: [590, 820, 3], pdf: [470, 1060, -2], otp: [620, 1290, 2.5], note: [470, 1500, -5] },
   // In 9:16 these take the place of the paragraph once it has been read.
-  coGmail: 't-gmail', coScan: 't-scan', coTree: 't-tree', coAlerts: 't-alerts', wave: 't-voice', resWave: null,
+  coGmail: 't-gmail', coScan: 't-scan', coTree: 't-tree', coAlerts: 't-alerts', wave: null, resWave: null,
 } : {
   hookPhone: [1260, 540, 0.98], callPhone: [660, 540, 0.95], dayPhone: [1270, 548, 0.94],
   resPhone: [1290, 548, 0.94],
@@ -70,6 +72,12 @@ await Promise.all([
   '400 15px Roboto', '500 15px Roboto', '700 15px Roboto', 'italic 400 12px Roboto',
   '400 15px "Noto Sans Devanagari"', '600 38px Caveat',
 ].map((f) => document.fonts.load(f)));
+// The voice languages' scripts: a subset loads only for text it covers.
+await Promise.all([
+  ['Noto Sans Devanagari', 'हिन्दी मराठी'], ['Noto Sans Bengali', 'বাংলা'], ['Noto Sans Tamil', 'தமிழ்'],
+  ['Noto Sans Telugu', 'తెలుగు'], ['Noto Sans Gujarati', 'ગુજરાતી'], ['Noto Sans Kannada', 'ಕನ್ನಡ'],
+  ['Noto Sans Malayalam', 'മലയാളം'], ['Noto Sans Gurmukhi', 'ਪੰਜਾਬੀ'],
+].map(([family, text]) => document.fonts.load(`600 30px "${family}"`, text)));
 await document.fonts.ready;
 
 // ─── Layout passes: what flexbox would have settled in the app ──────────
@@ -182,6 +190,9 @@ gsap.set(['#vignette'], { autoAlpha: 1 });
 gsap.set('#fade', { autoAlpha: 1 });
 gsap.set($$('#texts > *'), { autoAlpha: 0 });
 gsap.set($$('#texts .wi'), { yPercent: 118 });
+gsap.set($$('.wh-how'), { autoAlpha: 0 });
+gsap.set($$('.lang, .langs-note'), { autoAlpha: 0 });
+gsap.set(['#tc1', '#tc2', '#tc3', '#tc4'], { autoAlpha: 0 });
 gsap.set($$('.cap-line'), { autoAlpha: 0 });
 gsap.set($$('.subline'), { autoAlpha: 0 });
 gsap.set($$('.callout, #wave'), { autoAlpha: 0 });
@@ -205,16 +216,24 @@ place('#phone', L.hookPhone, { autoAlpha: 0 });
 for (const [name, pos] of Object.entries(L.cards)) place(`#sc-${name}`, [pos[0], pos[1]], { rotation: pos[2], autoAlpha: 0 });
 // In 9:16 a callout sits where its scene's paragraph was: centred, top-aligned
 // with the paragraph, which fades out as the callout arrives.
+function stageTop(el) {
+  let y = 0;
+  for (let n = el; n && n !== stage; n = n.offsetParent) y += n.offsetTop;
+  return y;
+}
 function bandPos(id, el, s) {
-  const block = $(`#${id}`);
-  const subEl = $('.sub', block);
-  const top = block.offsetTop + subEl.offsetTop + 6;
+  const top = stageTop($('.sub', $(`#${id}`))) + 6;
   return [W / 2, top + (el.offsetHeight * s) / 2, s];
+}
+// 9:16: the language cards take the paragraph's place, like a callout.
+if (PORTRAIT) {
+  const h1 = $('#t-voice .wh-how .h1');
+  $('#langs').style.top = `${h1.offsetTop + h1.offsetHeight + 18}px`;
 }
 const CALLOUTS = { 'co-gmail': 'coGmail', 'co-scan': 'coScan', 'co-tree': 'coTree', 'co-alerts': 'coAlerts', wave: 'wave' };
 for (const [id, key] of Object.entries(CALLOUTS)) {
   const el = $(`#${id}`);
-  place(el, typeof L[key] === 'string' ? bandPos(L[key], el, id === 'wave' ? 1 : L.coScale) : L[key]);
+  if (L[key]) place(el, typeof L[key] === 'string' ? bandPos(L[key], el, L.coScale) : L[key]);
 }
 
 // ─── Timeline helpers ────────────────────────────────────────────────────
@@ -236,14 +255,43 @@ function reveal(container, t, { stagger = 0.055, dur = 0.95 } = {}) {
   tl.set(el, { autoAlpha: 1 }, t);
   tl.fromTo($$('.wi', el), { yPercent: 118 }, { yPercent: 0, duration: dur, ease: 'power4.out', stagger, ...IR }, t);
 }
-function showBlock(id, t) {
+// A feature scene opens on why it exists: read first, bigger and centred...
+function whyLift(b) {
+  const why = $('.wh-why', b);
+  const group = [$('.kicker', b), why];
+  // In 9:16 the phone sits under the band, so only Privacy (no phone) moves.
+  if (PORTRAIT && b.id !== 't-trust') return { why, group, dy: 0, s: 1 };
+  const top = stageTop(group[0]);
+  const bottom = stageTop(why) + why.offsetHeight;
+  return { why, group, dy: Math.max(0, H / 2 - (top + bottom) / 2), s: PORTRAIT ? 1 : 1.18 };
+}
+function showWhy(id, t) {
   const b = $(`#${id}`);
+  const { why, group, dy, s } = whyLift(b);
   tl.set(b, { autoAlpha: 1, y: 0 }, t);
-  const k = $('.kicker', b);
-  const s = $('.sub', b);
-  if (k) tl.fromTo(k, { autoAlpha: 0, y: 14 }, { autoAlpha: 1, y: 0, duration: 0.6, ...IR }, t);
-  tl.fromTo($$('.h1 .wi', b), { yPercent: 118 }, { yPercent: 0, duration: 0.95, ease: 'power4.out', stagger: 0.06, ...IR }, t + 0.1);
-  if (s) tl.fromTo(s, { autoAlpha: 0, y: 26 }, { autoAlpha: 1, y: 0, duration: 0.8, ...IR }, t + 0.5);
+  tl.set(group, { y: dy }, t);
+  tl.set(why, { scale: s, transformOrigin: '0% 0%', opacity: 1 }, t);
+  tl.fromTo(group[0], { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.6, ...IR }, t);
+  tl.fromTo($('.wh-tag', why), { autoAlpha: 0, x: -12 }, { autoAlpha: 1, x: 0, duration: 0.45, ...IR }, t + 0.1);
+  tl.fromTo($$('.wi', why), { yPercent: 118 }, { yPercent: 0, duration: 0.9, ease: 'power4.out', stagger: 0.035, ...IR }, t + 0.2);
+}
+// ...then how FamilyVault answers it. The why moves up into its place and
+// stays, quieter, above the how; in 9:16 the how takes its place instead.
+function showHow(id, t) {
+  const b = $(`#${id}`);
+  const { why, group, dy } = whyLift(b);
+  if (PORTRAIT && !dy) tl.to(why, { autoAlpha: 0, y: -20, duration: 0.35, ease: 'power2.in' }, t - 0.05);
+  else {
+    tl.to(group, { y: 0, duration: 0.7, ease: 'power3.inOut' }, t - 0.4);
+    tl.to(why, { scale: 1, opacity: PORTRAIT ? 0 : 0.6, duration: 0.7, ease: 'power3.inOut' }, t - 0.4);
+  }
+  const lag = PORTRAIT ? 0.25 : 0;
+  tl.set($('.wh-how', b), { autoAlpha: 1 }, t);
+  tl.fromTo($('.wh-how .wh-tag', b), { autoAlpha: 0, x: -12 }, { autoAlpha: 1, x: 0, duration: 0.45, ...IR }, t + lag);
+  tl.fromTo($$('.wh-how .h1 .wi', b), { yPercent: 118 }, { yPercent: 0, duration: 0.95, ease: 'power4.out', stagger: 0.06, ...IR }, t + lag + 0.1);
+  const s = $('.wh-how .sub', b);
+  if (s) tl.fromTo(s, { autoAlpha: 0, y: 26 }, { autoAlpha: 1, y: 0, duration: 0.8, ...IR }, t + lag + 0.5);
+  cue(t + lag + 0.1, 'pop-soft');
 }
 const hide = (sel, t, extra = {}) => tl.to(sel, { autoAlpha: 0, y: -24, duration: 0.45, ease: 'power2.in', ...extra }, t);
 const fadeIn = (sel, t, extra = {}) => tl.fromTo(sel, { autoAlpha: 0, y: extra.from ?? 12 }, { autoAlpha: 1, y: 0, duration: 0.4, ...IR, ...extra, from: undefined }, t);
@@ -464,27 +512,31 @@ S.scramble = 6.9;
 }
 
 // ─── 5. Import from Gmail ────────────────────────────────────────────────
+// Each feature scene opens on its why while the phone gets into place, and
+// shows its how as the app does the work.
 {
   const t0 = S.gmail;
   // The short cut runs the same steps a little faster.
   const k = SHORT ? { open: 1.2, find: 2.15, scan: 1.1, scroll: 0.45, imp: 1.35, row: 0.22, out: 0.95 }
     : { open: 1.3, find: 2.35, scan: 1.45, scroll: 0.6, imp: 1.75, row: 0.3, out: 1.2 };
+  const d = t0 + 0.8;
   cue(t0, 'section', { name: 'day' });
-  showBlock('t-gmail', t0);
+  showWhy('t-gmail', t0);
   tl.set('#scr-upload', { autoAlpha: 1, zIndex: ++z }, t0);
   tl.set(['#scr-call', '#scr-lock'], { autoAlpha: 0 }, t0);
   chrome(t0, 'app', '9:41');
   phoneIn(t0 + 0.05);
-  tap(t0 + k.open, P.gmail, { press: '#up-gmail' });
-  nav('scr-upload', 'scr-gmail', t0 + k.open + 0.15, 'push');
-  tap(t0 + k.find, P.gmFind, { press: '#gm-find' });
-  swap('#gm-idle', '#gm-scanning', t0 + k.find + 0.05, 0.2);
-  tl.to('.gm-card', { height: gmH.scanning, duration: 0.3, ease: 'power2.out' }, t0 + k.find + 0.05);
-  count(t0 + k.find + 0.1, k.scan, (v) => { $('#gm-count').textContent = `${Math.round(412 * v)} checked, ${Math.floor(10 * v ** 1.15 + 0.0001)} found`; });
-  cue(t0 + k.find + 0.1, 'process', { dur: k.scan });
-  showCallout('#co-gmail', t0 + k.find + 0.35);
-  tl.fromTo($$('#co-gmail .co-check'), { autoAlpha: 0, x: 14 }, { autoAlpha: 1, x: 0, duration: 0.45, stagger: 0.14, ...IR }, t0 + k.find + 0.55);
-  const d0 = t0 + k.find + 0.15 + k.scan;
+  tap(d + k.open, P.gmail, { press: '#up-gmail' });
+  nav('scr-upload', 'scr-gmail', d + k.open + 0.15, 'push');
+  showHow('t-gmail', d + k.open + 0.1);
+  tap(d + k.find, P.gmFind, { press: '#gm-find' });
+  swap('#gm-idle', '#gm-scanning', d + k.find + 0.05, 0.2);
+  tl.to('.gm-card', { height: gmH.scanning, duration: 0.3, ease: 'power2.out' }, d + k.find + 0.05);
+  count(d + k.find + 0.1, k.scan, (v) => { $('#gm-count').textContent = `${Math.round(412 * v)} checked, ${Math.floor(10 * v ** 1.15 + 0.0001)} found`; });
+  cue(d + k.find + 0.1, 'process', { dur: k.scan });
+  showCallout('#co-gmail', d + k.find + 0.35);
+  tl.fromTo($$('#co-gmail .co-check'), { autoAlpha: 0, x: 14 }, { autoAlpha: 1, x: 0, duration: 0.45, stagger: 0.14, ...IR }, d + k.find + 0.55);
+  const d0 = d + k.find + 0.15 + k.scan;
   swap('#gm-scanning', '#gm-done', d0, 0.2);
   tl.to('.gm-card', { height: gmH.done, duration: 0.3, ease: 'power2.out' }, d0);
   fadeIn('#gm-list', d0 + 0.05, { from: 10, duration: 0.4 });
@@ -514,25 +566,27 @@ S.scramble = 6.9;
 S.ask = S.scan;
 if (!SHORT) {
   const t0 = S.scan;
-  showBlock('t-scan', t0);
+  const d = t0 + 1.0;
+  showWhy('t-scan', t0);
   nav('scr-gmail', 'scr-upload', t0, 'back', 0.4);
-  tap(t0 + 1.0, P.scan, { press: '#up-scan' });
-  nav('scr-upload', 'scr-camera', t0 + 1.15, 'zoom', 0.4);
-  chrome(t0 + 1.15, 'os');
-  tl.fromTo('#cam-guides', { scale: 1.08, autoAlpha: 0 }, { scale: 1, autoAlpha: 1, duration: 0.5, ...IR }, t0 + 1.5);
-  tl.set('#cam-scan', { autoAlpha: 1 }, t0 + 1.7);
-  tl.fromTo('#cam-scan', { y: 0 }, { y: 440, duration: 1.0, ease: 'power1.inOut', ...IR }, t0 + 1.7);
-  tl.set('#cam-scan', { autoAlpha: 0 }, t0 + 2.7);
-  cue(t0 + 1.7, 'scan', { dur: 1.0 });
-  tap(t0 + 2.9, P.shutter, { press: '#cam-shutter' });
-  tl.fromTo('#shutter', { autoAlpha: 0 }, { autoAlpha: 0.95, duration: 0.06, ease: 'none', ...IR }, t0 + 2.92);
-  tl.to('#shutter', { autoAlpha: 0, duration: 0.35, ease: 'power1.out' }, t0 + 3.0);
-  cue(t0 + 2.92, 'shutter');
-  nav('scr-camera', 'scr-tag', t0 + 3.25, 'fade', 0.35);
-  chrome(t0 + 3.25, 'app');
-  tl.fromTo('#ocr-fill', { scaleX: 0 }, { scaleX: 1, duration: 1.55, ease: 'power1.inOut', ...IR }, t0 + 3.5);
-  cue(t0 + 3.5, 'process', { dur: 1.55 });
-  const r0 = t0 + 5.1;
+  tap(d + 1.0, P.scan, { press: '#up-scan' });
+  nav('scr-upload', 'scr-camera', d + 1.15, 'zoom', 0.4);
+  showHow('t-scan', d + 1.1);
+  chrome(d + 1.15, 'os');
+  tl.fromTo('#cam-guides', { scale: 1.08, autoAlpha: 0 }, { scale: 1, autoAlpha: 1, duration: 0.5, ...IR }, d + 1.5);
+  tl.set('#cam-scan', { autoAlpha: 1 }, d + 1.7);
+  tl.fromTo('#cam-scan', { y: 0 }, { y: 440, duration: 1.0, ease: 'power1.inOut', ...IR }, d + 1.7);
+  tl.set('#cam-scan', { autoAlpha: 0 }, d + 2.7);
+  cue(d + 1.7, 'scan', { dur: 1.0 });
+  tap(d + 2.9, P.shutter, { press: '#cam-shutter' });
+  tl.fromTo('#shutter', { autoAlpha: 0 }, { autoAlpha: 0.95, duration: 0.06, ease: 'none', ...IR }, d + 2.92);
+  tl.to('#shutter', { autoAlpha: 0, duration: 0.35, ease: 'power1.out' }, d + 3.0);
+  cue(d + 2.92, 'shutter');
+  nav('scr-camera', 'scr-tag', d + 3.25, 'fade', 0.35);
+  chrome(d + 3.25, 'app');
+  tl.fromTo('#ocr-fill', { scaleX: 0 }, { scaleX: 1, duration: 1.55, ease: 'power1.inOut', ...IR }, d + 3.5);
+  cue(d + 3.5, 'process', { dur: 1.55 });
+  const r0 = d + 5.1;
   tl.to('#ocr-card', { autoAlpha: 0, duration: 0.2, ease: 'none' }, r0);
   fadeIn('#ocr-done', r0, { from: 4, duration: 0.3 });
   tl.to(ocrSlot, { height: $('#ocr-done').offsetHeight, duration: 0.3, ease: 'power2.out' }, r0);
@@ -568,18 +622,20 @@ if (!SHORT) {
 // ─── 7. Ask ──────────────────────────────────────────────────────────────
 {
   const t0 = S.ask;
+  const d = t0 + 1.4;
   // Typing, sending, the answer: a touch quicker in the short cut.
   const k = SHORT ? { type: 1.6, think: 1.25 } : { type: 1.9, think: 1.4 };
-  const sent = t0 + 0.9 + k.type + 0.3;
+  const sent = d + 0.9 + k.type + 0.3;
   const ans = sent + 0.25 + k.think;
-  showBlock('t-ask', t0);
+  showWhy('t-ask', t0);
   nav(SHORT ? 'scr-gmail' : 'scr-tag', 'scr-ask', t0, 'fade', 0.4);
-  tap(t0 + 0.75, P.askInput);
-  tl.set('#ask-ph', { autoAlpha: 0 }, t0 + 0.9);
-  tl.set('#ask-caret', { autoAlpha: 1 }, t0 + 0.8);
-  swap('#ask-send-off', '#ask-send-on', t0 + 0.95, 0.15);
-  type('#ask-typed', Q1, t0 + 0.9, k.type);
-  if (OV.q1.over) tl.to('#ask-line', { x: -OV.q1.over, duration: k.type * (1 - OV.q1.frac), ease: 'none' }, t0 + 0.9 + k.type * OV.q1.frac);
+  showHow('t-ask', d + 0.6);
+  tap(d + 0.75, P.askInput);
+  tl.set('#ask-ph', { autoAlpha: 0 }, d + 0.9);
+  tl.set('#ask-caret', { autoAlpha: 1 }, d + 0.8);
+  swap('#ask-send-off', '#ask-send-on', d + 0.95, 0.15);
+  type('#ask-typed', Q1, d + 0.9, k.type);
+  if (OV.q1.over) tl.to('#ask-line', { x: -OV.q1.over, duration: k.type * (1 - OV.q1.frac), ease: 'none' }, d + 0.9 + k.type * OV.q1.frac);
   tap(sent, P.askSend, { press: '#ask-send-on' });
   cue(sent + 0.02, 'send');
   tl.set('#ask-typed', { text: '' }, sent + 0.05);
@@ -614,143 +670,182 @@ if (!SHORT) {
   }
 }
 
-// ─── 8. Voice, in Hindi ──────────────────────────────────────────────────
+// ─── 8. Voice, in every language the app offers ──────────────────────────
 {
   const t0 = S.voice;
-  showBlock('t-voice', t0);
+  const d = t0 + 1.3;
+  const langs = $$('#langs .lang');
+  showWhy('t-voice', t0);
   nav('scr-ask', 'scr-voice', t0, 'fade', 0.4);
-  tap(t0 + 1.0, P.mic);
-  cue(t0 + 1.0, 'mic-on');
-  swap('#mic-idle', '#mic-listen', t0 + 1.02, 0.15);
-  swap('#v-ph-idle', '#v-ph-listen', t0 + 1.02, 0.15);
-  tl.to('#v-icon-on', { autoAlpha: 1, duration: 0.15 }, t0 + 1.02);
-  if (PORTRAIT) tl.to('#t-voice .sub', { autoAlpha: 0, duration: 0.3, ease: 'none' }, t0 + 0.9);
-  tl.to('#wave', { autoAlpha: 1, duration: 0.3 }, t0 + 1.0);
-  tl.to(motion, { amp: 1, duration: 0.4, ease: 'power1.out' }, t0 + 1.2);
-  sub('sub-3', t0 + 1.3, t0 + 4.05);
-  tl.set('#v-ph-listen', { autoAlpha: 0 }, t0 + 1.55);
-  type('#v-typed', VQ, t0 + 1.55, 2.0, ' ');
-  if (OV.vq.over) tl.to('#v-line', { x: -OV.vq.over, duration: 2.0 * (1 - OV.vq.frac), ease: 'none' }, t0 + 1.55 + 2.0 * OV.vq.frac);
-  tl.to(motion, { amp: 0, duration: 0.35, ease: 'power1.in' }, t0 + 3.65);
-  tl.to('#wave', { autoAlpha: 0, duration: 0.25 }, t0 + 3.8);
-  tl.set('#v-typed', { text: '' }, t0 + 3.95);
-  tl.set('#v-line', { x: 0 }, t0 + 3.95);
-  swap('#mic-listen', '#mic-think', t0 + 3.95, 0.15);
-  tl.to('#v-icon-on', { autoAlpha: 0, duration: 0.15 }, t0 + 3.95);
-  tl.set('#v-ph-think', { autoAlpha: 1 }, t0 + 3.95);
-  tl.to('#v-empty', { autoAlpha: 0, duration: 0.2, ease: 'none' }, t0 + 3.95);
-  tl.to('#v-new', { autoAlpha: 1, duration: 0.2, ease: 'none' }, t0 + 3.95);
-  tl.set('#v-save', { opacity: 0.45 }, t0 + 3.95);
-  tl.to('#v-savebar', { autoAlpha: 1, duration: 0.2, ease: 'none' }, t0 + 3.95);
-  fadeIn('#v-q1', t0 + 4.0, { duration: 0.3 });
-  fadeIn('#v-l1', t0 + 4.15, { duration: 0.3 });
-  tl.to('#v-l1', { autoAlpha: 0, duration: 0.15, ease: 'none' }, t0 + 5.45);
-  fadeIn('#v-a1', t0 + 5.45, { from: 8, duration: 0.4 });
-  tl.to('#v-save', { opacity: 1, duration: 0.2, ease: 'none' }, t0 + 5.5);
-  tl.to('#v-stack', { y: -vScroll('v-a1'), duration: 0.45, ease: 'power2.out' }, t0 + 5.45);
-  swap('#mic-think', '#mic-speak', t0 + 5.45, 0.15);
-  swap('#v-ph-think', '#v-ph-again', t0 + 5.45, 0.15);
-  cue(t0 + 5.45, 'answer');
-  cue(t0 + 5.6, 'speak', { dur: 3.0 });
-  tl.to($$('#wave i'), { backgroundColor: '#2F7D5C', duration: 0.2, ease: 'none' }, t0 + 5.4);
-  tl.to('#wave', { autoAlpha: 1, duration: 0.25 }, t0 + 5.45);
-  tl.to(motion, { amp: 0.85, duration: 0.4 }, t0 + 5.6);
-  sub('sub-4', t0 + 5.7, t0 + 8.75);
-  tl.to('#v-hl', { backgroundSize: '100% 100%', duration: 0.6, ease: 'power2.inOut' }, t0 + 6.0);
-  tl.to(motion, { amp: 0, duration: 0.4, ease: 'power1.in' }, t0 + 8.6);
-  swap('#mic-speak', '#mic-idle', t0 + 8.9, 0.2);
-  swap('#v-stop1', '#v-again1', t0 + 8.9, 0.2);
-  tl.to('#wave', { autoAlpha: 0, duration: 0.3 }, t0 + 8.9);
-  hide('#t-voice', t0 + 9.55);
-  S.tree = t0 + 10.0;
+  showHow('t-voice', d + 0.75);
+  // The languages, each in its own script: under the paragraph in 16:9, in
+  // its place in 9:16, where they stay for the whole demo.
+  const l0 = d + (PORTRAIT ? 1.15 : 1.75);
+  tl.fromTo(langs, { autoAlpha: 0, y: 14, scale: 0.94 }, { autoAlpha: 1, y: 0, scale: 1, duration: 0.45, stagger: 0.06, ease: 'back.out(1.6)', ...IR }, l0);
+  tl.fromTo('#langs .langs-note', { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.4, ...IR }, l0 + 0.7);
+  cue(l0, 'pop-soft');
+  tap(d + 1.0, P.mic);
+  cue(d + 1.0, 'mic-on');
+  swap('#mic-idle', '#mic-listen', d + 1.02, 0.15);
+  swap('#v-ph-idle', '#v-ph-listen', d + 1.02, 0.15);
+  tl.to('#v-icon-on', { autoAlpha: 1, duration: 0.15 }, d + 1.02);
+  // 9:16 has no room left for the waveform: the mic's own colours carry it.
+  if (!PORTRAIT) {
+    tl.to('#wave', { autoAlpha: 1, duration: 0.3 }, d + 1.0);
+    tl.to(motion, { amp: 1, duration: 0.4, ease: 'power1.out' }, d + 1.2);
+  }
+  // Maa asks; the words appear a beat behind her, as a recogniser's do.
+  const q0 = d + 1.3;
+  const q1 = q0 + VOICES.ask.dur;
+  cue(q0, 'voice', { line: 'ask' });
+  sub('sub-3', q0, q1 + 0.5);
+  const typing = q1 - q0 - 0.2;
+  tl.set('#v-ph-listen', { autoAlpha: 0 }, q0 + 0.3);
+  type('#v-typed', VQ, q0 + 0.3, typing, ' ');
+  if (OV.vq.over) tl.to('#v-line', { x: -OV.vq.over, duration: typing * (1 - OV.vq.frac), ease: 'none' }, q0 + 0.3 + typing * OV.vq.frac);
+  if (!PORTRAIT) {
+    tl.to(motion, { amp: 0, duration: 0.35, ease: 'power1.in' }, q1);
+    tl.to('#wave', { autoAlpha: 0, duration: 0.25 }, q1 + 0.15);
+  }
+  const think = q1 + 0.4;
+  tl.set('#v-typed', { text: '' }, think);
+  tl.set('#v-line', { x: 0 }, think);
+  swap('#mic-listen', '#mic-think', think, 0.15);
+  tl.to('#v-icon-on', { autoAlpha: 0, duration: 0.15 }, think);
+  tl.set('#v-ph-think', { autoAlpha: 1 }, think);
+  tl.to('#v-empty', { autoAlpha: 0, duration: 0.2, ease: 'none' }, think);
+  tl.to('#v-new', { autoAlpha: 1, duration: 0.2, ease: 'none' }, think);
+  tl.set('#v-save', { opacity: 0.45 }, think);
+  tl.to('#v-savebar', { autoAlpha: 1, duration: 0.2, ease: 'none' }, think);
+  fadeIn('#v-q1', think + 0.05, { duration: 0.3 });
+  fadeIn('#v-l1', think + 0.2, { duration: 0.3 });
+  const ans = think + 1.5;
+  tl.to('#v-l1', { autoAlpha: 0, duration: 0.15, ease: 'none' }, ans);
+  fadeIn('#v-a1', ans, { from: 8, duration: 0.4 });
+  tl.to('#v-save', { opacity: 1, duration: 0.2, ease: 'none' }, ans + 0.05);
+  tl.to('#v-stack', { y: -vScroll('v-a1'), duration: 0.45, ease: 'power2.out' }, ans);
+  swap('#mic-think', '#mic-speak', ans, 0.15);
+  swap('#v-ph-think', '#v-ph-again', ans, 0.15);
+  cue(ans, 'answer');
+  // The answer, read aloud. The short cut leaves after its first sentence and
+  // lets the second carry on over the night scene, on Maa's phone.
+  const a0 = ans + 0.35;
+  const a2 = a0 + VOICES.answer.sentence2;
+  const a1 = SHORT ? a2 - 0.4 : a0 + VOICES.answer.dur;
+  cue(a0, 'voice', { line: 'answer', ...(SHORT ? { to: VOICES.answer.sentence2 } : {}) });
+  if (!PORTRAIT) {
+    tl.to($$('#wave i'), { backgroundColor: '#2F7D5C', duration: 0.2, ease: 'none' }, ans - 0.05);
+    tl.to('#wave', { autoAlpha: 1, duration: 0.25 }, ans);
+    tl.to(motion, { amp: 0.85, duration: 0.4 }, a0);
+  }
+  sub('sub-4', a0 + 0.1, SHORT ? a1 + 0.35 : a2 - 0.15);
+  if (!SHORT) sub('sub-4b', a2, a1 + 0.35);
+  tl.to('#v-hl', { backgroundSize: '100% 100%', duration: 0.6, ease: 'power2.inOut' }, a0 + VOICES.answer.number);
+  if (!PORTRAIT) tl.to(motion, { amp: 0, duration: 0.4, ease: 'power1.in' }, a1 - 0.15);
+  if (!SHORT) {
+    swap('#mic-speak', '#mic-idle', a1 + 0.3, 0.2);
+    swap('#v-stop1', '#v-again1', a1 + 0.3, 0.2);
+  }
+  if (!PORTRAIT) tl.to('#wave', { autoAlpha: 0, duration: 0.3 }, a1 + 0.3);
+  // The same, in any of these: a ripple across the languages.
+  const ripple = SHORT ? a1 - 0.5 : a1 + 0.45;
+  tl.fromTo(langs, { scale: 1 }, { scale: 1.08, duration: 0.22, yoyo: true, repeat: 1, ease: 'sine.inOut', stagger: 0.07, ...IR }, ripple);
+  hide('#t-voice', ripple + (SHORT ? 1.1 : 1.5));
+  S.tree = ripple + (SHORT ? 1.5 : 1.95);
 }
 
 // ─── 9. The family tree ──────────────────────────────────────────────────
 if (SHORT) S.res = S.tree;
 if (!SHORT) {
   const t0 = S.tree;
-  showBlock('t-tree', t0);
+  showWhy('t-tree', t0);
   // Home, then the drawer behind your initial, then Family tree.
-  tap(t0 + 0.45, P.vTabHome);
-  nav('scr-voice', 'scr-home', t0 + 0.55, 'fade', 0.3);
-  tap(t0 + 1.3, P.homeAvatar, { press: '#home-avatar' });
-  tl.set('#drawer', { autoAlpha: 1 }, t0 + 1.38);
-  tl.to('#drawer-dim', { opacity: 1, duration: 0.22, ease: 'power3.out' }, t0 + 1.38);
-  tl.to('#drawer-panel', { x: 0, duration: 0.22, ease: 'power3.out' }, t0 + 1.38);
-  cue(t0 + 1.38, 'whoosh-soft');
-  tap(t0 + 2.2, P.drTree, { press: '#dr-tree' });
-  tl.to('#drawer-panel', { x: -330, duration: 0.18, ease: 'power3.in' }, t0 + 2.3);
-  tl.to('#drawer-dim', { opacity: 0, duration: 0.18, ease: 'power3.in' }, t0 + 2.3);
-  tl.set('#drawer', { autoAlpha: 0 }, t0 + 2.5);
-  nav('scr-home', 'scr-tree', t0 + 2.45, 'push');
+  tap(t0 + 0.6, P.vTabHome);
+  nav('scr-voice', 'scr-home', t0 + 0.7, 'fade', 0.3);
+  tap(t0 + 1.75, P.homeAvatar, { press: '#home-avatar' });
+  tl.set('#drawer', { autoAlpha: 1 }, t0 + 1.83);
+  tl.to('#drawer-dim', { opacity: 1, duration: 0.22, ease: 'power3.out' }, t0 + 1.83);
+  tl.to('#drawer-panel', { x: 0, duration: 0.22, ease: 'power3.out' }, t0 + 1.83);
+  cue(t0 + 1.83, 'whoosh-soft');
+  tap(t0 + 2.75, P.drTree, { press: '#dr-tree' });
+  tl.to('#drawer-panel', { x: -330, duration: 0.18, ease: 'power3.in' }, t0 + 2.85);
+  tl.to('#drawer-dim', { opacity: 0, duration: 0.18, ease: 'power3.in' }, t0 + 2.85);
+  tl.set('#drawer', { autoAlpha: 0 }, t0 + 3.05);
+  nav('scr-home', 'scr-tree', t0 + 3.0, 'push');
+  showHow('t-tree', t0 + 3.0);
   // Generation by generation, as the cards settle in.
   const gens = [['#tc-dadi'], ['#tc-papa', '#tc-maa'], ['#tc-neha', '#tc-me', '#tc-priya'], ['#tc-aarav']];
-  gens.forEach((g, i) => tl.fromTo(g, { autoAlpha: 0, y: 10 }, { autoAlpha: 1, y: 0, duration: 0.4, ...IR }, t0 + 2.75 + i * 0.12));
-  tl.fromTo($$('#tree-content .vl, #tree-content .ml, #tree-content .bar'), { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.4, ...IR }, t0 + 2.9);
-  showCallout('#co-tree', t0 + 3.45);
-  tl.fromTo($$('#co-tree .co-ask, #co-tree .co-quiet'), { autoAlpha: 0, x: 14 }, { autoAlpha: 1, x: 0, duration: 0.45, stagger: 0.14, ...IR }, t0 + 3.65);
-  // Each relation lights the card it means.
-  [['#tc-papa', 3.75], ['#tc-dadi', 3.89]].forEach(([card, d]) => {
-    tl.fromTo(card, { boxShadow: '0 0 0 0px rgba(212,128,123,0)' }, { boxShadow: '0 0 0 4px rgba(212,128,123,0.45)', duration: 0.3, yoyo: true, repeat: 1, ease: 'sine.inOut', ...IR }, t0 + d);
+  gens.forEach((g, i) => tl.fromTo(g, { autoAlpha: 0, y: 10 }, { autoAlpha: 1, y: 0, duration: 0.4, ...IR }, t0 + 3.3 + i * 0.12));
+  tl.fromTo($$('#tree-content .vl, #tree-content .ml, #tree-content .bar'), { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.4, ...IR }, t0 + 3.45);
+  // The ones who never sign in are in it too: Dadi, Neha, Aarav.
+  [['#tc-dadi', 4.15], ['#tc-neha', 4.3], ['#tc-aarav', 4.45]].forEach(([card, at]) => {
+    tl.fromTo(card, { boxShadow: '0 0 0 0px rgba(42,61,102,0)' }, { boxShadow: '0 0 0 4px rgba(42,61,102,0.28)', duration: 0.3, yoyo: true, repeat: 1, ease: 'sine.inOut', ...IR }, t0 + at);
   });
-  hide('#t-tree', t0 + 6.15);
-  hide('#co-tree', t0 + 6.05, { y: '-=20' });
-  S.emerg = t0 + 6.6;
+  showCallout('#co-tree', t0 + 5.0);
+  tl.fromTo($$('#co-tree .co-ask, #co-tree .co-quiet'), { autoAlpha: 0, x: 14 }, { autoAlpha: 1, x: 0, duration: 0.45, stagger: 0.14, ...IR }, t0 + 5.2);
+  // Each relation lights the card it means.
+  [['#tc-papa', 5.3], ['#tc-dadi', 5.44]].forEach(([card, at]) => {
+    tl.fromTo(card, { boxShadow: '0 0 0 0px rgba(212,128,123,0)' }, { boxShadow: '0 0 0 4px rgba(212,128,123,0.45)', duration: 0.3, yoyo: true, repeat: 1, ease: 'sine.inOut', ...IR }, t0 + at);
+  });
+  hide('#t-tree', t0 + 7.6);
+  hide('#co-tree', t0 + 7.5, { y: '-=20' });
+  S.emerg = t0 + 8.05;
 }
 
 // ─── 10. The emergency card ──────────────────────────────────────────────
 if (!SHORT) {
   const t0 = S.emerg;
-  showBlock('t-emerg', t0);
-  tap(t0 + 0.35, P.tcPapa, { press: '#tc-papa' });
-  nav('scr-tree', 'scr-person', t0 + 0.5, 'push');
-  tap(t0 + 1.75, P.ppOpen, { press: '#pp-open' });
-  nav('scr-person', 'scr-emerg', t0 + 1.9, 'push');
-  tl.to('#em-inner', { y: -emScroll, duration: 1.0, ease: 'power2.inOut' }, t0 + 3.5);
-  tl.to('#em-hl', { backgroundSize: '100% 100%', duration: 0.6, ease: 'power2.inOut' }, t0 + 4.45);
-  hide('#t-emerg', t0 + 6.1);
-  S.alerts = t0 + 6.55;
+  showWhy('t-emerg', t0);
+  tap(t0 + 0.8, P.tcPapa, { press: '#tc-papa' });
+  nav('scr-tree', 'scr-person', t0 + 0.95, 'push');
+  tap(t0 + 2.3, P.ppOpen, { press: '#pp-open' });
+  nav('scr-person', 'scr-emerg', t0 + 2.45, 'push');
+  showHow('t-emerg', t0 + 2.45);
+  tl.to('#em-inner', { y: -emScroll, duration: 1.0, ease: 'power2.inOut' }, t0 + 4.5);
+  tl.to('#em-hl', { backgroundSize: '100% 100%', duration: 0.6, ease: 'power2.inOut' }, t0 + 5.45);
+  hide('#t-emerg', t0 + 7.2);
+  S.alerts = t0 + 7.65;
 }
 
 // ─── 11. Reminders ───────────────────────────────────────────────────────
 if (!SHORT) {
   const t0 = S.alerts;
-  showBlock('t-alerts', t0);
+  showWhy('t-alerts', t0);
   // The next morning: a reminder reaches the phone, as a web push.
   nav('scr-emerg', 'scr-lockday', t0, 'fade', 0.45);
   chrome(t0, 'os', '9:05');
-  vibrate(t0 + 0.75);
-  tl.fromTo('#pn1', { autoAlpha: 0, y: -26, scale: 0.97 }, { autoAlpha: 1, y: 0, scale: 1, duration: 0.5, ease: 'back.out(1.4)', ...IR }, t0 + 0.8);
-  cue(t0 + 0.8, 'notif');
-  vibrate(t0 + 1.5);
-  tl.fromTo('#pn2', { autoAlpha: 0, y: -26, scale: 0.97 }, { autoAlpha: 1, y: 0, scale: 1, duration: 0.5, ease: 'back.out(1.4)', ...IR }, t0 + 1.55);
-  cue(t0 + 1.55, 'notif');
-  showCallout('#co-alerts', t0 + 2.0);
-  tl.fromTo('#co-alerts .track', { scaleX: 0 }, { scaleX: 1, duration: 0.8, ease: 'power2.inOut', ...IR }, t0 + 2.2);
-  tl.fromTo($$('#co-alerts .co-step'), { autoAlpha: 0, y: 10 }, { autoAlpha: 1, y: 0, duration: 0.4, stagger: 0.16, ...IR }, t0 + 2.2);
-  tl.fromTo('#co-alerts .co-foot', { autoAlpha: 0, y: 8 }, { autoAlpha: 1, y: 0, duration: 0.4, ...IR }, t0 + 2.9);
+  vibrate(t0 + 1.6);
+  tl.fromTo('#pn1', { autoAlpha: 0, y: -26, scale: 0.97 }, { autoAlpha: 1, y: 0, scale: 1, duration: 0.5, ease: 'back.out(1.4)', ...IR }, t0 + 1.65);
+  cue(t0 + 1.65, 'notif');
+  showHow('t-alerts', t0 + 1.9);
+  vibrate(t0 + 2.35);
+  tl.fromTo('#pn2', { autoAlpha: 0, y: -26, scale: 0.97 }, { autoAlpha: 1, y: 0, scale: 1, duration: 0.5, ease: 'back.out(1.4)', ...IR }, t0 + 2.4);
+  cue(t0 + 2.4, 'notif');
+  showCallout('#co-alerts', t0 + 3.6);
+  tl.fromTo('#co-alerts .track', { scaleX: 0 }, { scaleX: 1, duration: 0.8, ease: 'power2.inOut', ...IR }, t0 + 3.8);
+  tl.fromTo($$('#co-alerts .co-step'), { autoAlpha: 0, y: 10 }, { autoAlpha: 1, y: 0, duration: 0.4, stagger: 0.16, ...IR }, t0 + 3.8);
+  tl.fromTo('#co-alerts .co-foot', { autoAlpha: 0, y: 8 }, { autoAlpha: 1, y: 0, duration: 0.4, ...IR }, t0 + 4.5);
   // Tapping it opens Notifications (public/sw.js).
-  tap(t0 + 3.7, P.pn1, { press: '#pn1' });
-  nav('scr-lockday', 'scr-notifs', t0 + 3.85, 'zoom', 0.4);
-  chrome(t0 + 3.85, 'app');
-  tl.fromTo($$('#nt-list .nt-card'), { autoAlpha: 0, y: 16 }, { autoAlpha: 1, y: 0, duration: 0.4, stagger: 0.08, ...IR }, t0 + 4.0);
-  hide('#t-alerts', t0 + 6.2);
-  hide('#co-alerts', t0 + 6.1, { y: '-=20' });
-  tl.to('#phone', { autoAlpha: 0, y: `+=60`, duration: 0.55, ease: 'power2.in' }, t0 + 6.2);
-  S.trust = t0 + 6.75;
+  tap(t0 + 5.2, P.pn1, { press: '#pn1' });
+  nav('scr-lockday', 'scr-notifs', t0 + 5.35, 'zoom', 0.4);
+  chrome(t0 + 5.35, 'app');
+  tl.fromTo($$('#nt-list .nt-card'), { autoAlpha: 0, y: 16 }, { autoAlpha: 1, y: 0, duration: 0.4, stagger: 0.08, ...IR }, t0 + 5.5);
+  hide('#t-alerts', t0 + 7.6);
+  hide('#co-alerts', t0 + 7.5, { y: '-=20' });
+  tl.to('#phone', { autoAlpha: 0, y: `+=60`, duration: 0.55, ease: 'power2.in' }, t0 + 7.6);
+  S.trust = t0 + 8.15;
 }
 
 // ─── 12. Privacy ─────────────────────────────────────────────────────────
 if (!SHORT) {
   const t0 = S.trust;
   const cards = ['#tc1', '#tc2', '#tc3', '#tc4'];
-  tl.set('#t-trust', { autoAlpha: 1 }, t0);
-  tl.fromTo('#t-trust .kicker', { autoAlpha: 0, y: 14 }, { autoAlpha: 1, y: 0, duration: 0.6, ...IR }, t0);
-  tl.fromTo($$('#t-trust .h1 .wi'), { yPercent: 118 }, { yPercent: 0, duration: 0.95, ease: 'power4.out', stagger: 0.06, ...IR }, t0 + 0.1);
-  tl.fromTo(cards, { autoAlpha: 0, y: 50 }, { autoAlpha: 1, y: 0, duration: 0.8, stagger: 0.14, ...IR }, t0 + 0.55);
-  cards.forEach((c, i) => cue(t0 + 0.6 + i * 0.14, 'pop-soft'));
-  hide('#t-trust', t0 + 4.8, { y: -30 });
-  S.res = t0 + 5.35;
+  showWhy('t-trust', t0);
+  showHow('t-trust', t0 + 2.2);
+  tl.fromTo(cards, { autoAlpha: 0, y: 50 }, { autoAlpha: 1, y: 0, duration: 0.8, stagger: 0.14, ...IR }, t0 + 2.75);
+  cards.forEach((c, i) => cue(t0 + 2.8 + i * 0.14, 'pop-soft'));
+  hide('#t-trust', t0 + 7.0, { y: -30 });
+  S.res = t0 + 7.55;
 }
 
 // ─── 13. The same night ──────────────────────────────────────────────────
@@ -775,17 +870,23 @@ if (!SHORT) {
     tl.fromTo('#phone', { autoAlpha: 0, x: L.resPhone[0], y: L.resPhone[1] + 50, scale: L.resPhone[2] },
       { autoAlpha: 1, y: L.resPhone[1], duration: 1.0, ...IR }, t0 + 0.4);
   }
+  // What Maa hears, from her phone's speaker: the policy number. The short cut
+  // heard the number a moment ago, so its reading carries on with the rest.
+  const [from, to] = SHORT ? [VOICES.answer.sentence2, VOICES.answer.dur] : [VOICES.answer.number, VOICES.answer.sentence2 - 0.4];
+  const r0 = t0 + 1.0;
+  const r1 = r0 + to - from;
+  cue(r0, 'voice', { line: 'answer', from, to, phone: true });
+  sub(SHORT ? 'sub-4b' : 'sub-4', r0 + 0.1, r1 + 0.3);
   if (L.resWave) {
     tl.set('#wave', { x: L.resWave[0], y: L.resWave[1] }, t0);
     tl.set($$('#wave i'), { backgroundColor: '#2F7D5C' }, t0);
-    tl.to('#wave', { autoAlpha: 1, duration: 0.4 }, t0 + 0.9);
-    tl.to(motion, { amp: 0.8, duration: 0.4 }, t0 + 0.9);
-    tl.to(motion, { amp: 0, duration: 0.4 }, t0 + 3.0);
-    tl.to('#wave', { autoAlpha: 0, duration: 0.3 }, t0 + 3.3);
+    tl.to('#wave', { autoAlpha: 1, duration: 0.4 }, r0 - 0.1);
+    tl.to(motion, { amp: 0.8, duration: 0.4 }, r0 - 0.1);
+    tl.to(motion, { amp: 0, duration: 0.4 }, r1 - 0.15);
+    tl.to('#wave', { autoAlpha: 0, duration: 0.3 }, r1 + 0.15);
   }
-  cue(t0 + 1.0, 'speak', { dur: 2.2 });
   // Rohan's phone, a minute later.
-  const m = t0 + (SHORT ? 3.25 : 3.5);
+  const m = r1 + 0.45;
   nav('scr-voice', 'scr-lock2', m, 'fade', 0.5);
   chrome(m, 'os', '2:15');
   tl.to('#res-time', { text: '2:15', duration: 0.01 }, m + 0.1);

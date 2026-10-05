@@ -290,3 +290,213 @@
   src: url(caveat_v23_Wnz6HAc5bAfYB2Q7ZjYY.woff2) format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
+/* bengali */
+@font-face {
+  font-family: 'Noto Sans Bengali';
+  font-style: normal;
+  font-weight: 600;
+  font-stretch: 100%;
+  font-display: block;
+  src: url(notosansbengali_v33_Cn-SJsCGWQxOjaGwMQ6fIiMywrNJIky6nvd8BjzVMvJx2mcSPVFpVEqE-6KmsldMicWu8xzI.woff2) format('woff2');
+  unicode-range: U+0951-0952, U+0964-0965, U+0980-09FE, U+1CD0, U+1CD2, U+1CD5-1CD6, U+1CD8, U+1CE1, U+1CEA, U+1CED, U+1CF2, U+1CF5-1CF7, U+200C-200D, U+20B9, U+25CC, U+A8F1;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Noto Sans Bengali';
+  font-style: normal;
+  font-weight: 600;
+  font-stretch: 100%;
+  font-display: block;
+  src: url(notosansbengali_v33_Cn-SJsCGWQxOjaGwMQ6fIiMywrNJIky6nvd8BjzVMvJx2mcSPVFpVEqE-6KmsldMidmu8xzI.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Noto Sans Bengali';
+  font-style: normal;
+  font-weight: 600;
+  font-stretch: 100%;
+  font-display: block;
+  src: url(notosansbengali_v33_Cn-SJsCGWQxOjaGwMQ6fIiMywrNJIky6nvd8BjzVMvJx2mcSPVFpVEqE-6KmsldMideu8w.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* tamil */
+@font-face {
+  font-family: 'Noto Sans Tamil';
+  font-style: normal;
+  font-weight: 600;
+  font-stretch: 100%;
+  font-display: block;
+  src: url(notosanstamil_v31_ieVc2YdFI3GCY6SyQy1KfStzYKZgzN1z4LKDbeZce-0429tBManUktuex7sYpI0AoqHd_A.woff2) format('woff2');
+  unicode-range: U+0964-0965, U+0B82-0BFA, U+200C-200D, U+20B9, U+25CC;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Noto Sans Tamil';
+  font-style: normal;
+  font-weight: 600;
+  font-stretch: 100%;
+  font-display: block;
+  src: url(notosanstamil_v31_ieVc2YdFI3GCY6SyQy1KfStzYKZgzN1z4LKDbeZce-0429tBManUktuex7sYpI0YoqHd_A.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Noto Sans Tamil';
+  font-style: normal;
+  font-weight: 600;
+  font-stretch: 100%;
+  font-display: block;
+  src: url(notosanstamil_v31_ieVc2YdFI3GCY6SyQy1KfStzYKZgzN1z4LKDbeZce-0429tBManUktuex7sYpI0WoqE.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* telugu */
+@font-face {
+  font-family: 'Noto Sans Telugu';
+  font-style: normal;
+  font-weight: 600;
+  font-stretch: 100%;
+  font-display: block;
+  src: url(notosanstelugu_v30_0FlxVOGZlE2Rrtr-HmgkMWJNjJ5_RyT8o8c7fHkeg-esVC5dzHkHIJQqrEntpTHaWkzey3s.woff2) format('woff2');
+  unicode-range: U+0951-0952, U+0964-0965, U+0C00-0C7F, U+1CDA, U+1CF2, U+200C-200D, U+25CC;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Noto Sans Telugu';
+  font-style: normal;
+  font-weight: 600;
+  font-stretch: 100%;
+  font-display: block;
+  src: url(notosanstelugu_v30_0FlxVOGZlE2Rrtr-HmgkMWJNjJ5_RyT8o8c7fHkeg-esVC5dzHkHIJQqrEntpTHaSEzey3s.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Noto Sans Telugu';
+  font-style: normal;
+  font-weight: 600;
+  font-stretch: 100%;
+  font-display: block;
+  src: url(notosanstelugu_v30_0FlxVOGZlE2Rrtr-HmgkMWJNjJ5_RyT8o8c7fHkeg-esVC5dzHkHIJQqrEntpTHaRkze.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* gujarati */
+@font-face {
+  font-family: 'Noto Sans Gujarati';
+  font-style: normal;
+  font-weight: 600;
+  font-stretch: 100%;
+  font-display: block;
+  src: url(notosansgujarati_v27_wlpWgx_HC1ti5ViekvcxnhMlCVo3f5pv17ivlzsUB14gg1TMR2Gw4VceEl7MA_x3EDPQ9uZSEA.woff2) format('woff2');
+  unicode-range: U+0951-0952, U+0964-0965, U+0A80-0AFF, U+200C-200D, U+20B9, U+25CC, U+A830-A839;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Noto Sans Gujarati';
+  font-style: normal;
+  font-weight: 600;
+  font-stretch: 100%;
+  font-display: block;
+  src: url(notosansgujarati_v27_wlpWgx_HC1ti5ViekvcxnhMlCVo3f5pv17ivlzsUB14gg1TMR2Gw4VceEl7MA_x3EDPF9uZSEA.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Noto Sans Gujarati';
+  font-style: normal;
+  font-weight: 600;
+  font-stretch: 100%;
+  font-display: block;
+  src: url(notosansgujarati_v27_wlpWgx_HC1ti5ViekvcxnhMlCVo3f5pv17ivlzsUB14gg1TMR2Gw4VceEl7MA_x3EDPL9uY.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* kannada */
+@font-face {
+  font-family: 'Noto Sans Kannada';
+  font-style: normal;
+  font-weight: 600;
+  font-stretch: 100%;
+  font-display: block;
+  src: url(notosanskannada_v32_8vIs7xs32H97qzQKnzfeXycxXZyUmySvZWItmf1fe6TVmgop9ndpS-BqHEyGrOXK_T8GL_PK.woff2) format('woff2');
+  unicode-range: U+0951-0952, U+0964-0965, U+0C80-0CF3, U+1CD0, U+1CD2-1CD3, U+1CDA, U+1CF2, U+1CF4, U+200C-200D, U+20B9, U+25CC, U+A830-A835;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Noto Sans Kannada';
+  font-style: normal;
+  font-weight: 600;
+  font-stretch: 100%;
+  font-display: block;
+  src: url(notosanskannada_v32_8vIs7xs32H97qzQKnzfeXycxXZyUmySvZWItmf1fe6TVmgop9ndpS-BqHEyGrOXK_SsGL_PK.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Noto Sans Kannada';
+  font-style: normal;
+  font-weight: 600;
+  font-stretch: 100%;
+  font-display: block;
+  src: url(notosanskannada_v32_8vIs7xs32H97qzQKnzfeXycxXZyUmySvZWItmf1fe6TVmgop9ndpS-BqHEyGrOXK_SUGLw.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* malayalam */
+@font-face {
+  font-family: 'Noto Sans Malayalam';
+  font-style: normal;
+  font-weight: 600;
+  font-stretch: 100%;
+  font-display: block;
+  src: url(notosansmalayalam_v29_sJoi3K5XjsSdcnzn071rL37lpAOsUThnDZIfPdbeSNzVakglNM-Qw8EaeB8Nss-_mOfNG1bFn6E.woff2) format('woff2');
+  unicode-range: U+0307, U+0323, U+0951-0952, U+0964-0965, U+0D00-0D7F, U+1CDA, U+1CF2, U+200C-200D, U+20B9, U+25CC, U+A830-A832;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Noto Sans Malayalam';
+  font-style: normal;
+  font-weight: 600;
+  font-stretch: 100%;
+  font-display: block;
+  src: url(notosansmalayalam_v29_sJoi3K5XjsSdcnzn071rL37lpAOsUThnDZIfPdbeSNzVakglNM-Qw8EaeB8Nss-_mOfNDVbFn6E.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Noto Sans Malayalam';
+  font-style: normal;
+  font-weight: 600;
+  font-stretch: 100%;
+  font-display: block;
+  src: url(notosansmalayalam_v29_sJoi3K5XjsSdcnzn071rL37lpAOsUThnDZIfPdbeSNzVakglNM-Qw8EaeB8Nss-_mOfNA1bF.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* gurmukhi */
+@font-face {
+  font-family: 'Noto Sans Gurmukhi';
+  font-style: normal;
+  font-weight: 600;
+  font-stretch: 100%;
+  font-display: block;
+  src: url(notosansgurmukhi_v29_w8g9H3EvQP81sInb43inmyN9zZ7hb7ATbSWo4q8dJ74a3cVrYFQ_bogT0-gPeG2QfUbVbfpbdg.woff2) format('woff2');
+  unicode-range: U+0951-0952, U+0964-0965, U+0A01-0A76, U+200C-200D, U+20B9, U+25CC, U+262C, U+A830-A839;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Noto Sans Gurmukhi';
+  font-style: normal;
+  font-weight: 600;
+  font-stretch: 100%;
+  font-display: block;
+  src: url(notosansgurmukhi_v29_w8g9H3EvQP81sInb43inmyN9zZ7hb7ATbSWo4q8dJ74a3cVrYFQ_bogT0-gPeG2QfUb4bfpbdg.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Noto Sans Gurmukhi';
+  font-style: normal;
+  font-weight: 600;
+  font-stretch: 100%;
+  font-display: block;
+  src: url(notosansgurmukhi_v29_w8g9H3EvQP81sInb43inmyN9zZ7hb7ATbSWo4q8dJ74a3cVrYFQ_bogT0-gPeG2QfUb2bfo.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}

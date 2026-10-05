@@ -100,6 +100,21 @@ function avatar(name, size, { me = false, onApp = false } = {}) {
 }
 
 const words = (text) => text.split(' ').map((w) => `<span class="w"><span class="wi">${w}</span></span>`).join(' ');
+// Like words(), for a "why" line: *stars* mark the emphasis, | breaks the
+// line, and ~ is a space that never breaks.
+const rich = (text) => text.split('|').map((line) => line.split(/(\*[^*]+\*)/).filter((p) => p.trim()).map((part) => {
+  const em = part.startsWith('*');
+  return part.replace(/\*/g, '').trim().split(/\s+/)
+    .map((w) => `<span class="w"><span class="wi${em ? ' em' : ''}">${w.replace(/~/g, '\u00a0')}</span></span>`).join(' ');
+}).join(' ')).join('<br>');
+
+// The voice languages, as Settings › Accessibility › Voice language lists
+// them (src/lib/voice-languages.ts). One code per language drives listening,
+// the written answer and the voice that reads it.
+export const VOICE_LANGUAGES = [
+  ['हिन्दी', 'Hindi'], ['বাংলা', 'Bengali'], ['தமிழ்', 'Tamil'], ['తెలుగు', 'Telugu'], ['मराठी', 'Marathi'],
+  ['ગુજરાતી', 'Gujarati'], ['ಕನ್ನಡ', 'Kannada'], ['മലയാളം', 'Malayalam'], ['ਪੰਜਾਬੀ', 'Punjabi'], ['English', 'India'],
+];
 
 // ─── The fictional policy document ───────────────────────────────────────
 // Labels are chosen so the app's real extractor (supabase/functions/_shared/
@@ -637,9 +652,13 @@ export function scrambleCards() {
 }
 
 export function textBlocks() {
-  const block = (id, kicker, kIcon, h1, sub, { extra = '', plus = false } = {}) => `<div class="tblock ${extra}" id="${id}">
+  // Every feature scene says why it exists, then how FamilyVault answers it.
+  const whyHow = (id, kicker, kIcon, why, how, sub, { plus = false, after = '' } = {}) => `<div class="tblock wh" id="${id}">
       <div class="kicker">${icon(kIcon, 22, 'currentColor', 2.4)}<span>${kicker}</span>${plus ? '<span class="k-plus">★ Family Plus</span>' : ''}</div>
-      <div class="h1">${h1}</div><div class="sub">${sub}</div></div>`;
+      <div class="wh-why"><div class="wh-tag why">Why</div><div class="why-t">${rich(why)}</div></div>
+      <div class="wh-how"><div class="wh-tag how">How</div><div class="h1">${words(how)}</div><div class="sub">${sub}</div>${after}</div></div>`;
+  const langs = `<div class="langs" id="langs"><div class="langs-head">Speech to text and text to speech, in</div>${VOICE_LANGUAGES.map(([n, e]) => `<div class="lang"><b>${n}</b><i>${e}</i></div>`).join('')}
+    <div class="langs-note">Each phone reads aloud in its own voices.</div></div>`;
   return `
   <div class="tblock on-dark" id="t-hook">
     <div class="clock-big"><span class="t">2:14</span><span class="ampm">AM</span></div>
@@ -668,15 +687,24 @@ export function textBlocks() {
     <div class="wordmark" id="wordmark">FamilyVault</div>
     <div class="tagline" id="tagline">Every family document. One question away.</div>
   </div>
-  ${block('t-gmail', 'Import', 'mail', words('Start with your inbox.'), 'FamilyVault finds the policies, statements and tickets in your Gmail. Nothing comes in until you tick it.', { plus: true })}
-  ${block('t-scan', 'Scan', 'camera', words('Photograph the paper ones.'), 'FamilyVault reads the page and pulls out policy numbers, names and expiry dates.')}
-  ${block('t-ask', 'Ask', 'message-circle', words('Then just ask.'), "Type a question the way you'd ask a person. The answer comes from your own documents, with the source attached.")}
-  ${block('t-voice', 'Voice', 'mic', `${words('Parents can ask out loud.')} <span class="w"><span class="wi em">In Hindi.</span></span>`, 'One big button. The answer is shown and read aloud, in Hindi and other Indian languages.')}
-  ${block('t-tree', 'Family', 'users', words('The whole family, in one picture.'), 'Add Dadi and the kids, with or without an account. Ask about anyone by relation.')}
-  ${block('t-emerg', 'Emergency', 'plus-square', words('What the doctor asks first.'), 'Blood group, allergies, medicines and the policy number, on one card. Every number is one tap from the dialler.')}
-  ${block('t-alerts', 'Reminders', 'bell', words('Know before it lapses.'), 'The whole family is reminded 90, 30 and 7 days before a policy or passport runs out, on their phones too.')}
+  ${whyHow('t-gmail', 'Gmail import', 'mail', 'Your policies are buried somewhere in *2,847 emails.*',
+    'FamilyVault finds them for you.', 'It lists the attachments that look like documents. Nothing comes in until you tick it.', { plus: true })}
+  ${whyHow('t-scan', 'Scan', 'camera', 'The originals sit in an almirah, *in another city.*',
+    'Photograph them once.', 'FamilyVault reads the page and pulls out the policy number and expiry date.')}
+  ${whyHow('t-ask', 'Ask', 'message-circle', 'In a panic, *nobody remembers* which file has the number.',
+    "Just ask, the way you'd ask a person.", 'The answer comes from your own documents, with the source attached.')}
+  ${whyHow('t-voice', 'Voice', 'mic', 'Not every parent types, *or reads English.*',
+    'They ask out loud and hear the answer.', 'Speech to text and text to speech, in nine Indian languages and English.', { after: langs })}
+  ${whyHow('t-tree', 'Family tree', 'git-branch', 'Dadi and the kids *never sign in.*|And everyone says “Dadi”, not “Kamala~Sharma”.',
+    'Everyone goes in one family tree.', 'With or without an account. Ask by relation, and FamilyVault knows who you mean.')}
+  ${whyHow('t-emerg', 'Emergency card', 'plus-square', 'The doctor asks: blood~group? Allergies? Medicines?|At 2~AM, *nobody remembers.*',
+    'One emergency card for each person.', 'With the policy number too. Anyone in the family can open it, and every number is one tap from the dialler.')}
+  ${whyHow('t-alerts', 'Reminders', 'bell', 'Policies lapse quietly.|You find out *the day you need~one.*',
+    'Everyone is reminded in time.', '90, 30 and 7 days before a policy or passport runs out, on their phones too. Birthdays as well.')}
   <div id="t-trust">
-    <div class="trust-head"><div class="kicker">${icon('shield', 22, 'currentColor', 2.4)}<span>Privacy</span></div><div class="h1">${words('Private to your family.')}</div></div>
+    <div class="trust-head"><div class="kicker">${icon('shield', 22, 'currentColor', 2.4)}<span>Privacy</span></div>
+      <div class="wh-why"><div class="wh-tag why">Why</div><div class="why-t">${rich('Policies, IDs, medical records: *the most private papers* a family has.')}</div></div>
+      <div class="wh-how"><div class="wh-tag how">How</div><div class="h1">${words('Private to your family.')}</div></div></div>
     <div class="trust-row">
       <div class="trust-card" id="tc1"><div class="trust-ic">${icon('lock', 30, '#2A3D66')}</div><div class="trust-t">Invite-only</div><div class="trust-b">Nobody joins unless an admin asks and they say yes.</div></div>
       <div class="trust-card" id="tc2"><div class="trust-ic">${icon('layers', 30, '#2A3D66')}</div><div class="trust-t">Isolated by design</div><div class="trust-b">Every family's documents live in their own separate space.</div></div>
@@ -739,6 +767,7 @@ export function subtitles() {
     <div class="subline" id="sub-1">Son, we've brought Papa to the hospital.</div>
     <div class="subline" id="sub-2">They're asking for the insurance policy number. Where is it?</div>
     <div class="subline on-light" id="sub-3">“What is Papa's health insurance policy number?”</div>
-    <div class="subline on-light" id="sub-4">“It's ${STORY.policyNo}. The policy is valid till 14 March 2027.”</div>
+    <div class="subline on-light" id="sub-4">“It's ${STORY.policyNo}.”</div>
+    <div class="subline on-light" id="sub-4b">“The policy is valid till 14 March 2027.”</div>
     <div class="subline" id="sub-5">“Found it, son. Cashless is approved. Go back to sleep.”</div>`;
 }

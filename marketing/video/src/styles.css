@@ -25,6 +25,9 @@
   --ui: 'Roboto', 'Noto Sans Devanagari', 'Noto Color Emoji', sans-serif;
   --display: 'Bricolage Grotesque', 'Noto Sans Devanagari', sans-serif;
   --serif: 'Instrument Serif', Georgia, serif;
+  /* Each voice language in its own script; Roboto takes the Latin. */
+  --script: 'Roboto', 'Noto Sans Devanagari', 'Noto Sans Bengali', 'Noto Sans Tamil', 'Noto Sans Telugu',
+    'Noto Sans Gujarati', 'Noto Sans Kannada', 'Noto Sans Malayalam', 'Noto Sans Gurmukhi', sans-serif;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -97,6 +100,44 @@ body { -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; 
 .em { font-family: var(--serif); font-style: italic; font-weight: 400; letter-spacing: -0.01em; color: var(--coral); }
 .h1 .em { font-size: 1.12em; line-height: 0.9; }
 .big-em .w, .w:has(.em) { padding-right: 0.16em; margin-right: -0.16em; }
+
+/* Why, then how: every feature scene states the problem before the fix. */
+.wh-tag { display: inline-flex; align-items: center; height: 32px; padding: 0 13px; border-radius: 8px; font: 700 16px/1 var(--display); letter-spacing: 0.18em; text-transform: uppercase; }
+.wh-tag.why { background: #FBEDEB; color: #B5524C; }
+.wh-tag.how { background: #E4EAF5; color: var(--navy); }
+.wh-why .wh-tag, .wh-how .wh-tag { margin-bottom: 16px; }
+.why-t { font: 600 46px/1.2 var(--display); color: var(--film-ink); letter-spacing: -0.022em; font-variation-settings: 'opsz' 48; }
+/* Read first at 118%, so it must still clear the phone at that size. */
+.landscape .why-t { max-width: 760px; }
+.why-t .em { font-size: 1.12em; line-height: 0.9; }
+.wh-how { margin-top: 40px; }
+.tblock.wh .h1 { font-size: 72px; }
+.tblock.wh .sub { margin-top: 18px; font-size: 29px; }
+.landscape .tblock.wh { width: 860px; }
+/* 9:16 has room for one at a time: the why is read first, then the how takes its place. */
+.portrait .wh-why, .portrait .wh-how { position: absolute; left: 0; right: 0; top: 56px; margin: 0; }
+.portrait .why-t { font-size: 60px; line-height: 1.14; }
+.portrait .tblock.wh .h1 { font-size: 88px; }
+.portrait .tblock.wh .sub { font-size: 38px; margin-top: 22px; }
+.portrait .wh-tag { height: 36px; font-size: 18px; padding: 0 15px; }
+
+/* The voice languages, each in its own script */
+.langs { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 26px; max-width: 760px; }
+.lang { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 136px; padding: 10px 14px 9px; border-radius: 14px; background: #fff; border: 1px solid rgba(42, 61, 102, 0.08); box-shadow: 0 12px 26px -16px rgba(21, 32, 54, 0.3); }
+.lang b { font: 600 26px/1.3 var(--script); color: var(--navy); }
+.lang i { margin-top: 2px; font: 600 12px/1.2 var(--ui); font-style: normal; letter-spacing: 0.1em; text-transform: uppercase; color: var(--film-sub); }
+.langs-note { flex-basis: 100%; margin-top: 6px; font: 400 20px/1.3 var(--display); color: var(--film-sub); }
+/* 9:16 shows the cards in place of the paragraph, so they carry its words. */
+.langs-head { display: none; }
+.portrait .langs-head { display: block; flex-basis: 100%; text-align: center; font: 500 28px/1.3 var(--display); color: var(--film-sub); margin-bottom: 4px; }
+.portrait #t-voice .wh-how .sub { display: none; }
+.portrait .langs { position: absolute; left: 0; right: 0; margin: 0; max-width: none; gap: 12px; justify-content: center; }
+.portrait .langs { gap: 10px; }
+.portrait .lang { min-width: 166px; padding: 7px 12px 6px; }
+.portrait .lang b { font-size: 29px; }
+.portrait .lang i { font-size: 13px; }
+.portrait .langs-note { text-align: center; font-size: 22px; margin-top: 0; }
+.portrait #t-voice .h1 { font-size: 80px; }
 
 .on-dark .h1, .on-dark .big { color: #fff; }
 .on-dark .sub { color: rgba(226, 232, 245, 0.72); }
@@ -220,8 +261,8 @@ body { -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; 
 .co-step span { margin-top: 2px; font: 400 14px/1.2 var(--ui); color: var(--gray); }
 
 .trust-row { position: absolute; display: flex; gap: 28px; }
-.landscape .trust-row { left: 150px; right: 150px; top: 520px; gap: 24px; }
-.portrait .trust-row { left: 80px; right: 80px; top: 610px; flex-direction: column; gap: 22px; }
+.landscape .trust-row { left: 150px; right: 150px; top: 610px; gap: 24px; }
+.portrait .trust-row { left: 80px; right: 80px; top: 640px; flex-direction: column; gap: 22px; }
 .trust-card {
   flex: 1; background: #fff; border-radius: 26px; padding: 32px 30px;
   box-shadow: 0 30px 70px -30px rgba(21, 32, 54, 0.32); border: 1px solid rgba(42, 61, 102, 0.07);
@@ -232,8 +273,10 @@ body { -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; 
 .trust-t { font: 700 32px/1.15 var(--display); color: var(--film-ink); letter-spacing: -0.02em; }
 .trust-b { margin-top: 12px; font: 400 23px/1.4 var(--display); color: var(--film-sub); }
 .trust-head { position: absolute; }
-.landscape .trust-head { left: 150px; top: 300px; }
-.portrait .trust-head { left: 80px; right: 80px; top: 330px; }
+.landscape .trust-head { left: 150px; right: 150px; top: 118px; }
+.portrait .trust-head { left: 80px; right: 80px; top: 232px; }
+#t-trust .wh-how { margin-top: 30px; }
+.landscape #t-trust .why-t { max-width: 1300px; }
 
 /* Voice waveform */
 .wave { position: absolute; display: flex; align-items: center; gap: 7px; height: 150px; }
