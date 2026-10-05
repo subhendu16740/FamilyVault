@@ -1,7 +1,8 @@
 // ─── Is the family on Family Plus? ──────────────────────────────
 //
 // Starred features (★, <PlusTag />) are for Family Plus families: today the
-// Reminders page and Import from Gmail. For a free family, tapping one opens
+// Reminders page, Import from Gmail, and answers read aloud after a free
+// family's first 10 (041). For a free family, tapping one opens
 // /plus, which shows Free and Plus side by side, and the screens themselves
 // send a free family there too (after a refresh, or from a link). Storage
 // beyond the free 1 GB is kept by the server (038), and Gmail import refuses
@@ -19,7 +20,7 @@ import { fetchStorageStatus } from './api';
 import type { PlanName } from './plans';
 
 /** What a starred feature is called in /plus?feature=… */
-export type PlusFeature = 'reminders' | 'gmail' | 'storage';
+export type PlusFeature = 'reminders' | 'gmail' | 'storage' | 'voice';
 
 interface KnownPlan {
   plan: PlanName | null;

@@ -203,6 +203,16 @@ const plansFnJudge = ({ status, data }) => {
     ? ['pass', `ran; nothing of QA Vault A's was due (${data.families} famil${data.families === 1 ? 'y' : 'ies'} on DEV)`]
     : ['fail', `HTTP ${status}: ${JSON.stringify(data).slice(0, 160)}`];
 };
+// What each plan allows (041): the count of answers read aloud and the
+// plan helper are the server's; a member claims answers for their own family
+// only, and nobody raises a plan's member limit. Skipped until 041 is on DEV
+// (PGRST204: plan_limits has no max_members column yet).
+const limitsJudge = (expect) => (outcome) => {
+  if (missingTable(outcome.error) || ['PGRST202', 'PGRST204'].includes(String(outcome.error?.code))) {
+    return ['skipped', 'migration 041 is not applied to DEV yet'];
+  }
+  return judge(expect, outcome);
+};
 // A well-formed device key and secret: RFC 8291's own example.
 const PROBE_P256DH = 'BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4';
 const PROBE_AUTH = 'BTBZMqHH6r4Tts7J_aSIgg';
@@ -473,6 +483,7 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
   // ── Plans and storage (038): account A reads its own family's plan and room,
   // and its family has room — the positive control for the probes below.
   let plansMissing = false;
+  let planOfA = null;
   {
     const { data, error } = await a.client.rpc('family_storage_status', { p_family_id: A.family });
     if (String(error?.code) === 'PGRST202' || missingTable(error)) {
@@ -480,6 +491,7 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
       results.add('access', 'control:storage', "Control — account A reads its family's plan and storage", 'skipped', { why: 'migration 038 is not applied to DEV yet' });
     } else {
       const row = data?.[0];
+      planOfA = row?.plan ?? null;
       const ok = !error && row && Number(row.limit_bytes) > 0 && Number(row.used_bytes) > 0 && ['free', 'plus'].includes(row.plan);
       results.add('access', 'control:storage', "Control — account A reads its family's plan and storage", ok ? 'pass' : 'fail',
         { why: error ? short(error) : row ? `${row.plan}: ${Math.round(Number(row.used_bytes) / 1048576)} MB of ${Math.round(Number(row.limit_bytes) / 1048576)} MB` : 'no row' });
@@ -489,6 +501,31 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     }
   }
   const onPlans = (run) => async () => (plansMissing ? { missing: true } : run());
+
+  // ── What each plan allows (041): account A reads every plan's limits, and
+  // claims one answer read aloud for its own family — the positive control
+  // for the probes below. The numbers are checked against each other, not
+  // pinned: they change in the Table editor. Each run claims one of QA Vault
+  // A's free answers; once they are used the answer is a no, which is right.
+  {
+    const { data: rows, error } = await a.client.from('plan_limits').select('plan, max_members, voice_answers');
+    if (error && (['PGRST204', '42703'].includes(String(error.code)) || /max_members|voice_answers/.test(error.message ?? ''))) {
+      results.add('access', 'control:limits', "Control — account A reads every plan's member and read-aloud limits", 'skipped', { why: 'migration 041 is not applied to DEV yet' });
+    } else {
+      const plans = Object.fromEntries((rows ?? []).map((r) => [r.plan, r]));
+      const limitsOk = !error && ['free', 'plus'].every((p) => Number.isInteger(plans[p]?.max_members) && plans[p].max_members >= 1);
+      results.add('access', 'control:limits', "Control — account A reads every plan's member and read-aloud limits", limitsOk ? 'pass' : 'fail',
+        { why: error ? short(error) : `members ${plans.free?.max_members}/${plans.plus?.max_members}, read aloud ${plans.free?.voice_answers ?? 'all'}/${plans.plus?.voice_answers ?? 'all'}` });
+      const { data: claim, error: claimErr } = await a.client.rpc('claim_voice_answer', { p_family_id: A.family });
+      const limit = plans[planOfA ?? 'free']?.voice_answers ?? null;
+      const used = claim?.used == null ? null : Number(claim.used);
+      const claimOk = !claimErr && claim && (claim.limit ?? null) === limit && (limit == null
+        ? claim.allowed === true && used == null
+        : (claim.allowed ? used >= 1 && used <= limit : used === limit));
+      results.add('access', 'control:voice', 'Control — account A claims an answer read aloud for its own family, never past its plan\'s number', claimOk ? 'pass' : 'fail',
+        { why: claimErr ? short(claimErr) : JSON.stringify(claim) });
+    }
+  }
 
   const onDeviceA = (run) => async () => {
     if (pushMissing) return { missing: true };
@@ -718,6 +755,11 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     ['B', "take documents from QA Vault A (server-only)", lapseJudge('refused'), rpc(b, 'plan_take_excess', { p_family_id: A.family, p_max: 500 })],
     ['B', "close QA Vault A's clean-up (server-only)", lapseJudge('refused'), rpc(b, 'plan_settle', { p_family_id: A.family })],
     ['B', 'make the plans function remove a document of account A\'s', plansFnJudge, fn(b, 'plans', { action: 'cleanup' })],
+    ['anon', 'hear an answer read aloud on QA Vault A\'s allowance', limitsJudge('refused'), rpc(anon, 'claim_voice_answer', { p_family_id: A.family })],
+    ['B', "use up QA Vault A's answers read aloud", limitsJudge('refused'), rpc(b, 'claim_voice_answer', { p_family_id: A.family })],
+    ['B', "read QA Vault A's count of answers read aloud", limitsJudge('refused-or-empty'), () => b.client.from('family_usage').select('voice_answers').eq('family_id', A.family)],
+    ['B', "ask which plan QA Vault A is on (server-only)", limitsJudge('refused'), rpc(b, 'family_plan_now', { p_family_id: A.family })],
+    ['B', "raise every plan's member limit", limitsJudge('refused'), () => b.client.from('plan_limits').update({ max_members: 100 }).eq('plan', 'free')],
 
     ['B', "invite someone to be a person in A's tree through the database (server-only)", inviteJudge('refused'), onInvites(() => b.client.rpc('invite_family_person_account', { p_family_id: A.family, p_invited_by: A.user, p_person_id: randomUUID(), p_email: `qa-probe-${cfg.runId}@example.invalid` }))],
 

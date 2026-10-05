@@ -26,7 +26,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'Can I ask by speaking?',
-    a: 'Yes. Turn on the Voice assistant in Settings, under Accessibility. Then tap the microphone on Search and say your question. The answer is read out loud.',
+    a: `Yes. Turn on the Voice assistant in Settings, under Accessibility. Then tap the microphone on Search and say your question. The answer is read out loud: your family's first ${DEFAULT_PLAN_LIMITS.voiceAnswers.free} answers free, and every answer with ★ Family Plus. After the free ones, the answer is shown on the screen.`,
   },
   {
     q: 'Who can see my documents?',
@@ -38,7 +38,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'How do I add someone to my family?',
-    a: 'If you are an admin, open Manage Family and choose Add, then type the email they use for FamilyVault. They need to have signed up first. They get an invitation and join once they accept — until then they show in Manage Family as Pending approval, and you can withdraw it.',
+    a: `If you are an admin, open Manage Family and choose Add, then type the email they use for FamilyVault. They need to have signed up first. They get an invitation and join once they accept — until then they show in Manage Family as Pending approval, and you can withdraw it. A family can have up to ${DEFAULT_PLAN_LIMITS.members.free} members, and invitations waiting for an answer count too. Anyone can be in the family tree without an account.`,
   },
   {
     q: 'Someone invited me to their family. What do I do?',
@@ -66,7 +66,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'What does ★ Family Plus mean?',
-    a: `Family Plus is the paid plan for the whole family, coming soon. In India it is ${plusPrice('inr')}, or ${plusYearlyOffer('inr')}: ${plusYearlySaving('inr')}. Elsewhere it is ${plusPrice('usd')}, or ${plusYearlyOffer('usd')}. It gives ${formatBytes(DEFAULT_PLAN_LIMITS.plus)} of space, and the things marked with ★ — the Reminders page, with every expiry date in one list, and bringing documents in from Gmail. Tap any ★, or open Settings › Family Plus, to see Free and Plus side by side. The reminders themselves reach every family, Free or Plus.`,
+    a: `Family Plus is the paid plan for the whole family, coming soon. In India it is ${plusPrice('inr')}, or ${plusYearlyOffer('inr')}: ${plusYearlySaving('inr')}. Elsewhere it is ${plusPrice('usd')}, or ${plusYearlyOffer('usd')}. It gives ${formatBytes(DEFAULT_PLAN_LIMITS.plus)} of space, and the things marked with ★ — every answer read aloud (a free family hears its first ${DEFAULT_PLAN_LIMITS.voiceAnswers.free}), the Reminders page, with every expiry date in one list, and bringing documents in from Gmail. Tap any ★, or open Settings › Family Plus, to see Free and Plus side by side. The reminders themselves reach every family, Free or Plus.`,
   },
   {
     q: 'How do I delete my account?',

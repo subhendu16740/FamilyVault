@@ -28,6 +28,7 @@
 //   404 { status: 'no_person' }        409 { status: 'already_linked' | 'already_member' | 'already_invited' }
 //   409 { status: 'tree_rule' }        the join would break a rule of the tree
 //                                      (two parents at most, nobody their own ancestor)
+//   409 { status: 'family_full' }      no room for another member (041), with the reason
 //   403 caller is not an admin         503 { status: 'needs_migration' } 037 is not applied
 // ────────────────────────────────────────────────────────────────
 
@@ -84,6 +85,10 @@ Deno.serve(async (req) => {
       }
       if (error.code === "42501") {
         return json(403, { error: "Only a family admin can link someone to their account" });
+      }
+      // The family has no room for them (041), in the database's own words.
+      if (error.hint === "family_full") {
+        return json(409, { status: "family_full", error: error.message });
       }
       // The tree's own rules, in the words the database uses for them:
       // "Someone can have at most two parents in the tree." and the like.

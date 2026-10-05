@@ -502,11 +502,16 @@ await test('every suite stays inside its Groq budget', () => {
   assert.equal(seen.size, groups, 'consecutive days cover every rotation group');
 });
 
-await test('plans: every limit is finite, and a full vault says why and what to do (038–040)', () => {
+await test('plans: every limit is finite, and a full vault says why and what to do (038–041)', () => {
   const GB = 1024 ** 3, MB = 1024 ** 2;
-  // What 039 and 040 leave in plan_limits: one row per plan, Plus ten times
-  // Free, and 30 days after Plus ends before anything above Free goes.
-  assert.deepEqual(DEFAULT_PLAN_LIMITS, { free: GB, plus: 10 * GB, graceDays: 30 });
+  // What 039–041 leave in plan_limits: one row per plan, Plus ten times
+  // Free, 30 days after Plus ends before anything above Free goes, 4 members
+  // on every plan, and a free family's first 10 answers read aloud.
+  assert.deepEqual(DEFAULT_PLAN_LIMITS, {
+    free: GB, plus: 10 * GB, graceDays: 30,
+    members: { free: 4, plus: 4 },
+    voiceAnswers: { free: 10, plus: null },
+  });
   assert.deepEqual(PLUS_PRICE, { monthly: { inr: 100, usd: 10 }, yearly: { inr: 1100, usd: 110 } });
   // The Plus page says what a year saves in months ("1 month free"): a year
   // must cost a whole number of months, fewer than twelve.
