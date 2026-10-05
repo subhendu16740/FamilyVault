@@ -4,12 +4,13 @@ import {
   ScrollView, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFamily } from '../../lib/family-context';
 import {
   fetchCategories, ragSearch, indexStatus, saveChat, getSavedChat, isMissingMigration, claimVoiceAnswer,
+  fetchVoiceStatus, ChatStorageFullError,
   type RagSearchResult, type RagHistoryTurn, type IndexStatus, type SavedChatMessage,
 } from '../../lib/api';
 import { plusPage } from '../../lib/family-plan';
@@ -58,6 +59,10 @@ export default function SearchScreen() {
   const [savedId, setSavedId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveNotice, setSaveNotice] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
+  // Saved chats take the family's storage (042). When there is no room, why,
+  // and what to do; a saved chat that ran out of room stops following along.
+  const [chatFull, setChatFull] = useState<{ text: string; plusLink: boolean } | null>(null);
+  const [saveStopped, setSaveStopped] = useState(false);
   const lastSaved = useRef<ChatMessage[] | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { chat: chatToOpen } = useLocalSearchParams<{ chat?: string }>();
@@ -72,14 +77,23 @@ export default function SearchScreen() {
   };
   useEffect(() => () => { if (noticeTimer.current) clearTimeout(noticeTimer.current); }, []);
 
-  const saveFailed = (err: unknown) => showSaveNotice('error', isMissingMigration(err)
-    ? 'Saving chats is not switched on yet.'
-    : 'Could not save this chat. Please try again.', 7000);
+  const saveFailed = (err: unknown) => {
+    if (err instanceof ChatStorageFullError) {
+      setSaveNotice(null);
+      setChatFull({ text: err.message, plusLink: err.room?.plan !== 'plus' });
+      return;
+    }
+    showSaveNotice('error', isMissingMigration(err)
+      ? 'Saving chats is not switched on yet.'
+      : 'Could not save this chat. Please try again.', 7000);
+  };
 
   const startNewChat = () => {
     setMessages([]);
     setSavedId(null);
     setSaveNotice(null);
+    setChatFull(null);
+    setSaveStopped(false);
     lastSaved.current = null;
   };
 
@@ -108,6 +122,8 @@ export default function SearchScreen() {
         setMessages(restored);
         setSavedId(saved.id);
         setSaveNotice(null);
+        setChatFull(null);
+        setSaveStopped(false);
         setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 100);
       })
       .catch(saveFailed)
@@ -115,13 +131,17 @@ export default function SearchScreen() {
     return () => { cancelled = true; };
   }, [chatToOpen]);
 
-  // Keep a saved chat up to date once each answer has arrived.
+  // Keep a saved chat up to date once each answer has arrived, until the
+  // family's storage has no room for it.
   useEffect(() => {
-    if (!savedId || !familyId || messages === lastSaved.current) return;
+    if (!savedId || !familyId || saveStopped || messages === lastSaved.current) return;
     if (messages.some((m) => m.loading)) return;
     lastSaved.current = messages;
-    saveChat(familyId, toSaved(messages), savedId).then(setSavedId).catch(saveFailed);
-  }, [messages, savedId, familyId]);
+    saveChat(familyId, toSaved(messages), savedId).then(setSavedId).catch((err) => {
+      if (err instanceof ChatStorageFullError) setSaveStopped(true);
+      saveFailed(err);
+    });
+  }, [messages, savedId, familyId, saveStopped]);
 
   const handleSave = async () => {
     if (!familyId || saving || savedId) return;
@@ -130,6 +150,7 @@ export default function SearchScreen() {
       const id = await saveChat(familyId, toSaved(messages));
       lastSaved.current = messages;
       setSavedId(id);
+      setChatFull(null);
       showSaveNotice('ok', 'Saved. Find it again with the clock at the top.');
     } catch (err) {
       saveFailed(err);
@@ -199,30 +220,58 @@ export default function SearchScreen() {
     });
   }, [voiceLanguage]);
 
-  // Answers read aloud (041): a free family hears its first 10, then the
-  // answer stays on the screen and Family Plus reads every answer. Each new
-  // answer is claimed before it is read; one heard already is read again
-  // without counting. When the server cannot be asked, the answer is read.
+  // Voice chats (041, 042): a free family's first 10 — a question asked by
+  // voice or an answer read aloud, one per question — then it types and
+  // reads, and Family Plus brings voice back. How many are left is always on
+  // show in voice mode. Each new answer is claimed before it is read; one
+  // heard already is read again without counting. When the server cannot be
+  // asked, the answer is read.
   const heardIds = useRef(new Set<string>());
-  const [voiceQuota, setVoiceQuota] = useState<{ left: number; limit: number; blocked: boolean } | null>(null);
+  const [voiceQuota, setVoiceQuotaState] = useState<{ left: number; limit: number } | null>(null);
+  const voiceQuotaRef = useRef<{ left: number; limit: number } | null>(null);
+  const setVoiceQuota = (q: { left: number; limit: number } | null) => {
+    voiceQuotaRef.current = q;
+    setVoiceQuotaState(q);
+  };
+  const noVoiceLeft = voiceQuota?.left === 0;
+  // "None left" is said aloud once, so nobody waits for a voice that is not coming.
+  const limitSaid = useRef(false);
+  const sayNoVoiceLeft = useCallback(() => {
+    setVoice('idle');
+    if (limitSaid.current) return;
+    limitSaid.current = true;
+    const notice = phrase(voiceLanguage, 'voice_limit');
+    setVoiceNotice(notice);
+    speak(notice, voiceLanguage);
+  }, [voiceLanguage]);
+
+  useFocusEffect(useCallback(() => {
+    if (!familyId) return;
+    let cancelled = false;
+    fetchVoiceStatus(familyId).then((status) => {
+      if (cancelled || !status) return;   // unknown (before 042, offline): keep what a claim said
+      setVoiceQuota(status.limit == null ? null : { left: status.left ?? 0, limit: status.limit });
+    });
+    return () => { cancelled = true; };
+  }, [familyId]));
+  useEffect(() => { setVoiceQuota(null); limitSaid.current = false; }, [familyId]);
 
   const readAnswer = useCallback(async (id: string, text: string, lang?: string) => {
     if (!heardIds.current.has(id) && currentFamily) {
-      const allowance = await claimVoiceAnswer(currentFamily.id);
-      if (allowance?.limit != null) {
-        setVoiceQuota({
-          left: Math.max(0, allowance.limit - (allowance.used ?? allowance.limit)),
-          limit: allowance.limit,
-          blocked: !allowance.allowed,
-        });
+      // None left, as far as this screen knows: no need to ask again.
+      let allowed = voiceQuotaRef.current?.left !== 0;
+      if (allowed) {
+        const allowance = await claimVoiceAnswer(currentFamily.id);
+        if (allowance?.limit != null) {
+          setVoiceQuota({
+            left: Math.max(0, allowance.limit - (allowance.used ?? allowance.limit)),
+            limit: allowance.limit,
+          });
+        }
+        allowed = !allowance || allowance.allowed;
       }
-      if (allowance && !allowance.allowed) {
-        // Said once, in the person's language, so nobody waits for a voice
-        // that is not coming. Not an answer: it counts for nothing.
-        const notice = phrase(voiceLanguage, 'voice_limit');
-        setVoiceNotice(notice);
-        setVoice('idle');
-        speak(notice, voiceLanguage);
+      if (!allowed) {
+        sayNoVoiceLeft();
         return;
       }
       heardIds.current.add(id);
@@ -230,7 +279,7 @@ export default function SearchScreen() {
       if (voiceStateRef.current === 'listening') return;
     }
     speakMessage(id, text, lang);
-  }, [currentFamily, speakMessage, voiceLanguage]);
+  }, [currentFamily, speakMessage, sayNoVoiceLeft]);
 
   const stopVoice = useCallback(() => {
     stopListening();
@@ -262,8 +311,10 @@ export default function SearchScreen() {
     setVoiceNotice(null);
     // A spoken question gets a spoken answer. A typed one in voice mode too:
     // the setting is about hearing answers, not only about the mic — so this
-    // holds even on a browser with no recogniser.
-    const wantVoice = voiceMode || !!opts.spoken;
+    // holds even on a browser with no recogniser. Not once the family's free
+    // voice chats are used: then the answer is written for the screen.
+    const voiceWanted = voiceMode || !!opts.spoken;
+    const wantVoice = voiceWanted && voiceQuotaRef.current?.left !== 0;
     if (wantVoice) setVoice('thinking');
 
     // Everything said so far, in the shape the server expects. Captured
@@ -297,6 +348,7 @@ export default function SearchScreen() {
         )
       );
       if (wantVoice) readAnswer(aiPlaceholder.id, result.answer, result.answer_language);
+      else if (voiceWanted) sayNoVoiceLeft();
       if (result.debug?.index_rebuilding && currentFamily) repairIndex(currentFamily.id);
     } catch (err) {
       console.error('RAG error:', err);
@@ -308,8 +360,9 @@ export default function SearchScreen() {
             : m
         )
       );
-      if (wantVoice) {
-        heardIds.current.add(aiPlaceholder.id);   // an apology, not an answer: never counted
+      if (voiceWanted) {
+        // An apology, not an answer: said even with no voice chats left, never counted.
+        heardIds.current.add(aiPlaceholder.id);
         speakMessage(aiPlaceholder.id, failed);
       }
     } finally {
@@ -353,6 +406,16 @@ export default function SearchScreen() {
   };
 
   const onMicPress = () => {
+    // No voice chats left: say why, and listen to nothing.
+    if (voiceQuotaRef.current?.left === 0 && voiceStateRef.current !== 'listening') {
+      stopSpeaking();
+      setSpeakingId(null);
+      setVoice('idle');
+      const notice = t('voice_limit_mic');
+      setVoiceNotice(notice);
+      speak(notice, voiceLanguage);
+      return;
+    }
     switch (voiceStateRef.current) {
       case 'idle': startListening(); break;
       case 'listening': stopListening(); break;   // onend delivers what was said so far
@@ -364,6 +427,7 @@ export default function SearchScreen() {
   const voicePlaceholder = () => {
     if (!voiceSupported) return t('no_voice_support');
     if (voiceNotice) return voiceNotice;
+    if (noVoiceLeft) return t('type_to_ask');
     switch (voiceState) {
       case 'listening': return t('listening');
       case 'thinking': return t('thinking');
@@ -420,10 +484,10 @@ export default function SearchScreen() {
                   end={{ x: 1, y: 1 }}
                   style={styles.emptyIcon}
                 >
-                  <Feather name={voiceMode ? 'mic' : 'cpu'} size={32} color="#FFFFFF" />
+                  <Feather name={voiceMode && !noVoiceLeft ? 'mic' : 'cpu'} size={32} color="#FFFFFF" />
                 </LinearGradient>
                 <Text style={styles.emptyTitle}>
-                  {voiceMode ? t('empty_title') : 'Ask anything about your documents'}
+                  {voiceMode ? t(noVoiceLeft ? 'empty_title_typed' : 'empty_title') : 'Ask anything about your documents'}
                 </Text>
                 <Text style={styles.emptySub}>
                   {voiceMode ? t('empty_sub') : "I can find information across all your family's uploaded documents."}
@@ -478,7 +542,8 @@ export default function SearchScreen() {
                         ]}>
                           {msg.text}
                         </Text>
-                        {msg.role === 'ai' && voiceMode && (
+                        {/* Read again: an answer already heard always; a new one only while voice chats are left. */}
+                        {msg.role === 'ai' && voiceMode && (!noVoiceLeft || heardIds.current.has(msg.id)) && (
                           <View style={styles.voiceTools}>
                             {speakingId === msg.id ? (
                               <TouchableOpacity style={styles.voiceToolBtn} onPress={stopVoice}>
@@ -582,16 +647,14 @@ export default function SearchScreen() {
           </View>
         )}
 
-        {/* Answers read aloud: the last few free ones, and once they are used. */}
-        {voiceMode && voiceQuota && voiceQuota.left <= 3 && (
+        {/* Voice chats: how many a free family has left, always, in voice mode. */}
+        {voiceMode && voiceQuota && (
           <View style={[styles.indexStrip, styles.voiceStrip]}>
-            <Feather name="volume-2" size={14} color={color.primary} />
+            <Feather name={noVoiceLeft ? 'mic-off' : 'mic'} size={14} color={color.primary} />
             <Text style={styles.indexStripText}>
-              {voiceQuota.blocked
-                ? `Your family has heard its ${voiceQuota.limit} free answers read aloud. Answers stay on the screen; ★ Family Plus reads every answer.`
-                : voiceQuota.left === 0
-                  ? `That was the last of your family's ${voiceQuota.limit} free answers read aloud.`
-                  : `${voiceQuota.left} free ${voiceQuota.left === 1 ? 'answer' : 'answers'} read aloud left for your family.`}
+              {noVoiceLeft
+                ? `Your family has used its ${voiceQuota.limit} free voice chats. Type to ask; answers stay on the screen.`
+                : `${voiceQuota.left} of ${voiceQuota.limit} free voice chats left for your family.`}
             </Text>
             <TouchableOpacity onPress={() => router.push(plusPage('voice') as any)} accessibilityRole="link" hitSlop={8}>
               <Text style={styles.voiceStripLink}>Family Plus ›</Text>
@@ -599,10 +662,28 @@ export default function SearchScreen() {
           </View>
         )}
 
+        {/* A chat with no room to be saved: why, and what to do (042). */}
+        {chatFull && (
+          <View style={[styles.indexStrip, styles.indexStripError]} accessibilityLiveRegion="polite">
+            <Feather name="hard-drive" size={14} color="#9A6200" />
+            <Text style={[styles.indexStripText, styles.indexStripErrorText]}>{chatFull.text}</Text>
+            {chatFull.plusLink && (
+              <TouchableOpacity onPress={() => router.push(plusPage('storage') as any)} accessibilityRole="link" hitSlop={8}>
+                <Text style={styles.voiceStripLink}>Family Plus ›</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
         {/* Save chat: explicit, on the conversation itself. */}
         {hasMessages && (
           <View style={styles.saveBar}>
-            {savedId ? (
+            {savedId && saveStopped ? (
+              <View style={[styles.saveBtn, styles.saveBtnStopped]} accessibilityLabel="New answers in this chat are not being saved">
+                <Feather name="alert-circle" size={16} color="#9A6200" />
+                <Text style={[styles.saveBtnText, styles.saveBtnTextStopped]}>Not saving new answers</Text>
+              </View>
+            ) : savedId ? (
               <View style={[styles.saveBtn, styles.saveBtnDone]} accessibilityLabel="This chat is saved">
                 <Feather name="check-circle" size={16} color="#2F7D5C" />
                 <Text style={[styles.saveBtnText, styles.saveBtnTextDone]}>Saved</Text>
@@ -639,7 +720,7 @@ export default function SearchScreen() {
         <View style={styles.inputBar}>
           <View style={styles.inputBox}>
             <Feather
-              name={voiceMode ? 'mic' : 'message-circle'}
+              name={voiceMode && !noVoiceLeft ? 'mic' : 'message-circle'}
               size={18}
               color={voiceState === 'listening' ? '#D4807B' : '#9CA3AF'}
               style={styles.inputIcon}
@@ -672,6 +753,11 @@ export default function SearchScreen() {
                 ) : voiceState === 'speaking' ? (
                   <View style={[styles.micCircle, styles.micSpeaking]}>
                     <Feather name="volume-2" size={26} color="#FFFFFF" />
+                  </View>
+                ) : noVoiceLeft ? (
+                  // No voice chats left: a tap says why, so it stays, quieter.
+                  <View style={[styles.micCircle, styles.micOff]}>
+                    <Feather name="mic-off" size={24} color="#6B7280" />
                   </View>
                 ) : (
                   <LinearGradient
@@ -833,6 +919,8 @@ const styles = StyleSheet.create({
   saveBtnDone: { borderColor: 'transparent', backgroundColor: '#EAF5EF' },
   saveBtnText: { fontSize: 14, lineHeight: 20, fontWeight: '600', color: color.primary },
   saveBtnTextDone: { color: '#2F7D5C' },
+  saveBtnStopped: { borderColor: 'transparent', backgroundColor: '#FFF7E6' },
+  saveBtnTextStopped: { color: '#9A6200' },
   saveNotice: { ...type.caption, flex: 1, color: color.textBody },
   saveNoticeError: { color: '#B45309' },
   // ─── Input Bar ────────────────────────────────────────
@@ -880,6 +968,7 @@ const styles = StyleSheet.create({
     boxShadow: '0px 0px 0px 8px rgba(212, 128, 123, 0.25)',
   },
   micThinking: { backgroundColor: '#E5E7EB' },
+  micOff: { backgroundColor: '#E5E7EB' },
   micSpeaking: { backgroundColor: '#2F7D5C' },
   voiceTools: { flexDirection: 'row', gap: 8, marginTop: 10 },
   voiceToolBtn: {

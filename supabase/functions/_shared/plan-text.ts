@@ -182,3 +182,17 @@ export function storageFullMessage(room: StorageRoom, fileBytes = 0, options: St
   }
   return `${head} ${more}`;
 }
+
+/**
+ * Why a chat cannot be saved (042: saved chats take the family's storage
+ * too), and what to do: Family Plus on the free plan, making room on Plus.
+ */
+export function chatStorageFullMessage(room: StorageRoom, options: Omit<StorageMessageOptions, 'removalOn'> = {}): string {
+  const { limits = DEFAULT_PLAN_LIMITS, price } = options;
+  const head = `There is no room to save this chat: your family has used ${formatBytes(room.usedBytes)} of its ${formatBytes(room.limitBytes)}.`;
+  if (room.plan !== 'free') return `${head} Delete documents or saved chats you no longer need to make room.`;
+  const plus = `${formatBytes(limits.plus)}${price ? ` for ${price}` : ''}`;
+  return PLUS_FOR_SALE
+    ? `${head} Saving more needs Family Plus: ${plus}. Or delete documents you no longer need.`
+    : `${head} Saving more needs Family Plus, coming soon: ${plus}. Until then, delete documents you no longer need.`;
+}

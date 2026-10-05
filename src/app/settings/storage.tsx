@@ -162,6 +162,7 @@ export default function StorageScreen() {
                     {' · '}{documents(f.documents)}
                   </Muted>
                   <Muted>You added {formatBytes(f.yourBytes)} of it ({documents(f.yourDocuments)}).</Muted>
+                  {!!status?.chatsBytes && <Muted>Saved chats take {formatBytes(status.chatsBytes)} of it.</Muted>}
                   {level !== 'ok' && (
                     <View style={[styles.note, level === 'full' ? styles.noteFull : styles.noteNearly]}>
                       <Text style={[styles.noteText, level === 'full' ? styles.noteTextFull : styles.noteTextNearly]}>
@@ -175,7 +176,7 @@ export default function StorageScreen() {
                                 // Plus has ended and the family is above the free limit (040).
                                 removalOn: status.removalAt ? longDate(new Date(status.removalAt)) : undefined,
                               })
-                            : `Nearly full: ${formatBytes(limit - used)} left. When it is full, new documents can't be added.`}
+                            : `Nearly full: ${formatBytes(limit - used)} left. When it is full, new documents and saved chats can't be added.`}
                       </Text>
                       {!isPlus && (
                         <TouchableOpacity onPress={() => router.push(plusPage('storage') as any)} accessibilityRole="link">
@@ -196,7 +197,7 @@ export default function StorageScreen() {
               </Muted>
             </Card>
 
-            <Muted>Sizes are of the files as they were added. Deleting a document frees its space.</Muted>
+            <Muted>Sizes are of the files as they were added, and saved chats count too. Deleting a document or a saved chat frees its space.</Muted>
           </>
         )}
       </ScrollView>

@@ -17,6 +17,7 @@ import { getDocument } from 'pdfjs-serverless';
 import { reconstructLayout } from '../../supabase/functions/_shared/pdf-text.ts';
 import { extractMetadata, parseFlexibleDate } from '../../supabase/functions/_shared/metadata.ts';
 import { cleanText } from '../../supabase/functions/_shared/text.ts';
+import { ticketCodeNotes, ticketSearchTerms } from '../../supabase/functions/_shared/tickets.ts';
 import {
   attachmentParts, classifyAttachment, allowedReturnOrigin, sniffType, storageFileName, senderDomain,
 } from '../../supabase/functions/_shared/gmail-rules.ts';
@@ -26,7 +27,7 @@ import {
 import { buildGraph, relationTo, relationLabel, relativesForPrompt, relativesNamedIn, buildForest, shortName, siblingsSharingParents } from '../../supabase/functions/_shared/kinship.ts';
 import { encryptPayload, vapidAuthorization, generateVapidKeys, isPushServiceEndpoint, MAX_PLAINTEXT } from '../../supabase/functions/_shared/webpush.ts';
 import { phoneLooksRight, cardProblem, cardIsEmpty, emptyCard, bloodGroupLabel, bloodGroupSpoken, telHref } from '../../src/lib/emergency.ts';
-import { DEFAULT_PLAN_LIMITS, PLUS_FOR_SALE, PLUS_PRICE, fits, formatBytes, plusAmount, plusPrice, plusPrices, plusTwelveMonths, plusYearlyOffer, plusYearlySaving, storageFullMessage } from '../../supabase/functions/_shared/plan-text.ts';
+import { DEFAULT_PLAN_LIMITS, PLUS_FOR_SALE, PLUS_PRICE, chatStorageFullMessage, fits, formatBytes, plusAmount, plusPrice, plusPrices, plusTwelveMonths, plusYearlyOffer, plusYearlySaving, storageFullMessage } from '../../supabase/functions/_shared/plan-text.ts';
 import { mentionsDate, mentionsAmount, mentionsPhone, mentionsText, refuses, devanagariShare, scriptShare, hasMarkdown } from '../lib/match.mjs';
 import { judgeAnswer } from '../lib/checks/ask.mjs';
 import { vehicleInsurance } from '../lib/tiny-pdf.mjs';
@@ -154,6 +155,38 @@ await test('metadata: one expiry per date, never a truncated twin', () => {
   assert.equal(parseFlexibleDate('2033-07-19'), '2033-07-19');
   assert.equal(parseFlexibleDate('19 July 2033'), '2033-07-19');
   assert.equal(parseFlexibleDate('17.10.26'), '2026-10-17');
+});
+
+await test('tickets: a seat question searches a ticket\'s words, and its codes are read out in words', () => {
+  // A train ticket never says "seat": the berth is a code under Booking Status.
+  assert.deepEqual(ticketSearchTerms('whats my seat number'), ['seat', 'berth', 'coach', 'status']);
+  assert.deepEqual(ticketSearchTerms('Which coach and berth am I in?'), ['seat', 'berth', 'coach', 'status']);
+  assert.deepEqual(ticketSearchTerms('What is the PNR of the Pune train?'), ['pnr']);
+  assert.deepEqual(ticketSearchTerms('ticket number and seats'), ['seat', 'berth', 'coach', 'status', 'pnr']);
+  for (const q of ['When does my passport expire?', 'research grant', 'Kamala\'s PAN']) assert.deepEqual(ticketSearchTerms(q), [], q);
+
+  // SPECIMEN lines, laid out as the server reads an e-ticket: the same code
+  // under Booking Status and Current Status is one note.
+  const ticket = [
+    'PNR No.  2400000001   Train No./Name  10001/SPECIMEN MAIL   Class  AC 3 TIER (3A)',
+    'Quota  GENERAL (GN)   Distance  500 KM',
+    'Booking Status  Current Status',
+    'CNF/B4/17 UB  CNF/B4/17 UB',
+  ].join('\n');
+  assert.deepEqual(ticketCodeNotes([ticket]), ['CNF/B4/17 UB means confirmed: coach B4, berth 17, upper berth.']);
+  assert.deepEqual(ticketCodeNotes(['CNF/B3/45/LOWER', 'CNF/S10/63/SIDE UPPER', 'CNF/C2/14/WS']), [
+    'CNF/B3/45/LOWER means confirmed: coach B3, berth 45, lower berth.',
+    'CNF/S10/63/SIDE UPPER means confirmed: coach S10, berth 63, side upper berth.',
+    'CNF/C2/14/WS means confirmed: coach C2, berth 14, window seat.',
+  ]);
+  assert.deepEqual(ticketCodeNotes(['RAC/S4/45']), ['RAC/S4/45 means RAC, not yet a berth of their own (shared until confirmed): coach S4, berth 45.']);
+  assert.deepEqual(ticketCodeNotes(['GNWL/25  WL 12  RAC 14']), [
+    'GNWL/25 means waitlisted, number 25: no berth yet.',
+    'WL 12 means waitlisted, number 12: no berth yet.',
+    'RAC 14 means RAC number 14: a shared berth, not yet confirmed.',
+  ]);
+  assert.deepEqual(ticketCodeNotes(['Policy No. 2400000001, BOWL 12, MAIL 3, Quota GN, Class SL']), [], 'nothing that is not a status code');
+  assert.equal(ticketCodeNotes(['WL 1 WL 2 WL 3 WL 4 WL 5 WL 6 WL 7 WL 8']).length, 6, 'at most six notes');
 });
 
 await test('cleanText makes extracted text storable', () => {
@@ -502,7 +535,7 @@ await test('every suite stays inside its Groq budget', () => {
   assert.equal(seen.size, groups, 'consecutive days cover every rotation group');
 });
 
-await test('plans: every limit is finite, and a full vault says why and what to do (038–041)', () => {
+await test('plans: every limit is finite, and a full vault says why and what to do (038–042)', () => {
   const GB = 1024 ** 3, MB = 1024 ** 2;
   // What 039–041 leave in plan_limits: one row per plan, Plus ten times
   // Free, 30 days after Plus ends before anything above Free goes, 4 members
@@ -561,6 +594,14 @@ await test('plans: every limit is finite, and a full vault says why and what to 
   // Plus has ended and the family holds more than Free: the day it loses the excess, and how to keep it.
   const ended = storageFullMessage({ plan: 'free', limitBytes: GB, usedBytes: 3 * GB }, 0, { price: plusPrice('inr'), removalOn: '3 Nov 2026' });
   assert.equal(ended, "Your family's storage is full: 3 GB used of 1 GB on the free plan. Family Plus has ended: on 3 Nov 2026, the newest documents above 1 GB will be removed, unless it is renewed or you delete documents to get under 1 GB.");
+  // Saved chats take the family's storage too (042): on the free plan a chat
+  // with no room needs Family Plus; on Plus, room is made by deleting.
+  const chatFree = chatStorageFullMessage({ plan: 'free', limitBytes: GB, usedBytes: GB }, { price: plusPrices('inr') });
+  assert.match(chatFree, /^There is no room to save this chat: your family has used 1 GB of its 1 GB\. Saving more needs Family Plus/);
+  assert.match(chatFree, /10 GB for ₹100 a month or ₹1,100 a year\./);
+  if (!PLUS_FOR_SALE) assert.match(chatFree, /Family Plus, coming soon: .*Until then, delete documents you no longer need\.$/);
+  assert.equal(chatStorageFullMessage({ plan: 'plus', limitBytes: 10 * GB, usedBytes: 10 * GB }, { price: plusPrice('usd') }),
+    'There is no room to save this chat: your family has used 10 GB of its 10 GB. Delete documents or saved chats you no longer need to make room.');
 });
 
 await test('the languages suite: by hand only, every language, half a day at most', () => {
@@ -592,4 +633,4 @@ if (failures.length) {
   console.error(`\n${failures.length} self-test(s) failed, ${passed} passed.`);
   process.exit(1);
 }
-console.log(`✓ ${passed} self-tests passed — matchers, judge, run-time PDF, metadata, text cleaning, Gmail rules and token sealing, kinship and the family tree, emergency card checks, web push, plan limits, questions and budget.`);
+console.log(`✓ ${passed} self-tests passed — matchers, judge, run-time PDF, metadata, ticket codes, text cleaning, Gmail rules and token sealing, kinship and the family tree, emergency card checks, web push, plan limits, questions and budget.`);

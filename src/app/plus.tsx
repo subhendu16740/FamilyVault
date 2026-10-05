@@ -33,7 +33,7 @@ interface Row {
   feature?: PlusFeature;
 }
 
-// "First 10", or ✓ for a plan that reads every answer.
+// "First 10", or ✓ for a plan with no limit on voice chats.
 const voiceCell = (n: number | null): Cell => (n == null ? true : `First ${n}`);
 
 function rows(limits: PlanLimits): Row[] {
@@ -41,12 +41,12 @@ function rows(limits: PlanLimits): Row[] {
     { label: 'Space for documents', free: formatBytes(limits.free), plus: formatBytes(limits.plus), feature: 'storage' },
     { label: 'Members who sign in', free: String(limits.members.free), plus: String(limits.members.plus) },
     { label: 'Add and scan documents, read in Indian languages too', free: true, plus: true },
-    { label: 'Ask about your documents, by voice too', free: true, plus: true },
+    { label: 'Ask about your documents', free: true, plus: true },
     { label: 'Family tree and emergency cards', free: true, plus: true },
     { label: 'Expiry and birthday reminders', free: true, plus: true },
     { label: 'Share a document by link', free: true, plus: true },
     {
-      label: '★ Answers read aloud', free: voiceCell(limits.voiceAnswers.free), plus: voiceCell(limits.voiceAnswers.plus),
+      label: '★ Voice chats: ask by voice, hear the answer', free: voiceCell(limits.voiceAnswers.free), plus: voiceCell(limits.voiceAnswers.plus),
       feature: 'voice',
     },
     { label: '★ Reminders page: every expiry date in one list', free: false, plus: true, feature: 'reminders' },
@@ -57,8 +57,8 @@ function rows(limits: PlanLimits): Row[] {
 const BROUGHT_BY: Record<PlusFeature, { icon: string; text: string }> = {
   reminders: { icon: 'clock', text: 'The Reminders page is part of Family Plus.' },
   gmail: { icon: 'mail', text: 'Import from Gmail is part of Family Plus.' },
-  storage: { icon: 'hard-drive', text: 'More space for documents is part of Family Plus.' },
-  voice: { icon: 'volume-2', text: 'Hearing every answer read aloud is part of Family Plus.' },
+  storage: { icon: 'hard-drive', text: 'More space for documents and saved chats is part of Family Plus.' },
+  voice: { icon: 'mic', text: 'Asking by voice and hearing every answer, with no limit, is part of Family Plus.' },
 };
 
 const said = (cell: Cell) => (cell === true ? 'yes' : cell === false ? 'no' : cell);

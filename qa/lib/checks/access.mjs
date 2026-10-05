@@ -213,6 +213,13 @@ const limitsJudge = (expect) => (outcome) => {
   }
   return judge(expect, outcome);
 };
+// Saved chats in storage and voice chats left (042): the count of a family's
+// voice chats is its members' to read, and what its saved chats add up to is
+// the server's. Skipped until 042 is on DEV (PGRST202: no such function).
+const chatsVoiceJudge = (expect) => (outcome) => {
+  if (String(outcome.error?.code) === 'PGRST202') return ['skipped', 'migration 042 is not applied to DEV yet'];
+  return judge(expect, outcome);
+};
 // A well-formed device key and secret: RFC 8291's own example.
 const PROBE_P256DH = 'BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4';
 const PROBE_AUTH = 'BTBZMqHH6r4Tts7J_aSIgg';
@@ -527,6 +534,30 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     }
   }
 
+  // ── Saved chats in storage, voice chats left (042): account A reads how many
+  // voice chats its family has left — without using one — and its storage
+  // counts its saved chats. The positive controls for the probes below.
+  {
+    const { data: left, error } = await a.client.rpc('family_voice_status', { p_family_id: A.family });
+    if (String(error?.code) === 'PGRST202') {
+      results.add('access', 'control:voice-left', "Control — account A reads how many voice chats its family has left", 'skipped', { why: 'migration 042 is not applied to DEV yet' });
+      results.add('access', 'control:storage-chats', "Control — account A's storage counts its family's saved chats", 'skipped', { why: 'migration 042 is not applied to DEV yet' });
+    } else {
+      const again = error ? null : (await a.client.rpc('family_voice_status', { p_family_id: A.family })).data;
+      const n = (v) => (v == null ? null : Number(v));
+      const leftOk = !error && left && 'limit' in left && (left.limit == null
+        ? left.used == null && left.left == null
+        : n(left.left) === Math.max(n(left.limit) - n(left.used), 0) && n(again?.used) === n(left.used));
+      results.add('access', 'control:voice-left', "Control — account A reads how many voice chats its family has left, using none", leftOk ? 'pass' : 'fail',
+        { why: error ? short(error) : JSON.stringify(left) });
+      const { data: rows, error: roomErr } = await a.client.rpc('family_storage_status', { p_family_id: A.family });
+      const row = rows?.[0];
+      const chatsOk = !roomErr && row && Number(row.chats_bytes) >= 0 && Number(row.used_bytes) >= Number(row.chats_bytes);
+      results.add('access', 'control:storage-chats', "Control — account A's storage counts its family's saved chats", chatsOk ? 'pass' : 'fail',
+        { why: roomErr ? short(roomErr) : row ? `${row.chats_bytes} bytes of chats in ${row.used_bytes}` : 'no row' });
+    }
+  }
+
   const onDeviceA = (run) => async () => {
     if (pushMissing) return { missing: true };
     if (!deviceA) return { noTarget: true };
@@ -760,6 +791,9 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     ['B', "read QA Vault A's count of answers read aloud", limitsJudge('refused-or-empty'), () => b.client.from('family_usage').select('voice_answers').eq('family_id', A.family)],
     ['B', "ask which plan QA Vault A is on (server-only)", limitsJudge('refused'), rpc(b, 'family_plan_now', { p_family_id: A.family })],
     ['B', "raise every plan's member limit", limitsJudge('refused'), () => b.client.from('plan_limits').update({ max_members: 100 }).eq('plan', 'free')],
+    ['anon', "read how many voice chats QA Vault A has left", chatsVoiceJudge('refused'), rpc(anon, 'family_voice_status', { p_family_id: A.family })],
+    ['B', "read how many voice chats QA Vault A has left", chatsVoiceJudge('refused'), rpc(b, 'family_voice_status', { p_family_id: A.family })],
+    ['B', "add up QA Vault A's saved chats (server-only)", chatsVoiceJudge('refused'), rpc(b, 'family_chats_bytes', { p_family_id: A.family })],
 
     ['B', "invite someone to be a person in A's tree through the database (server-only)", inviteJudge('refused'), onInvites(() => b.client.rpc('invite_family_person_account', { p_family_id: A.family, p_invited_by: A.user, p_person_id: randomUUID(), p_email: `qa-probe-${cfg.runId}@example.invalid` }))],
 

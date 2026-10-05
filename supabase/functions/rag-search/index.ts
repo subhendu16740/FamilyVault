@@ -9,6 +9,7 @@ import { requireFamilyMember } from '../_shared/auth.ts';
 import { runReembed, afterResponse } from '../_shared/reembed.ts';
 import { groqChat, groqText, hasGroqKey } from '../_shared/groq.ts';
 import { buildGraph, relativesNamedIn, type KinGraph, type NamedRelative } from '../_shared/kinship.ts';
+import { ticketCodeNotes, ticketSearchTerms } from '../_shared/tickets.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -188,6 +189,11 @@ Deno.serve(async (req) => {
       : standalone;
     if (named.length) console.log(`[rag] Relatives named: ${named.map(n => `${n.term}=${n.name}`).join(', ')}`);
 
+    // A ticket's words for what the question asks: a train ticket never says
+    // "seat", only Booking Status and a code (_shared/tickets.ts). Searched
+    // by keyword only; the question's meaning is embedded as asked.
+    const ticketTerms = ticketSearchTerms(`${query} ${trans.query} ${standalone}`);
+
     const citedIds = history.flatMap(t => t.source_ids ?? []);
     const indexReady = await isIndexReady(schema);
     if (!indexReady) {
@@ -208,7 +214,7 @@ Deno.serve(async (req) => {
     const [pin, owned, retrieved] = await Promise.all([
       history.length > 0 ? pinnedChunks(schema, history) : Promise.resolve({ chunks: [] as ChunkResult[], error: undefined as string | undefined }),
       named.length > 0 ? ownerChunks(schema, named, searchQuery) : Promise.resolve({ chunks: [] as ChunkResult[], error: undefined as string | undefined }),
-      retrieveChunks(schema, searchQuery, citedIds, indexReady),
+      retrieveChunks(schema, searchQuery, citedIds, indexReady, ticketTerms),
     ]);
     const pinned = pin.chunks;
     const retrievedChunks = retrieved.chunks;
@@ -230,7 +236,9 @@ Deno.serve(async (req) => {
     console.log(`[rag] ${candidates.length} candidate chunks`);
 
     // 3. Judge every candidate against the question; keep only the relevant.
-    const rank = await rerankChunks(judgeQuestion, candidates);
+    // What any ticket codes among them mean, so "CNF/B4/17 UB" is a seat.
+    const candidateNotes = ticketCodeNotes(candidates.map(c => c.content));
+    const rank = await rerankChunks(judgeQuestion, candidates, candidateNotes);
     const chunks = rank.kept;
     if (rank.error) console.warn(`[rag] Rerank fell back: ${rank.error}`);
     console.log(`[rag] Kept ${chunks.length}/${candidates.length} after rerank`);
@@ -239,7 +247,7 @@ Deno.serve(async (req) => {
     // what was searched, what was pinned, what came back, what survived.
     const uniqNames = (cs: ChunkResult[]) => [...new Set(cs.map(c => c.file_name))];
     const debug = {
-      searched_for: searchQuery,
+      searched_for: ticketTerms.length ? `${searchQuery} (+ ${ticketTerms.join(', ')})` : searchQuery,
       ...(named.length ? { relatives: named.map(n => ({ term: n.term, name: n.name })) } : {}),
       ...(owned.chunks.length ? { owner_docs: uniqNames(owned.chunks) } : {}),
       ...(owned.error ? { owner_error: owned.error } : {}),
@@ -249,6 +257,7 @@ Deno.serve(async (req) => {
       pinned_docs: uniqNames(pinned),
       retrieved_docs: uniqNames(retrievedChunks),
       candidate_count: candidates.length,
+      ...(candidateNotes.length ? { ticket_codes: candidateNotes } : {}),
       kept_count: chunks.length,
       kept_docs: uniqNames(chunks),
       condensed: cond.changed,
@@ -307,7 +316,10 @@ Deno.serve(async (req) => {
     const familyNote = named.length && tree.meName
       ? `The person asking is ${tree.meName}. In this question, ${named.map(n => `"${n.term}" means ${n.name}, their ${n.label.toLowerCase()}`).join('; ')}.`
       : undefined;
-    const result = await generateAnswer(standalone, context, chunks, history, { language, voice, family: familyNote });
+    const answerNotes = ticketCodeNotes(built.used.map(c => c.content));
+    const result = await generateAnswer(standalone, context, chunks, history, {
+      language, voice, family: familyNote, notes: answerNotes,
+    });
     console.log(
       `[rag] Answer ${result.degraded ? 'DEGRADED' : 'generated'} (${result.answer.length} chars)`,
     );
@@ -357,6 +369,7 @@ async function retrieveChunks(
   query: string,
   citedIds: string[] = [],
   useVector = true,
+  extraTerms: string[] = [],
 ): Promise<{ chunks: ChunkResult[]; embedded: boolean; embedError?: string }> {
   // Build tsquery from words. Letters and digits in any script, plus the
   // combining marks that Indic scripts need (a Devanagari vowel sign is \p{M}
@@ -368,8 +381,8 @@ async function retrieveChunks(
     .split(/\s+/)
     .filter(w => w.length > 2);
 
-  // Use OR for broader matching
-  const tsquery = words.join(' | ');
+  // Use OR for broader matching; a ticket's own words join the keywords only.
+  const tsquery = [...new Set([...words, ...extraTerms])].join(' | ');
 
   if (!tsquery) return { chunks: [], embedded: false };
 
@@ -411,6 +424,13 @@ async function retrieveChunks(
   if (error && /find the function|schema cache|does not exist/i.test(error.message)) {
     console.warn('[rag] Migration 015 not applied — retrieving without the per-document cap');
     ({ data, error } = await supabase.rpc('rag_retrieve_chunks', args));
+  } else if (!error && (data?.length ?? 0) < RERANK_CANDIDATES) {
+    // Too few documents to fill the judge's places: the cap that stops one
+    // long document crowding out the rest would otherwise show the judge only
+    // four passages of a family's only ticket, and miss the one with the
+    // berth. Let the same documents fill the places, the capped rows first.
+    const more = await supabase.rpc('rag_retrieve_chunks', { ...args, p_per_doc: RERANK_CANDIDATES });
+    if (!more.error && more.data) data = dedupeChunks([...(data as ChunkResult[]), ...(more.data as ChunkResult[])]);
   }
 
   if (error) {
@@ -621,6 +641,7 @@ async function ownerChunks(
 async function rerankChunks(
   question: string,
   candidates: ChunkResult[],
+  codeNotes: string[] = [],
 ): Promise<{ kept: ChunkResult[]; error?: string; model?: string }> {
   let usedModel: string | undefined;
   const fallback = (error: string) => ({ kept: candidates.slice(0, RERANK_KEEP), error, model: usedModel });
@@ -658,7 +679,9 @@ Score how well each passage answers the question, 0 to 10.
 10 = directly contains the answer. 5 = related, partial. 0 = unrelated, even if it shares a word or a year with the question.
 Use the document type: an insurance question is not answered by a tax return, a placements question is not answered by a resume.
 A passage may be a TABLE, one row per line with columns separated by two spaces. Read every row before scoring it: the row that answers the question is often not the first one, and a table whose other rows are irrelevant still scores 10 if any single row answers it.
-Reply with JSON only: {"scores":[{"i":0,"s":7}, ...]} — one entry for EVERY passage index, including the ones you score 0.`,
+Reply with JSON only: {"scores":[{"i":0,"s":7}, ...]} — one entry for EVERY passage index, including the ones you score 0.${codeNotes.length
+  ? `\nTicket codes in these passages, in words: ${codeNotes.join(' ')} On a train ticket the seat is this berth, in Booking Status or Current Status.`
+  : ''}`,
         },
         {
           role: 'user',
@@ -952,7 +975,7 @@ async function generateAnswer(
   context: string,
   chunks: ChunkResult[],
   history: HistoryTurn[] = [],
-  opts: { language?: string; voice?: boolean; family?: string } = {},
+  opts: { language?: string; voice?: boolean; family?: string; notes?: string[] } = {},
 ): Promise<AnswerResult> {
   const langName = opts.language ? languageName(opts.language) : undefined;
   const languageRule = langName && !opts.language!.toLowerCase().startsWith('en')
@@ -980,7 +1003,7 @@ Today's date is ${todayLabel()}. Use it to interpret "this year", "recently", "l
 You ONLY answer based on the provided document context.
 The context is whatever search returned — it may not actually answer the question. If it doesn't, say so plainly and, if a related document exists, say what it does cover instead. NEVER answer a different question just because the context happens to contain information about it.
 This is an ongoing conversation: use earlier turns to understand what the user is referring to.
-Keep answers concise (1-3 sentences). Include specific details like dates, amounts, and document names.${opts.family ? `\n${opts.family} Answer about that person, and say whose document it is.` : ''}${languageRule}${voiceRule}`,
+Keep answers concise (1-3 sentences). Include specific details like dates, amounts, and document names.${opts.family ? `\n${opts.family} Answer about that person, and say whose document it is.` : ''}${opts.notes?.length ? `\nTicket codes in the context, in words: ${opts.notes.join(' ')} On a train ticket the seat is this berth (coach and berth number), shown in Booking Status or Current Status.` : ''}${languageRule}${voiceRule}`,
         },
         // Prior turns, so "this one" and "that policy" resolve naturally.
         ...history.map(t => ({ role: t.role, content: t.content })),

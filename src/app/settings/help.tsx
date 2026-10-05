@@ -26,7 +26,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'Can I ask by speaking?',
-    a: `Yes. Turn on the Voice assistant in Settings, under Accessibility. Then tap the microphone on Search and say your question. The answer is read out loud: your family's first ${DEFAULT_PLAN_LIMITS.voiceAnswers.free} answers free, and every answer with ★ Family Plus. After the free ones, the answer is shown on the screen.`,
+    a: `Yes. Turn on the Voice assistant in Settings, under Accessibility. Then tap the microphone on Search and say your question, and the answer is read out loud. Your family's first ${DEFAULT_PLAN_LIMITS.voiceAnswers.free} voice chats are free — a question asked by voice or an answer read aloud, one per question — and Search shows how many are left. After that you type, and the answer is on the screen; ★ Family Plus has no limit. Settings › Accessibility › Voice chooses who reads the answers, from the voices on your phone or computer.`,
   },
   {
     q: 'Who can see my documents?',
@@ -58,7 +58,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'How much space does my family get?',
-    a: `Every family gets ${FREE_STORAGE_LABEL} free for its documents, in total. ★ Family Plus gives ${formatBytes(DEFAULT_PLAN_LIMITS.plus)}, for ${plusPrices('inr')} in India (${plusPrices('usd')} elsewhere). Every plan has a limit: when a family's space is full, new documents can't be added until some are deleted${PLUS_FOR_SALE ? ', or the family moves to a bigger plan' : ''}. If Family Plus ends while your family holds more than ${FREE_STORAGE_LABEL}, it has ${DEFAULT_PLAN_LIMITS.graceDays} days to renew or delete documents; after that, the newest documents above ${FREE_STORAGE_LABEL} are removed. You are reminded when it ends, a week before and the day before. Settings › Storage shows how much is used.`,
+    a: `Every family gets ${FREE_STORAGE_LABEL} free for its documents, in total. ★ Family Plus gives ${formatBytes(DEFAULT_PLAN_LIMITS.plus)}, for ${plusPrices('inr')} in India (${plusPrices('usd')} elsewhere). Saved chats count too. Every plan has a limit: when a family's space is full, new documents and saved chats can't be added until some are deleted${PLUS_FOR_SALE ? ', or the family moves to a bigger plan' : ''}. If Family Plus ends while your family holds more than ${FREE_STORAGE_LABEL}, it has ${DEFAULT_PLAN_LIMITS.graceDays} days to renew or delete documents; after that, the newest documents above ${FREE_STORAGE_LABEL} are removed. You are reminded when it ends, a week before and the day before. Settings › Storage shows how much is used.`,
   },
   {
     q: 'How do reminders work?',
@@ -66,7 +66,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'What does ★ Family Plus mean?',
-    a: `Family Plus is the paid plan for the whole family, coming soon. In India it is ${plusPrice('inr')}, or ${plusYearlyOffer('inr')}: ${plusYearlySaving('inr')}. Elsewhere it is ${plusPrice('usd')}, or ${plusYearlyOffer('usd')}. It gives ${formatBytes(DEFAULT_PLAN_LIMITS.plus)} of space, and the things marked with ★ — every answer read aloud (a free family hears its first ${DEFAULT_PLAN_LIMITS.voiceAnswers.free}), the Reminders page, with every expiry date in one list, and bringing documents in from Gmail. Tap any ★, or open Settings › Family Plus, to see Free and Plus side by side. The reminders themselves reach every family, Free or Plus.`,
+    a: `Family Plus is the paid plan for the whole family, coming soon. In India it is ${plusPrice('inr')}, or ${plusYearlyOffer('inr')}: ${plusYearlySaving('inr')}. Elsewhere it is ${plusPrice('usd')}, or ${plusYearlyOffer('usd')}. It gives ${formatBytes(DEFAULT_PLAN_LIMITS.plus)} of space, and the things marked with ★ — voice chats with no limit (a free family has its first ${DEFAULT_PLAN_LIMITS.voiceAnswers.free}), the Reminders page, with every expiry date in one list, and bringing documents in from Gmail. Tap any ★, or open Settings › Family Plus, to see Free and Plus side by side. The reminders themselves reach every family, Free or Plus.`,
   },
   {
     q: 'How do I delete my account?',

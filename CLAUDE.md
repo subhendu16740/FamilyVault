@@ -59,8 +59,9 @@ Four things will mislead you if you assume otherwise:
    countdown after Plus ends, and the removal at its end, are the server's
    alone; 041's limits are kept by the server too: triggers refuse a
    membership or an invitation past the plan's number of members, and
-   `family_usage`, the count of answers read aloud, is written only through
-   `claim_voice_answer`).
+   `family_usage`, the count of voice chats, is written only through
+   `claim_voice_answer`; 042 counts saved chats in a family's storage, and
+   a trigger refuses a chat that does not fit).
    **A new writable
    column needs its own `GRANT` in a migration.** Nobody joins a family
    without saying yes: only an admin asks a person in, through the
@@ -110,14 +111,14 @@ errors**) and `npm run build` are the local gates.
 at 03:10 IST, and on pushes that change `qa/`. It uploads synthetic SPECIMEN
 documents to its own vault (QA Vault A, account A), asks questions about
 them, and checks the answers on facts and sources, never wording. It also
-runs the 023 sweep and the 024 DEV/PROD fingerprint, 134 access probes (a
+runs the 023 sweep and the 024 DEV/PROD fingerprint, 137 access probes (a
 logged-out visitor and a second account must be refused everywhere, Gmail
 import's endpoints, the family tree, emergency cards, linking,
 notification devices, share links, invitations and plans included; a share
 link must open without an account, and stop once it is turned off; nobody
 can give a family Plus, raise a limit, read another family's storage, end
-its Plus or start, run or close a removal, or use up or read another
-family's answers read aloud),
+its Plus or start, run or close a removal, use up or read another
+family's voice chats, or add up its saved chats),
 the membership model (the second account is invited, not added: it sees
 nothing of the vault until it says yes, the admin cannot say yes for it, a
 no removes the invitation and a yes makes it a viewer, who must not be able
@@ -459,11 +460,11 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `auth.tsx` | `AuthProvider`: session, signIn, signUp, signInWithGoogle, signOut |
 | `family-context.tsx` | `FamilyProvider`: currentFamily, members, membership, needsFamily |
 | `drawer-context.tsx` | Profile drawer open/close state |
-| `api.ts` | **All** Supabase queries — documents, search, upload, RAG, notifications, adding and leaving families, invitations, Gmail import, saved chats, share links, deleting your account, plans and storage limits (`fetchStorageStatus`, `fetchPlanLimits`; `uploadDocument` throws `StorageFullError` before a file that does not fit is sent), answers read aloud (`claimVoiceAnswer`, 041), and the Settings screens (profile, password, storage use, expiry dates, feedback) |
+| `api.ts` | **All** Supabase queries — documents, search, upload, RAG, notifications, adding and leaving families, invitations, Gmail import, saved chats, share links, deleting your account, plans and storage limits (`fetchStorageStatus`, `fetchPlanLimits`; `uploadDocument` throws `StorageFullError` before a file that does not fit is sent, and `saveChat` `ChatStorageFullError` for a chat, 042), voice chats (`claimVoiceAnswer`, 041; `fetchVoiceStatus`, how many are left, 042), and the Settings screens (profile, password, storage use, expiry dates, feedback) |
 | `dates.ts` | `parseDocumentDate()`: expiry dates exactly as ingest stores them (DD/MM/YYYY and kin, YYYY-MM-DD, "19 October 2026") |
 | `emergency.ts` | The emergency card's shape, blood groups (`bloodGroupLabel()`: "A−", "Bombay (hh)"), `telHref()`, and `cardProblem()` — the same checks and messages as `save_emergency_card()`, so the form can say what is wrong before saving |
 | `family-people.ts` | Whose a document can be: everyone in the tree, you first (`useDocumentOwners()`, members only before 031), and a person's expiry badge (`badgeFromExpiries()`) |
-| `plans.ts` | What each plan allows (038–041): the limits as 039–041 set them — storage, 4 members, and a free family's 10 answers read aloud (`DEFAULT_PLAN_LIMITS`, used only when the database cannot be asked), Family Plus's prices, monthly and yearly (`PLUS_PRICE`; `localPlusPrice()` / `localPlusPrices()` show rupees in India, dollars elsewhere, by the device's time zone; the yearly one against twelve months, crossed out, and the months it saves: `plusTwelveMonths()`, `plusYearlySaving()`), `storageLevel()`, and the words for a full vault (`storageFullMessage()`), which live in `supabase/functions/_shared/plan-text.ts` so Gmail import says the same. `PLUS_FOR_SALE` is false until payments exist |
+| `plans.ts` | What each plan allows (038–042): the limits as 039–041 set them — storage, 4 members, and a free family's 10 voice chats (`DEFAULT_PLAN_LIMITS`, used only when the database cannot be asked), Family Plus's prices, monthly and yearly (`PLUS_PRICE`; `localPlusPrice()` / `localPlusPrices()` show rupees in India, dollars elsewhere, by the device's time zone; the yearly one against twelve months, crossed out, and the months it saves: `plusTwelveMonths()`, `plusYearlySaving()`), `storageLevel()`, and the words for a full vault (`storageFullMessage()`; for a chat, `chatStorageFullMessage()`), which live in `supabase/functions/_shared/plan-text.ts` so Gmail import says the same. `PLUS_FOR_SALE` is false until payments exist |
 | `family-plan.ts` | Is the current family on Family Plus? `useFamilyPlan()` (from `family_storage_status()`, kept a minute per family): `isFree`, and `routeFor(feature, route)`, which sends a free family to `/plus?feature=…` instead of a starred feature. Unknown (before 038, offline) gates nothing |
 | `file-types.ts` | What a picked file is (`detectFileType()`: MIME type, then name, never a web `blob:` uri) and whether the vault can keep it (PDF, JPG, PNG) |
 | `app-info.ts` | Version, release date and commit (stamped into `extra` by `app.config.ts` at build time), and the support contact Help shows |
@@ -471,11 +472,11 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `ocr-languages.ts` | The document-language picker list, and `resolveOcrLanguages()` which always appends English |
 | `push.ts` / `push.web.ts` | Notifications on this device (034): on the web, Web Push through `public/sw.js` (`loadPushStatus`, `turnOnPush`, `turnOffPush`, `sendTestPush`, and `forgetPushOnThisDevice` on sign-out); the phone app's file is a stand-in until EAS builds exist. Types in `push-types.ts` |
 | `preferences.tsx` | `PreferencesProvider`: voice toggle + language, document languages. Cached locally, stored on `public.users`; reads and writes fall back to the older column set so an unapplied migration degrades one setting rather than all of them |
-| `speech.ts` | Voice: `listen`/`stopListening` (platform-split recogniser) and `speak`/`stopSpeaking` (expo-speech) |
+| `speech.ts` | Voice: `listen`/`stopListening` (platform-split recogniser) and `speak`/`stopSpeaking` (expo-speech), in the voice chosen for the language on this device (`voicesFor`, `chooseVoice`: Settings › Accessibility › Voice, kept per language in `storage.ts`, not per account), or the best match |
 | `speech-text.ts` | `toSpeech()`: strips markdown and spells out ID numbers before they are read aloud |
 | `voice-languages.ts` | The language picker list and the few phrases the app itself says, per language |
 | `storage.ts` | Key-value cache: localStorage on web, AsyncStorage on native |
-| `database.types.ts` | Generated Supabase types, current to 041 (030 changed nothing in them). Regenerate after every migration and re-append the hand-written block at the bottom (see the typecheck note) |
+| `database.types.ts` | Generated Supabase types, current to 042 (030 changed nothing in them). Regenerate after every migration and re-append the hand-written block at the bottom (see the typecheck note) |
 
 ---
 
@@ -645,7 +646,8 @@ so storage policies live only in `019`.
   policy, and no SELECT for any client — the team reads it in the dashboard.
   Before 027 the app says feedback is not switched on yet.
 - **Storage** shows each family's plan, what it may keep and what its files
-  add up to (`family_storage_status()`, 038), amber from 80%, red at the
+  and saved chats add up to (`family_storage_status()`, 038; chats since
+  042, and how much of it they are), amber from 80%, red at the
   limit, which **the server enforces** — see
   [Plans and storage limits](#plans-and-storage-limits--every-plan-has-a-limit-038-039).
   Before 038 it adds up `file_size_bytes` from `get_family_documents` and
@@ -681,6 +683,18 @@ so storage policies live only in `019`.
 - **Bounded**: `messages` is a JSON array of at most 256 KB; the app keeps the
   newest 100 turns, 6,000 characters each, and each source's id and name
   only. Before 028 the app says saving is not switched on yet.
+- **They take the family's storage** (042): `family_storage_status()` adds
+  every saved chat's size (`octet_length(messages::text)`) to what the
+  files use — so the upload policy and Gmail import count them too — and a
+  trigger on `saved_chats` refuses a new chat, or a saved one growing,
+  without room for it (HINT `storage_full`); the same size or smaller always
+  passes. The app asks first, and on a refusal says why
+  (`chatStorageFullMessage()`): on Free, that saving more needs Family Plus,
+  with a link; on Plus, to make room. A saved chat that runs out of room
+  stops following the conversation ("Not saving new answers"). Nothing
+  removes a chat: when Plus ends, only documents go (040), so a family whose
+  chats keep it over the limit adds nothing until it makes room. The family
+  sees only the total its chats take, never whose they are.
 
 ### Deleting your account — at once, nothing kept (029, 030)
 
@@ -1101,22 +1115,26 @@ so storage policies live only in `019`.
   — under the bell and on devices — reach every family. While Plus cannot be
   bought (`PLUS_FOR_SALE`), the page says "Coming soon" rather than showing a
   button that does nothing.
-- **Answers read aloud: a free family's first 10, then Family Plus** (041;
-  `plan_limits.voice_answers`, NULL for every answer, which is Plus). Asking
-  by voice stays free, and the answer is always on the screen. Before
-  reading a new answer, Ask calls `claim_voice_answer()` (the caller from
-  `auth.uid()`, their own family only), which counts one in `family_usage`
-  for the whole family — so another phone does not start again — in one
-  statement, so two answers at once cannot both take the last one. "Read
-  again" of an answer already heard counts nothing, nor does an apology
-  when an answer failed. Once the free ones are used, Ask says one short
-  line aloud ("The answer is on the screen…", `voice_limit` in
-  `voice-languages.ts`, English and Hindi), so nobody waits for a voice that
-  is not coming, and a strip links to `/plus?feature=voice`; the strip also
-  counts down the last three. Settings › Accessibility says it for a free
-  family. The reading is the device's own voice, so this is the app's rule
-  to keep; when the server cannot be asked (before 041, offline) the answer
-  is read.
+- **Voice chats: a free family's first 10, then Family Plus** (041, 042;
+  `plan_limits.voice_answers`, NULL for no limit, which is Plus). A voice
+  chat is a question asked by voice or an answer read aloud, one per
+  question; the answer is always on the screen. In voice mode Ask always
+  shows how many are left ("7 of 10 free voice chats left for your
+  family", from `family_voice_status()`, 042, which counts nothing), and
+  Settings › Accessibility says it too. Before reading a new answer, Ask
+  calls `claim_voice_answer()` (the caller from `auth.uid()`, their own
+  family only), which counts one in `family_usage` for the whole family —
+  so another phone does not start again — in one statement, so two answers
+  at once cannot both take the last one. "Read again" of an answer already
+  heard counts nothing, nor does an apology when an answer failed. Once
+  none are left, the mic goes quiet: a tap says why aloud
+  (`voice_limit_mic`) and listens to nothing; answers are asked for as
+  screen answers and not read, and one short line says so aloud, once
+  (`voice_limit`; both in `voice-languages.ts`, English and Hindi), so
+  nobody waits for a voice that is not coming; the strip links to
+  `/plus?feature=voice`. Listening and reading are the device's own, so this
+  is the app's rule to keep; when the server cannot be asked (before 041,
+  offline) voice works.
 - **Not built yet:** paying for Plus (a webhook calling `set_family_plan`;
   `source` allows `razorpay` and `dodo`), and a limit on questions per plan.
 
@@ -1150,6 +1168,16 @@ so storage policies live only in `019`.
   distance and full-text rank 0.7/0.3 → sends chunks + query to Groq → returns
   answer plus source document references. If embedding fails the RPC falls back
   to keyword-only rather than erroring.
+  **Tickets speak in codes** (`_shared/tickets.ts`, pure, pinned by the
+  self-test). An Indian Railways ticket never says "seat": the berth is
+  "CNF/B4/17 UB" under Booking Status, so "what's my seat number?" found
+  only a meal instruction that said "seat". A question about a seat, berth,
+  coach or PNR adds the ticket's own words to the keywords (not to the
+  embedded question), and each status code among the passages is spelled
+  out for the judge and the answer ("coach B4, berth 17, upper berth";
+  RAC and waitlist too). And when a vault has too few documents to fill
+  the judge's 15 places, the same documents fill them past the per-document
+  cap, so a family's only ticket is read whole.
   **Groq models are resolved at runtime** by `_shared/groq.ts`: each role
   (answer, condense, rerank) has a preference list, a secret of the role's name
   (`GROQ_MODEL`, `GROQ_CONDENSE_MODEL`, `GROQ_RERANK_MODEL`) always goes first,
@@ -1531,7 +1559,7 @@ rule again once pinned chunks are mixed in.
   six rows with an arrow that went nowhere, and the document viewer had a
   menu button with no menu. Add the control when its screen exists.
 - **★ Family Plus marks what only Plus families get** (`<PlusTag />`):
-  10 GB instead of 1 GB, every answer read aloud (a free family hears its
+  10 GB instead of 1 GB, voice chats with no limit (a free family has its
   first 10), the Reminders page (in the drawer) and Import from
   Gmail (on Upload) — ₹100 a month or ₹1,100 a year in India, $10 or $110
   elsewhere, given by hand
@@ -1560,7 +1588,10 @@ rule again once pinned chunks are mixed in.
   four mic states (idle / listening / thinking / speaking) and never add a
   step that needs a second tap to get an answer. Strings the app itself says
   live in `voice-languages.ts` with English and Hindi; other languages fall
-  back to English.
+  back to English. *Voice* (beside Voice language) chooses who reads the
+  answers from this device's own voices for the language, by ear — a tap
+  plays a sample — and is kept on the device, per language (a phone's
+  voices are not an account's).
 
 ---
 
