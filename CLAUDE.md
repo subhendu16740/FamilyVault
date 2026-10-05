@@ -488,7 +488,7 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `push.ts` / `push.web.ts` | Notifications on this device (034): on the web, Web Push through `public/sw.js` (`loadPushStatus`, `turnOnPush`, `turnOffPush`, `sendTestPush`, and `forgetPushOnThisDevice` on sign-out); the phone app's file is a stand-in until EAS builds exist. Types in `push-types.ts` |
 | `preferences.tsx` | `PreferencesProvider`: voice toggle + language, document languages. Cached locally, stored on `public.users`; reads and writes fall back to the older column set so an unapplied migration degrades one setting rather than all of them |
 | `speech.ts` | Voice: `listen`/`stopListening` (platform-split recogniser) and `speak`/`stopSpeaking` (expo-speech), in the voice chosen for the language on this device (`voicesFor`, `chooseVoice`: Settings › Accessibility › Voice, kept per language in `storage.ts`, not per account), or the best match |
-| `speech-text.ts` | `toSpeech()`: strips markdown and spells out ID numbers before they are read aloud |
+| `speech-text.ts` | `toSpeech()`: strips markdown and spells out ID numbers before they are read aloud — and a number named as one ("train number 16782", "PNR: 4512", "PIN 751001", "नंबर 16782") digit by digit, from its digits; the screen keeps the digits |
 | `voice-languages.ts` | The language picker list and the few phrases the app itself says, per language |
 | `storage.ts` | Key-value cache: localStorage on web, AsyncStorage on native |
 | `database.types.ts` | Generated Supabase types, current to 044 (030 changed nothing in them). Regenerate after every migration and re-append the hand-written block at the bottom (see the typecheck note) |
@@ -1274,6 +1274,21 @@ so storage policies live only in `019`.
   2026, `llama-3.1-8b-instant` in August 2026) — when adding a fallback, confirm
   the name on Groq's models page first. The models that actually ran are
   returned in `debug.models` and shown under follow-up answers.
+  **Numbers stay in digits.** Every answer copies numbers exactly as the
+  document writes them, in digits — train, PNR, seat, policy, account and ID
+  numbers, amounts. Told to write voice answers for the ear, the model once
+  wrote a train number in words and swapped two of its digits, so the prompt
+  now forbids it, and `_shared/numbers.ts` (pure, pinned by the self-test)
+  is the safety net before the answer leaves: `restoreCodes()` puts a code
+  spelled out ("one six seven eight two A B", "A B C D E 1 2 3 4 F") back
+  exactly as the passages write it ("16782AB", "ABCDE1234F", "MH-12-AB-1234")
+  — only when, joined up, it is a code in them, so nothing is invented and a
+  number with swapped digits is not "corrected" into another — then
+  `digitsFromWords()` turns any other run of three or more digits written as
+  words (English or Hindi), or four or more single digits spaced apart, into
+  digits. How a number sounds is the app's job, done in code from the digits
+  (`toSpeech()`: codes character by character, long ones in fours), so the
+  order can never change.
   **Voice / language:** the request may carry `language` (BCP-47) and
   `voice: true`. A non-English question is condensed *into English* before
   retrieval (the index is English) and the answer is written in the person's
