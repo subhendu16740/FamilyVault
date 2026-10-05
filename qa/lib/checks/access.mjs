@@ -24,7 +24,7 @@
 // an open policy shows up as a duplicate-key error instead of a new row.
 // ────────────────────────────────────────────────────────────────
 
-import { randomUUID } from 'node:crypto';
+import { createHmac, randomUUID } from 'node:crypto';
 import { invokeFunction } from '../supabase.mjs';
 import { permanentDocuments } from '../../fixtures/documents.mjs';
 
@@ -225,6 +225,37 @@ const chatsVoiceJudge = (expect) => (outcome) => {
 const perPersonJudge = (expect) => (outcome) => {
   if (missingTable(outcome.error)) return ['skipped', 'migration 043 is not applied to DEV yet'];
   return judge(expect, outcome);
+};
+// Paying for Family Plus (044): the payments function makes an order only for
+// a member's own family and confirms only a payment Razorpay signed; the
+// ledger (plan_payments) and the function that adds the time are the
+// server's. Skipped until the function is deployed to DEV, and the database
+// probes until 044 is applied there.
+const paymentsFnJudge = (check) => ({ status, data }) => {
+  if (status === 404 && !data?.status) return ['skipped', 'payments is not deployed to DEV yet'];
+  if (status === 503 && data?.status === 'needs_migration') return ['skipped', 'migration 044 is not applied to DEV yet'];
+  return check(status, data);
+};
+const paymentsDbJudge = (expect) => (outcome) => {
+  if (missingTable(outcome.error) || String(outcome.error?.code) === 'PGRST202') {
+    return ['skipped', 'migration 044 is not applied to DEV yet'];
+  }
+  return typeof expect === 'function' ? expect(outcome) : judge(expect, outcome);
+};
+// razorpay-webhook is deployed WITHOUT the gateway's JWT check, because
+// Razorpay calls it with none, so its own signature check is all that stands
+// between a stranger and a free Family Plus. Its refusal says bad_signature;
+// a 401 without that is the gateway's, and Razorpay would be refused too.
+const webhookJudge = (forged) => ({ status, data }) => {
+  if (status === 404) return ['skipped', 'razorpay-webhook is not deployed to DEV yet'];
+  if (status === 401 && data?.status === 'bad_signature') return ['pass', 'HTTP 401 bad_signature'];
+  if (status === 401) return ['fail', "deployed WITH JWT verification, so Razorpay's own reports are refused — deploy razorpay-webhook with --no-verify-jwt"];
+  if (status === 503 && data?.status === 'not_configured') {
+    return forged
+      ? ['skipped', 'RAZORPAY_WEBHOOK_SECRET is not set on DEV, so there is no signature to forge yet']
+      : ['pass', 'no webhook secret on DEV yet, so it refuses every report'];
+  }
+  return ['fail', `HTTP ${status}${status >= 200 && status < 300 ? ` — it ACCEPTED ${forged ? 'a forged' : 'an unsigned'} payment report` : ''}: ${JSON.stringify(data).slice(0, 160)}`];
 };
 // A well-formed device key and secret: RFC 8291's own example.
 const PROBE_P256DH = 'BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4';
@@ -565,6 +596,43 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     }
   }
 
+  // ── Paying for Family Plus (044): the payments function says whether DEV
+  // takes payments — the control for the probes below. DEV may only ever
+  // hold Razorpay's TEST keys: a live key there would charge real money from
+  // the test project.
+  {
+    const r = await invokeFunction(cfg, a, 'payments', { action: 'status' }, { timeoutMs: 30_000 });
+    const [state, why] = paymentsFnJudge((status, data) => {
+      if (status !== 200 || typeof data?.available !== 'boolean') return ['fail', `HTTP ${status}: ${JSON.stringify(data).slice(0, 160)}`];
+      if (!data.available) return ['pass', 'no Razorpay keys on DEV yet: Family Plus is "coming soon"'];
+      if (!/^rzp_test_/.test(String(data.key_id ?? ''))) return ['fail', `DEV must use Razorpay TEST keys, not ${String(data.key_id).slice(0, 9)}…`];
+      return ['pass', `takes test payments in ${(data.currencies ?? []).join(', ')}`];
+    })({ status: r.status, data: r.data });
+    results.add('access', 'control:payments', 'Control — account A asks whether Family Plus can be paid for (test keys only on DEV)', state, { why });
+  }
+
+  // A payment report as Razorpay sends one, for an order and a payment that
+  // never existed — so nothing could be added even if a check failed.
+  const fakeOrder = `order_QA${randomUUID().replace(/-/g, '').slice(0, 14)}`;
+  const fakePayment = `pay_QA${randomUUID().replace(/-/g, '').slice(0, 14)}`;
+  const report = JSON.stringify({
+    event: 'payment.captured',
+    payload: { payment: { entity: { id: fakePayment, order_id: fakeOrder, amount: 110000, currency: 'INR', status: 'captured' } } },
+  });
+  const toWebhook = (signature) => async () => {
+    // As Razorpay sends it: a plain POST, no session, no apikey.
+    const res = await fetch(`${cfg.url}/functions/v1/razorpay-webhook`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(signature ? { 'X-Razorpay-Signature': signature } : {}) },
+      body: report,
+    });
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); } catch { data = { raw: text.slice(0, 200) }; }
+    return { status: res.status, data };
+  };
+  const forgedSignature = createHmac('sha256', `qa-not-the-secret-${cfg.runId}`).update(report).digest('hex');
+
   const onDeviceA = (run) => async () => {
     if (pushMissing) return { missing: true };
     if (!deviceA) return { noTarget: true };
@@ -801,6 +869,27 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     ['anon', "read how many voice chats QA Vault A has left", chatsVoiceJudge('refused'), rpc(anon, 'family_voice_status', { p_family_id: A.family })],
     ['B', "read how many voice chats QA Vault A has left", chatsVoiceJudge('refused'), rpc(b, 'family_voice_status', { p_family_id: A.family })],
     ['B', "add up QA Vault A's saved chats (server-only)", chatsVoiceJudge('refused'), rpc(b, 'family_chats_bytes', { p_family_id: A.family })],
+    // Paying for Family Plus (044): an order only for your own family, Plus
+    // only for a payment Razorpay signed, and the ledger is the server's.
+    ['anon', 'start paying for QA Vault A', paymentsFnJudge(http401), fn(anon, 'payments', { action: 'order', family_id: A.family, period: 'monthly', currency: 'INR' })],
+    ['B', 'start paying for QA Vault A', paymentsFnJudge(http401), fn(b, 'payments', { action: 'order', family_id: A.family, period: 'monthly', currency: 'INR' })],
+    ['B', 'confirm a payment that was never made', paymentsFnJudge((status, data) => (status === 404 && data?.status === 'no_order'
+      ? ['pass', 'no such order']
+      : ['fail', `HTTP ${status}${status >= 200 && status < 300 ? ' — it CONFIRMED a made-up payment' : ''}: ${JSON.stringify(data).slice(0, 160)}`])),
+    fn(b, 'payments', { action: 'verify', order_id: fakeOrder, payment_id: fakePayment, signature: forgedSignature })],
+    ['anon', 'report a payment to razorpay-webhook without a signature', webhookJudge(false), toWebhook(null)],
+    ['anon', 'report a payment to razorpay-webhook with a forged signature', webhookJudge(true), toWebhook(forgedSignature)],
+    ['anon', 'add a payment through the database (server-only)', paymentsDbJudge('refused'), rpc(anon, 'apply_plan_payment', { p_order_id: fakeOrder, p_payment_id: fakePayment })],
+    ['B', 'add a payment through the database (server-only)', paymentsDbJudge('refused'), rpc(b, 'apply_plan_payment', { p_order_id: fakeOrder, p_payment_id: fakePayment })],
+    ['B', "read the families' payments", paymentsDbJudge('refused-or-empty'), () => b.client.from('plan_payments').select('order_id, family_id').limit(5)],
+    // Aimed so a hole cannot leave a row: an order id the table's CHECK refuses,
+    // which only comes into play once the write itself was allowed.
+    ['B', 'write a payment into the ledger', paymentsDbJudge((o) => {
+      if (!o.error) return ['fail', 'ALLOWED'];
+      if (refusedByAuth(o.error)) return ['pass', short(o.error)];
+      if (String(o.error.code) === '23514') return ['fail', 'ALLOWED — only a CHECK constraint stopped this row'];
+      return ['fail', `stopped for another reason (${short(o.error)}) — update this probe`];
+    }), () => b.client.from('plan_payments').insert({ order_id: 'qa-probe', family_id: vaultB.id, period: 'yearly', currency: 'INR', amount: 1 })],
 
     ['B', "invite someone to be a person in A's tree through the database (server-only)", inviteJudge('refused'), onInvites(() => b.client.rpc('invite_family_person_account', { p_family_id: A.family, p_invited_by: A.user, p_person_id: randomUUID(), p_email: `qa-probe-${cfg.runId}@example.invalid` }))],
 

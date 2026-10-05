@@ -1,20 +1,23 @@
 // Family Plus — what the paid plan gives, side by side with Free. Every
 // starred feature (★) opens this page for a free family (/plus?feature=…,
 // which says which feature brought them here), and so do Settings, Storage
-// and a full vault. Family Plus can't be bought yet (PLUS_FOR_SALE); until it
-// can, the page says so instead of offering a button that does nothing.
+// and a full vault. Where payments are switched on (044: this project's
+// Razorpay keys are set), any member pays here for a month or a year, and
+// each payment adds that time; until then the page says "Coming soon"
+// instead of offering a button that does nothing.
 
 import { useCallback, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFamily } from '../lib/family-context';
-import { useFamilyPlan, type PlusFeature } from '../lib/family-plan';
-import { fetchPlanLimits } from '../lib/api';
+import { useFamilyPlan, usePaymentsStatus, type PlusFeature } from '../lib/family-plan';
+import { PaymentError, createPlusOrder, fetchPlanLimits, verifyPlusPayment } from '../lib/api';
+import { checkoutSupported, openCheckout } from '../lib/razorpay';
 import {
-  DEFAULT_PLAN_LIMITS, PLUS_FOR_SALE, formatBytes, localPlusAmount, localPlusPrice, localPlusYearlyOffer,
+  DEFAULT_PLAN_LIMITS, formatBytes, localCurrency, localPlusAmount, localPlusPrice, localPlusYearlyOffer,
   localPlusYearlySaving, plusPrice, plusYearlyOffer, type PlanLimits,
 } from '../lib/plans';
 import { longDate } from '../lib/dates';
@@ -87,6 +90,53 @@ export default function PlusScreen() {
   }, [refresh]));
 
   const familyName = currentFamily?.name;
+
+  // ─── Paying (044) ───────────────────────────────────────
+  const payments = usePaymentsStatus();
+  const currency = localCurrency() === 'inr' ? 'INR' : 'USD';
+  const canPayHere = !!payments?.currencies.includes(currency);
+  const [paying, setPaying] = useState<'monthly' | 'yearly' | null>(null);
+  const [payNote, setPayNote] = useState<{ tone: 'ok' | 'info' | 'error'; text: string } | null>(null);
+
+  const pay = async (period: 'monthly' | 'yearly') => {
+    if (!currentFamily || paying) return;
+    setPaying(period);
+    setPayNote(null);
+    try {
+      const order = await createPlusOrder(currentFamily.id, period, currency);
+      const result = await openCheckout(order);
+      if (result.status === 'closed' || result.status === 'unsupported') return;
+      if (result.status === 'failed') {
+        setPayNote({ tone: 'error', text: `${result.reason} Nothing was charged for Family Plus.` });
+        return;
+      }
+      setPayNote({ tone: 'info', text: 'Payment received. Switching on Family Plus…' });
+      try {
+        const { paidUntil } = await verifyPlusPayment(result);
+        await refresh(true);
+        setPayNote({
+          tone: 'ok',
+          text: `Thank you! ${familyName ?? 'Your family'} has Family Plus until ${longDate(new Date(paidUntil))}.`,
+        });
+      } catch (err) {
+        if (err instanceof PaymentError && err.status === 'not_paid') {
+          setPayNote({ tone: 'error', text: err.message });
+          return;
+        }
+        // Razorpay tells the server too (its webhook), so a payment that went
+        // through switches Plus on even when this check could not finish.
+        setPayNote({
+          tone: 'info',
+          text: "We're confirming your payment with Razorpay. If it went through, Family Plus switches on within a few minutes — there's no need to pay again.",
+        });
+        setTimeout(() => { refresh(true); }, 30_000);
+      }
+    } catch (err) {
+      setPayNote({ tone: 'error', text: err instanceof Error ? err.message : 'Something went wrong. Please try again.' });
+    } finally {
+      setPaying(null);
+    }
+  };
 
   return (
     <SafeAreaView style={screenStyles.safe} edges={['top']}>
@@ -192,8 +242,59 @@ export default function PlusScreen() {
           </View>
         </Card>
 
+        {payments?.available && (
+          <Card style={styles.payCard}>
+            <Text style={styles.payTitle}>{plan === 'plus' ? 'Add more time' : 'Get Family Plus'}</Text>
+            {!checkoutSupported ? (
+              <Text style={styles.payFine}>Paying for Family Plus is on the FamilyVault web app for now.</Text>
+            ) : !canPayHere ? (
+              <Text style={styles.payFine}>Paying from outside India is coming soon.</Text>
+            ) : (
+              <>
+                <TouchableOpacity
+                  style={[styles.payBtn, styles.payBtnMain, !!paying && styles.payBtnBusy]}
+                  onPress={() => pay('yearly')}
+                  disabled={!!paying}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Pay ${localPlusAmount('yearly')} for a year of Family Plus, ${localPlusYearlySaving()}`}
+                >
+                  {paying === 'yearly' ? <ActivityIndicator color="#FFFFFF" /> : (
+                    <>
+                      <Text style={styles.payBtnText}>Pay {localPlusAmount('yearly')} for 1 year</Text>
+                      <Text style={styles.payBtnSave}>{localPlusYearlySaving()}</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.payBtn, styles.payBtnOther, !!paying && styles.payBtnBusy]}
+                  onPress={() => pay('monthly')}
+                  disabled={!!paying}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Pay ${localPlusAmount('monthly')} for a month of Family Plus`}
+                >
+                  {paying === 'monthly' ? <ActivityIndicator color={color.primary} /> : (
+                    <Text style={styles.payBtnTextOther}>Pay {localPlusAmount('monthly')} for 1 month</Text>
+                  )}
+                </TouchableOpacity>
+                <Text style={styles.payFine}>
+                  By UPI, card or net banking, through Razorpay. Nothing renews by itself:{' '}
+                  {plan === 'plus' ? 'the time is added to what is left.' : 'you pay again only when you want more time.'}
+                </Text>
+              </>
+            )}
+            {payNote && (
+              <Text
+                style={[styles.payMsg, payNote.tone === 'ok' ? styles.payMsgOk : payNote.tone === 'error' ? styles.payMsgError : null]}
+                accessibilityLiveRegion="polite"
+              >
+                {payNote.text}
+              </Text>
+            )}
+          </Card>
+        )}
+
         {plan !== 'plus' && (
-          PLUS_FOR_SALE ? null : (
+          !payments || payments.available ? null : (
             <View style={styles.soon}>
               <Text style={styles.soonTag}>Coming soon</Text>
               <Text
@@ -285,6 +386,22 @@ const styles = StyleSheet.create({
   cellPer: { fontSize: 12, lineHeight: 16, color: color.textMuted, textAlign: 'center' },
   priceRow: { borderBottomWidth: 0 },
   priceLabel: { fontWeight: '600', color: color.text },
+  payCard: { gap: space.sm },
+  payTitle: { ...type.heading },
+  payBtn: {
+    minHeight: 52, borderRadius: radius.control, alignItems: 'center', justifyContent: 'center',
+    paddingVertical: space.sm, paddingHorizontal: space.md,
+  },
+  payBtnMain: { backgroundColor: color.primary },
+  payBtnOther: { borderWidth: 1, borderColor: color.primary, backgroundColor: color.surface },
+  payBtnBusy: { opacity: 0.6 },
+  payBtnText: { ...type.button, color: '#FFFFFF' },
+  payBtnSave: { fontSize: 12, lineHeight: 16, fontWeight: '600', color: '#FBD5D1' },
+  payBtnTextOther: { ...type.button, color: color.primary },
+  payFine: { fontSize: 13, lineHeight: 18, color: color.textMuted },
+  payMsg: { ...type.label, color: color.primary },
+  payMsgOk: { color: '#15803D' },
+  payMsgError: { color: '#B91C1C' },
   soon: {
     borderRadius: radius.control, padding: space.md, gap: space.xs,
     backgroundColor: '#FBEDEB',

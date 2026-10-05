@@ -4,7 +4,7 @@ import { isSaveable, mimeTypeFor, unsupportedFileMessage } from './file-types';
 import type { Gender, KinLink, KinPerson } from '../../supabase/functions/_shared/kinship';
 import { isBloodGroup, type EmergencyCard, type EmergencyCardInput, type EmergencyContact } from './emergency';
 import {
-  DEFAULT_PLAN_LIMITS, chatStorageFullMessage, fits, localPlusPrices, storageFullMessage,
+  DEFAULT_PLAN_LIMITS, PLUS_FOR_SALE, chatStorageFullMessage, fits, localPlusPrices, storageFullMessage,
   type PlanLimits, type PlanName, type StorageRoom,
 } from './plans';
 import type {
@@ -793,7 +793,10 @@ export async function uploadDocument(params: UploadDocumentParams): Promise<stri
   // Every plan has a storage limit (038). Asked first, with this file's size,
   // so the person hears why; the bucket refuses a full family either way.
   const room = await fetchStorageStatus(familyId).catch(() => null);
-  if (room && !fits(room, fileSizeBytes)) throw new StorageFullError(room, fileSizeBytes);
+  if (room && !fits(room, fileSizeBytes)) {
+    await fetchPaymentsStatus();   // so the words say whether Family Plus can be bought
+    throw new StorageFullError(room, fileSizeBytes);
+  }
 
   // 1. Upload to Supabase Storage
   const storagePath = `${storageNamespace}/${Date.now()}_${fileName}`;
@@ -807,7 +810,10 @@ export async function uploadDocument(params: UploadDocumentParams): Promise<stri
     // The bucket's policy refuses a family at its limit (038): say so in words.
     if (/row-level security|policy/i.test(storageErr.message)) {
       const now = await fetchStorageStatus(familyId).catch(() => null);
-      if (now && now.usedBytes >= now.limitBytes) throw new StorageFullError(now, fileSizeBytes);
+      if (now && now.usedBytes >= now.limitBytes) {
+        await fetchPaymentsStatus();
+        throw new StorageFullError(now, fileSizeBytes);
+      }
     }
     throw new Error(`Storage upload failed: ${storageErr.message}`);
   }
@@ -1298,6 +1304,105 @@ export async function fetchPlanLimits(): Promise<PlanLimits> {
   };
 }
 
+// ─── Paying for Family Plus (044) ────────────────────────────────
+//
+// A family pays for a month or a year at a time, through Razorpay's checkout
+// (razorpay.web.ts), and each payment adds that time to its Family Plus. The
+// payments Edge Function makes the order — at PLUS_PRICE's amount, never the
+// app's — and checks the payment before adding the time; Razorpay's webhook
+// reports the same payment, so closing the browser too early loses nothing.
+// Whether a project takes payments is the function's to say (its Razorpay
+// keys are set per project), asked once per session: until then, and where
+// it cannot be asked, Family Plus is "coming soon".
+
+export type PaymentCurrency = 'INR' | 'USD';
+
+export interface PaymentsStatus {
+  available: boolean;
+  /** Razorpay's public key id, for the checkout. */
+  keyId: string | null;
+  currencies: PaymentCurrency[];
+}
+
+const PAYMENTS_OFF: PaymentsStatus = { available: false, keyId: null, currencies: [] };
+let paymentsKnown: PaymentsStatus | null = null;
+let paymentsAsking: Promise<PaymentsStatus> | null = null;
+
+/** Whether this project takes payments, asked once per session; never throws. */
+export function fetchPaymentsStatus(): Promise<PaymentsStatus> {
+  if (paymentsKnown) return Promise.resolve(paymentsKnown);
+  paymentsAsking ??= (async () => {
+    const { data, error } = await supabase.functions.invoke('payments', { body: { action: 'status' } });
+    if (error) {
+      // Not deployed here is an answer; offline is not, and is asked again next time.
+      if ((error as { context?: Response })?.context?.status === 404) paymentsKnown = PAYMENTS_OFF;
+      return PAYMENTS_OFF;
+    }
+    const currencies = Array.isArray(data?.currencies)
+      ? (data.currencies as unknown[]).filter((c): c is PaymentCurrency => c === 'INR' || c === 'USD')
+      : [];
+    paymentsKnown = { available: data?.available === true, keyId: data?.key_id ?? null, currencies };
+    return paymentsKnown;
+  })().catch(() => PAYMENTS_OFF).finally(() => { paymentsAsking = null; });
+  return paymentsAsking;
+}
+
+/** Whether Family Plus can be bought here, as last heard; PLUS_FOR_SALE until asked. */
+export function plusForSale(): boolean {
+  return paymentsKnown?.available ?? PLUS_FOR_SALE;
+}
+
+export interface PlusOrder {
+  orderId: string;
+  /** In paise or cents, as Razorpay counts. */
+  amount: number;
+  currency: PaymentCurrency;
+  keyId: string;
+  description: string;
+  prefill: { email?: string; name?: string };
+}
+
+/** A payment the server would not start or confirm, with a sentence for the person. */
+export class PaymentError extends Error {
+  status: string;
+  constructor(status: string, message: string) {
+    super(message);
+    this.name = 'PaymentError';
+    this.status = status;
+  }
+}
+
+async function paymentsInvoke<T>(body: Record<string, unknown>): Promise<T> {
+  const { data, error } = await supabase.functions.invoke('payments', { body });
+  if (!error) return data as T;
+  const httpStatus = (error as { context?: Response })?.context?.status;
+  const payload = (await readFunctionError(error)) as { status?: string; error?: string } | null;
+  if (httpStatus === 404 && !payload?.status) {
+    throw new PaymentError('not_configured', 'Paying for Family Plus is not switched on yet.');
+  }
+  throw new PaymentError(payload?.status ?? 'error', payload?.error ?? 'Something went wrong. Please try again.');
+}
+
+/** Starts paying for a month or a year of Family Plus for the family. */
+export async function createPlusOrder(familyId: string, period: 'monthly' | 'yearly', currency: PaymentCurrency): Promise<PlusOrder> {
+  const r = await paymentsInvoke<{
+    order_id: string; amount: number; currency: PaymentCurrency; key_id: string; description: string;
+    prefill?: { email?: string; name?: string };
+  }>({ action: 'order', family_id: familyId, period, currency });
+  return {
+    orderId: r.order_id, amount: r.amount, currency: r.currency, keyId: r.key_id,
+    description: r.description, prefill: r.prefill ?? {},
+  };
+}
+
+/** After the checkout: the server checks the payment and adds the time. Asking twice is harmless. */
+export async function verifyPlusPayment(p: { orderId: string; paymentId: string; signature: string }): Promise<{ paidUntil: string }> {
+  const r = await paymentsInvoke<{ status: string; paid_until: string }>({
+    action: 'verify', order_id: p.orderId, payment_id: p.paymentId, signature: p.signature,
+  });
+  return { paidUntil: r.paid_until };
+}
+
 // ─── Voice chats (041–043) ───────────────────────────────────────
 //
 // On the free plan each person has 10 voice chats of their own
@@ -1353,6 +1458,7 @@ export class StorageFullError extends Error {
     super(storageFullMessage(room, fileBytes, {
       price: localPlusPrices(),
       removalOn: room.removalAt ? longDate(new Date(room.removalAt)) : undefined,
+      forSale: plusForSale(),
     }));
     this.name = 'StorageFullError';
     this.room = room;
@@ -1507,7 +1613,7 @@ export class ChatStorageFullError extends Error {
 
   constructor(room: FamilyPlanStatus | null, serverMessage?: string) {
     super(room
-      ? chatStorageFullMessage(room, { price: localPlusPrices() })
+      ? chatStorageFullMessage(room, { price: localPlusPrices(), forSale: plusForSale() })
       : serverMessage ?? 'There is no room to save this chat: your family\'s storage is full.');
     this.name = 'ChatStorageFullError';
     this.room = room;
@@ -1535,7 +1641,8 @@ export async function saveChat(familyId: string, messages: SavedChatMessage[], i
   const asJson = stored as unknown as Json;
   const refused = async (error: { hint?: string; message?: string }): Promise<never> => {
     if (error.hint !== 'storage_full') throw error;
-    throw new ChatStorageFullError(await fetchStorageStatus(familyId).catch(() => null), error.message);
+    const [room] = await Promise.all([fetchStorageStatus(familyId).catch(() => null), fetchPaymentsStatus()]);
+    throw new ChatStorageFullError(room, error.message);
   };
   if (id) {
     const { data, error } = await savedChats()
@@ -1547,7 +1654,10 @@ export async function saveChat(familyId: string, messages: SavedChatMessage[], i
   }
   // Before 038 (no limits) or offline, the server alone decides.
   const room = await fetchStorageStatus(familyId).catch(() => null);
-  if (room && room.usedBytes + chatBytes(stored) > room.limitBytes) throw new ChatStorageFullError(room);
+  if (room && room.usedBytes + chatBytes(stored) > room.limitBytes) {
+    await fetchPaymentsStatus();
+    throw new ChatStorageFullError(room);
+  }
   const { data, error } = await savedChats().insert({ family_id: familyId, title, messages: asJson }).select('id').single();
   if (error) return refused(error);
   return data.id;

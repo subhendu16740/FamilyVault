@@ -93,8 +93,10 @@ function money(currency: PriceCurrency, period: PricePeriod): string {
 }
 
 /**
- * Whether Family Plus can be bought yet. Until payments are switched on it is
- * given by hand (set_family_plan()), and the words say "coming soon".
+ * Whether Family Plus can be bought, until asked. Payments are switched on
+ * per project, by setting its Razorpay keys (044): the app asks the payments
+ * function, and the server reads its own secrets, and both pass the answer
+ * as `forSale`. Where neither can tell, the words say "coming soon".
  */
 export const PLUS_FOR_SALE = false;
 
@@ -157,11 +159,13 @@ export interface StorageMessageOptions {
   price?: string;
   /** For a family whose Plus has ended: the day its documents above the free limit go ("4 Nov 2026"). */
   removalOn?: string;
+  /** Whether Family Plus can be bought here (044); PLUS_FOR_SALE when not said. */
+  forSale?: boolean;
 }
 
 /** Why a file does not fit, and what the family can do about it. */
 export function storageFullMessage(room: StorageRoom, fileBytes = 0, options: StorageMessageOptions = {}): string {
-  const { limits = DEFAULT_PLAN_LIMITS, price, removalOn } = options;
+  const { limits = DEFAULT_PLAN_LIMITS, price, removalOn, forSale = PLUS_FOR_SALE } = options;
   const left = Math.max(0, room.limitBytes - room.usedBytes);
   const on = `${formatBytes(room.limitBytes)} on ${planLabel(room.plan)}`;
   const head = left === 0 || fileBytes === 0
@@ -174,7 +178,7 @@ export function storageFullMessage(room: StorageRoom, fileBytes = 0, options: St
   if (room.plan === 'free' && removalOn) {
     more = `Family Plus has ended: on ${removalOn}, the newest documents above ${formatBytes(room.limitBytes)} will be removed, unless it is renewed or you delete documents to get under ${formatBytes(room.limitBytes)}.`;
   } else if (room.plan === 'free') {
-    more = PLUS_FOR_SALE
+    more = forSale
       ? `${free}, or move to Family Plus: ${plus}.`
       : `${free} to make room. Family Plus, coming soon, gives ${plus}.`;
   } else {
@@ -188,11 +192,11 @@ export function storageFullMessage(room: StorageRoom, fileBytes = 0, options: St
  * too), and what to do: Family Plus on the free plan, making room on Plus.
  */
 export function chatStorageFullMessage(room: StorageRoom, options: Omit<StorageMessageOptions, 'removalOn'> = {}): string {
-  const { limits = DEFAULT_PLAN_LIMITS, price } = options;
+  const { limits = DEFAULT_PLAN_LIMITS, price, forSale = PLUS_FOR_SALE } = options;
   const head = `There is no room to save this chat: your family has used ${formatBytes(room.usedBytes)} of its ${formatBytes(room.limitBytes)}.`;
   if (room.plan !== 'free') return `${head} Delete documents or saved chats you no longer need to make room.`;
   const plus = `${formatBytes(limits.plus)}${price ? ` for ${price}` : ''}`;
-  return PLUS_FOR_SALE
+  return forSale
     ? `${head} Saving more needs Family Plus: ${plus}. Or delete documents you no longer need.`
     : `${head} Saving more needs Family Plus, coming soon: ${plus}. Until then, delete documents you no longer need.`;
 }

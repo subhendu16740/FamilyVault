@@ -18,6 +18,8 @@ import { reconstructLayout } from '../../supabase/functions/_shared/pdf-text.ts'
 import { extractMetadata, parseFlexibleDate } from '../../supabase/functions/_shared/metadata.ts';
 import { cleanText } from '../../supabase/functions/_shared/text.ts';
 import { ticketCodeNotes, ticketSearchTerms } from '../../supabase/functions/_shared/tickets.ts';
+import { acceptedCurrencies, hmacSha256Hex, paymentSignatureOk, plusOrderAmount, plusOrderDescription, sameText, webhookSignatureOk, ORDER_ID, PAYMENT_ID } from '../../supabase/functions/_shared/razorpay.ts';
+import { createHmac } from 'node:crypto';
 import {
   attachmentParts, classifyAttachment, allowedReturnOrigin, sniffType, storageFileName, senderDomain,
 } from '../../supabase/functions/_shared/gmail-rules.ts';
@@ -604,6 +606,38 @@ await test('plans: every limit is finite, and a full vault says why and what to 
     'There is no room to save this chat: your family has used 10 GB of its 10 GB. Delete documents or saved chats you no longer need to make room.');
 });
 
+await test('razorpay: the server sets the price, and only Razorpay\'s signature makes a payment count (044)', async () => {
+  // The amounts are PLUS_PRICE's, in paise and cents: what the Plus page shows is what is charged.
+  assert.equal(plusOrderAmount('monthly', 'INR'), 10000);
+  assert.equal(plusOrderAmount('yearly', 'INR'), 110000);
+  assert.equal(plusOrderAmount('monthly', 'USD'), 1000);
+  assert.equal(plusOrderAmount('yearly', 'USD'), 11000);
+  assert.equal(plusOrderDescription('monthly'), 'Family Plus — 1 month');
+  assert.equal(plusOrderDescription('yearly'), 'Family Plus — 1 year');
+  // Rupees unless dollars are switched on; nothing else, ever.
+  assert.deepEqual(acceptedCurrencies(undefined), ['INR']);
+  assert.deepEqual(acceptedCurrencies(''), ['INR']);
+  assert.deepEqual(acceptedCurrencies('inr, usd'), ['INR', 'USD']);
+  assert.deepEqual(acceptedCurrencies('EUR,GBP'), ['INR']);
+  // WebCrypto's HMAC agrees with Node's, so the signatures are Razorpay's scheme.
+  const secret = 'specimen_key_secret_not_real';
+  const expected = createHmac('sha256', secret).update('order_Specimen000001|pay_Specimen000001').digest('hex');
+  assert.equal(await hmacSha256Hex(secret, 'order_Specimen000001|pay_Specimen000001'), expected);
+  assert.ok(await paymentSignatureOk('order_Specimen000001', 'pay_Specimen000001', expected, secret), 'the checkout\'s signature is accepted');
+  assert.ok(!(await paymentSignatureOk('order_Specimen000002', 'pay_Specimen000001', expected, secret)), 'not for another order');
+  assert.ok(!(await paymentSignatureOk('order_Specimen000001', 'pay_Specimen000001', expected, 'another_secret')), 'not under another secret');
+  assert.ok(!(await paymentSignatureOk('order_Specimen000001', 'pay_Specimen000001', expected.toUpperCase(), secret)), 'hex as Razorpay sends it, lowercase');
+  assert.ok(!(await paymentSignatureOk('order_Specimen000001', 'pay_Specimen000001', expected, '')), 'never without a secret');
+  const body = JSON.stringify({ event: 'payment.captured', payload: { payment: { entity: { id: 'pay_Specimen000001', order_id: 'order_Specimen000001', amount: 10000, currency: 'INR', status: 'captured' } } } });
+  const hook = createHmac('sha256', 'specimen_webhook_secret').update(body).digest('hex');
+  assert.ok(await webhookSignatureOk(body, hook, 'specimen_webhook_secret'));
+  assert.ok(!(await webhookSignatureOk(body + ' ', hook, 'specimen_webhook_secret')), 'one byte changed is refused');
+  assert.ok(!(await webhookSignatureOk(body, '', 'specimen_webhook_secret')), 'no signature is refused');
+  assert.ok(sameText('abc', 'abc') && !sameText('abc', 'abd') && !sameText('abc', 'ab'));
+  assert.ok(ORDER_ID.test('order_Specimen000001') && !ORDER_ID.test('order_x') && !ORDER_ID.test('pay_Specimen000001'));
+  assert.ok(PAYMENT_ID.test('pay_Specimen000001') && !PAYMENT_ID.test('pay_ bad'));
+});
+
 await test('the languages suite: by hand only, every language, half a day at most', () => {
   const languages = selectQuestions(questions, 'languages', 1);
   assert.equal(languages.length, 12);
@@ -633,4 +667,4 @@ if (failures.length) {
   console.error(`\n${failures.length} self-test(s) failed, ${passed} passed.`);
   process.exit(1);
 }
-console.log(`✓ ${passed} self-tests passed — matchers, judge, run-time PDF, metadata, ticket codes, text cleaning, Gmail rules and token sealing, kinship and the family tree, emergency card checks, web push, plan limits, questions and budget.`);
+console.log(`✓ ${passed} self-tests passed — matchers, judge, run-time PDF, metadata, ticket codes, text cleaning, Gmail rules and token sealing, kinship and the family tree, emergency card checks, web push, plan limits, Razorpay signatures, questions and budget.`);
