@@ -594,6 +594,32 @@ export type Database = {
           },
         ]
       }
+      family_usage: {
+        Row: {
+          family_id: string
+          updated_at: string
+          voice_answers: number
+        }
+        Insert: {
+          family_id: string
+          updated_at?: string
+          voice_answers?: number
+        }
+        Update: {
+          family_id?: string
+          updated_at?: string
+          voice_answers?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "family_usage_family_id_fkey"
+            columns: ["family_id"]
+            isOneToOne: true
+            referencedRelation: "families"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       feedback: {
         Row: {
           app_version: string | null
@@ -887,18 +913,24 @@ export type Database = {
       plan_limits: {
         Row: {
           grace_days: number | null
+          max_members: number
           plan: string
           storage_bytes: number
+          voice_answers: number | null
         }
         Insert: {
           grace_days?: number | null
+          max_members?: number
           plan: string
           storage_bytes: number
+          voice_answers?: number | null
         }
         Update: {
           grace_days?: number | null
+          max_members?: number
           plan?: string
           storage_bytes?: number
+          voice_answers?: number | null
         }
         Relationships: []
       }
@@ -1162,6 +1194,7 @@ export type Database = {
         Args: { p_family_id: string }
         Returns: number
       }
+      claim_voice_answer: { Args: { p_family_id: string }; Returns: Json }
       complete_document_ingestion: {
         Args: {
           p_chunks: Json
@@ -1212,6 +1245,7 @@ export type Database = {
       family_storage_has_room: { Args: { p_folder: string }; Returns: boolean }
       end_family_plan: { Args: { p_family_id: string }; Returns: undefined }
       family_files_bytes: { Args: { p_ns: string }; Returns: number }
+      family_plan_now: { Args: { p_family_id: string }; Returns: string }
       family_storage_status: {
         Args: { p_family_id: string }
         Returns: {

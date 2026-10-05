@@ -378,6 +378,8 @@ export type AddMemberOutcome =
   | { status: 'already_invited' }
   | { status: 'no_account' }
   | { status: 'invalid_email' }
+  /** No room: members and waiting invitations are at the plan's limit (041), in the server's words. */
+  | { status: 'full'; message: string }
   /** The server is not ready for this yet (function or migration missing). */
   | { status: 'unavailable'; message: string };
 
@@ -411,6 +413,8 @@ export async function addFamilyMember(
       return { status: 'no_account' };
     case 'invalid_email':
       return { status: 'invalid_email' };
+    case 'family_full':
+      return { status: 'full', message: body.error ?? 'This family has no room for another member.' };
     case 'needs_migration':
       return { status: 'unavailable', message: body.error ?? 'Adding members is not available yet.' };
   }
@@ -472,6 +476,7 @@ export async function linkPersonToAccount(familyId: string, personId: string, em
     case 'already_member':
     case 'already_invited':
     case 'no_person':
+    case 'family_full':
       return { status: 'refused', message: body.error ?? 'This person could not be linked.' };
   }
   // The gateway's own 404: this project does not have link-account yet.
@@ -1241,14 +1246,26 @@ export async function fetchStorageStatus(familyId: string): Promise<FamilyPlanSt
   };
 }
 
-/** What each plan may keep, as the database says; 039's and 040's numbers before 038. */
+// Each set of columns arrived with a migration (040: grace_days; 041:
+// max_members and voice_answers). A column that is not there yet fails the
+// whole select, so each one missing asks again with the set before it.
+const PLAN_LIMIT_COLUMNS = [
+  'plan, storage_bytes, grace_days, max_members, voice_answers',
+  'plan, storage_bytes, grace_days',
+  'plan, storage_bytes',
+] as const;
+
+/** What each plan allows, as the database says; 039–041's numbers before 038. */
 export async function fetchPlanLimits(): Promise<PlanLimits> {
-  type Row = { plan: string; storage_bytes: number; grace_days?: number | null };
-  // grace_days arrives with 040; without it the whole select fails, so ask again without.
-  const withGrace = await supabase.from('plan_limits').select('plan, storage_bytes, grace_days');
-  const answer = withGrace.error && /grace_days/.test(withGrace.error.message ?? '')
-    ? await supabase.from('plan_limits').select('plan, storage_bytes')
-    : withGrace;
+  type Row = {
+    plan: string; storage_bytes: number; grace_days?: number | null;
+    max_members?: number | null; voice_answers?: number | null;
+  };
+  let answer: { data: unknown; error: { message?: string } | null } = { data: null, error: null };
+  for (const columns of PLAN_LIMIT_COLUMNS) {
+    answer = await supabase.from('plan_limits').select(columns);
+    if (!answer.error || !/grace_days|max_members|voice_answers/.test(answer.error.message ?? '')) break;
+  }
   const rows = (answer.data ?? []) as Row[];
   if (answer.error || !rows.length) return DEFAULT_PLAN_LIMITS;
   // Under 038 Plus has two rows, monthly and yearly; the larger is the offer.
@@ -1257,11 +1274,48 @@ export async function fetchPlanLimits(): Promise<PlanLimits> {
     return sizes.length ? Math.max(...sizes) : fallback;
   };
   const grace = rows.find((r) => r.plan === 'plus')?.grace_days;
+  const members = (plan: 'free' | 'plus') => {
+    const n = rows.find((r) => r.plan === plan)?.max_members;
+    return n ? Number(n) : DEFAULT_PLAN_LIMITS.members[plan];
+  };
+  // NULL is a real answer here (every answer); a row without the column is
+  // a database before 041.
+  const voice = (plan: 'free' | 'plus') => {
+    const row = rows.find((r) => r.plan === plan);
+    if (!row || !('voice_answers' in row)) return DEFAULT_PLAN_LIMITS.voiceAnswers[plan];
+    return row.voice_answers == null ? null : Number(row.voice_answers);
+  };
   return {
     free: of('free', DEFAULT_PLAN_LIMITS.free),
     plus: of('plus', DEFAULT_PLAN_LIMITS.plus),
     graceDays: grace ? Number(grace) : DEFAULT_PLAN_LIMITS.graceDays,
+    members: { free: members('free'), plus: members('plus') },
+    voiceAnswers: { free: voice('free'), plus: voice('plus') },
   };
+}
+
+// ─── Answers read aloud (041) ────────────────────────────────────
+//
+// A free family hears its first answers read aloud (plan_limits.voice_answers:
+// 10), counted on the server for the whole family, so another phone does not
+// start again. After that the answer is on the screen only, and Family Plus
+// reads every answer. Asked before reading each new answer. Before 041, or
+// offline, the answer is read: the app never goes quiet because it could not
+// ask.
+
+export interface VoiceAllowance {
+  allowed: boolean;
+  /** How many the family has heard, and may; both null on a plan that reads every answer. */
+  used: number | null;
+  limit: number | null;
+}
+
+export async function claimVoiceAnswer(familyId: string): Promise<VoiceAllowance | null> {
+  const { data, error } = await supabase.rpc('claim_voice_answer', { p_family_id: familyId });
+  if (error) return null;
+  const r = data as { allowed?: unknown; used?: number | null; limit?: number | null } | null;
+  if (!r || typeof r.allowed !== 'boolean') return null;
+  return { allowed: r.allowed, used: r.used ?? null, limit: r.limit ?? null };
 }
 
 /** The family's storage is full, in words the person can act on. */

@@ -10,8 +10,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../lib/auth';
 import { useFamily } from '../lib/family-context';
 import {
-  addFamilyMember, cancelInvitation, fetchFamilyInvites, leaveFamily, removeFamilyMember, updateMemberRole, type PendingInvite,
+  addFamilyMember, cancelInvitation, fetchFamilyInvites, fetchPlanLimits, leaveFamily, removeFamilyMember, updateMemberRole,
+  type PendingInvite,
 } from '../lib/api';
+import { useFamilyPlan } from '../lib/family-plan';
+import { DEFAULT_PLAN_LIMITS, type PlanLimits } from '../lib/plans';
 import { ScreenHeader, HeaderButton } from '../components/screen-header';
 import { InvitationCards } from '../components/invitation-cards';
 import { longDate } from '../lib/dates';
@@ -24,6 +27,11 @@ const relations = ['Father', 'Mother', 'Spouse', 'Son', 'Daughter', 'Brother', '
 // then they show here as Pending approval, and any admin can withdraw it. The
 // invitations waiting for YOU are at the top. Anyone can leave any family
 // they are in.
+//
+// A family has at most its plan's number of members (041: 4), and an
+// invitation waiting for its answer holds a place. The server keeps that
+// limit; this screen shows it, and hides Add once the places are taken. The
+// family tree has no limit: people without an account are not members.
 //
 // Results are shown on the screen, never with Alert.alert: react-native-web's
 // Alert is an empty function, so on the web build it would show nothing.
@@ -39,6 +47,8 @@ export default function FamilyScreen() {
   const [addError, setAddError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingInvite[]>([]);
+  const [limits, setLimits] = useState<PlanLimits>(DEFAULT_PLAN_LIMITS);
+  const { plan } = useFamilyPlan();
   const [confirmDialog, setConfirmDialog] = useState<{
     title: string; message: string; confirmLabel: string; destructive?: boolean; onConfirm: () => void;
   } | null>(null);
@@ -59,8 +69,13 @@ export default function FamilyScreen() {
       refreshFamilies().catch(() => {});
       refreshMembers().catch(() => {});
       loadPending();
+      fetchPlanLimits().then(setLimits).catch(() => {});
     }, [refreshFamilies, refreshMembers, loadPending])
   );
+
+  // Members and waiting invitations together, against the plan's number.
+  const maxMembers = plan === 'plus' ? limits.members.plus : limits.members.free;
+  const full = members.length + pending.length >= maxMembers;
 
   const showConfirm = (title: string, message: string, onConfirm: () => void, destructive = true, confirmLabel = destructive ? 'Remove' : 'Confirm') => {
     setConfirmDialog({ title, message, onConfirm, destructive, confirmLabel });
@@ -159,6 +174,11 @@ export default function FamilyScreen() {
         case 'invalid_email':
           setAddError("That doesn't look like an email address.");
           break;
+        case 'full':
+          setAddError(outcome.message);
+          refreshMembers().catch(() => {});
+          loadPending();
+          break;
         case 'unavailable':
           setAddError(outcome.message);
           break;
@@ -203,8 +223,8 @@ export default function FamilyScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScreenHeader
         title={currentFamily.name}
-        subtitle={`${members.length} member${members.length !== 1 ? 's' : ''}`}
-        right={isAdmin
+        subtitle={`${members.length} of ${maxMembers} members`}
+        right={isAdmin && !full
           ? <HeaderButton icon="user-plus" label="Add" onPress={() => setShowAddMember(true)} />
           : undefined}
       />
@@ -219,6 +239,19 @@ export default function FamilyScreen() {
             <Text style={styles.noticeText}>{notice}</Text>
             <Feather name="x" size={16} color="#6B7280" />
           </TouchableOpacity>
+        )}
+
+        {/* No room for another member: why, and what makes room. */}
+        {isAdmin && full && (
+          <View style={styles.fullNote}>
+            <Feather name="users" size={16} color="#7A5200" />
+            <Text style={styles.fullNoteText}>
+              {familyName} is full: a family can have {maxMembers} members
+              {pending.length > 0 ? ', and invitations waiting for an answer count too' : ''}. To invite someone else,{' '}
+              {pending.length > 0 ? 'withdraw an invitation or remove a member' : 'remove a member'}. Anyone can still be
+              added to the family tree, without an account.
+            </Text>
+          </View>
         )}
 
         {/* The tree holds everyone, accounts or not; this screen is who can sign in. */}
@@ -640,6 +673,20 @@ const styles = StyleSheet.create({
     backgroundColor: color.tint,
   },
   noticeText: { flex: 1, fontSize: 14, lineHeight: 20, color: color.primary },
+  fullNote: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: space.sm,
+    marginHorizontal: space.lg,
+    marginTop: space.lg,
+    paddingVertical: 10,
+    paddingHorizontal: space.md,
+    borderRadius: 10,
+    borderWidth: 1,
+    backgroundColor: '#FFF7E6',
+    borderColor: '#F5D9A0',
+  },
+  fullNoteText: { flex: 1, fontSize: 14, lineHeight: 20, color: '#7A5200' },
   // Family switcher
   familyRow: {
     flexDirection: 'row',

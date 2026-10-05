@@ -17,6 +17,8 @@
 //   200 { success, status: 'invited', email, role }
 //   404 { status: 'no_account' }       409 { status: 'already_member' | 'already_invited' }
 //   400 { status: 'invalid_email' }    403 caller is not an admin
+//   409 { status: 'family_full' }      members and waiting invitations are at
+//                                      the plan's limit (041), with the reason
 //   503 { status: 'needs_migration' }  037 is not applied to this project
 // ────────────────────────────────────────────────────────────────
 
@@ -76,6 +78,11 @@ Deno.serve(async (req) => {
       }
       if (error.code === "42501") {
         return json(403, { error: "Only a family admin can add members" });
+      }
+      // The family has no room (041): the database's own words say how full
+      // it is and what makes room.
+      if (error.hint === "family_full") {
+        return json(409, { status: "family_full", error: error.message });
       }
       console.error("[add-member] invite_family_member failed:", error.code, error.message);
       return json(500, { error: "Could not add this member. Please try again." });

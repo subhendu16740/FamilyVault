@@ -11,11 +11,13 @@ import { useAuth } from '../../lib/auth';
 import { isProduction, environmentDescription } from '../../lib/environment';
 import { useFamily } from '../../lib/family-context';
 import { usePreferences } from '../../lib/preferences';
-import { indexStatus, type IndexStatus } from '../../lib/api';
+import { fetchPlanLimits, indexStatus, type IndexStatus } from '../../lib/api';
+import { useFamilyPlan } from '../../lib/family-plan';
+import { DEFAULT_PLAN_LIMITS, type PlanLimits } from '../../lib/plans';
 import { VOICE_LANGUAGES, voiceLanguage } from '../../lib/voice-languages';
 import { OCR_LANGUAGES, describeOcrLanguages } from '../../lib/ocr-languages';
 import { hasVoiceFor } from '../../lib/speech';
-import { ScreenHeader } from '../../components/screen-header';
+import { ScreenHeader, PlusTag } from '../../components/screen-header';
 import { appVersion } from '../../lib/app-info';
 import { color, radius, shadow, size, space, type } from '../../constants/design';
 
@@ -67,6 +69,16 @@ export default function SettingsScreen() {
     voiceMode, voiceLanguage: voiceLang, documentLanguages, notificationsEnabled,
     setVoiceMode, setVoiceLanguage, setDocumentLanguages,
   } = usePreferences();
+  // A free family hears its first answers read aloud (041); say so where
+  // voice is switched on.
+  const { isFree } = useFamilyPlan();
+  const [limits, setLimits] = useState<PlanLimits>(DEFAULT_PLAN_LIMITS);
+  useEffect(() => {
+    let cancelled = false;
+    fetchPlanLimits().then((l) => { if (!cancelled) setLimits(l); });
+    return () => { cancelled = true; };
+  }, []);
+  const freeVoiceAnswers = limits.voiceAnswers.free;
 
   const accountItems: LinkItem[] = [
     { icon: 'user', label: 'Profile', sub: 'Your name and phone number', route: '/settings/profile' },
@@ -233,6 +245,14 @@ export default function SettingsScreen() {
                 accessibilityLabel="Voice assistant"
               />
             </View>
+            {isFree && freeVoiceAnswers != null && (
+              <View style={[styles.settingRow, styles.settingRowBorder, styles.plusNote]}>
+                <PlusTag link />
+                <Text style={styles.plusNoteText}>
+                  Your family hears its first {freeVoiceAnswers} answers read aloud free. Family Plus reads every answer.
+                </Text>
+              </View>
+            )}
             <TouchableOpacity
               style={[styles.settingRow, styles.settingRowBorder]}
               activeOpacity={0.7}
@@ -462,6 +482,8 @@ const styles = StyleSheet.create({
   settingSub: type.caption,
   settingValue: { ...type.caption, maxWidth: 120 },
   settingAction: { ...type.button, color: color.primary },
+  plusNote: { alignItems: 'flex-start', minHeight: 0 },
+  plusNoteText: { ...type.caption, flex: 1, color: color.textBody, marginTop: 2 },
   sheetBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(13, 17, 23, 0.45)',

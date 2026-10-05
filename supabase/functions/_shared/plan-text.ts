@@ -1,4 +1,4 @@
-// ─── What a family may keep, and the words for a full vault (038–040) ─
+// ─── What a family may keep, and the words for a full vault (038–041) ─
 //
 // Shared by the app (src/lib/plans.ts) and Gmail import, so both say the same
 // thing when a family's storage is full. Pure TypeScript: no Deno, no React.
@@ -8,6 +8,10 @@
 //   Free           1 GB, in total
 //   Family Plus   10 GB — in India ₹100 a month or ₹1,100 a year,
 //                 elsewhere $10 a month or $110 a year
+//
+// On both, a family has at most 4 members — the people who sign in; anyone
+// can be in the family tree — and a free family hears its first 10 answers
+// read aloud, Family Plus every answer (041).
 //
 // A year costs eleven months: one month free. The yearly price is shown
 // against twelve months at the monthly price, crossed out (₹1,200 → ₹1,100,
@@ -39,12 +43,22 @@ export interface PlanLimits {
   plus: number;
   /** Days a family keeps what is above the free limit after Plus ends (040). */
   graceDays: number;
+  /** Members — people who sign in — a family may have, per plan (041). The family tree has no limit. */
+  members: { free: number; plus: number };
+  /** Answers read aloud a family gets, per plan; null: every answer (041). */
+  voiceAnswers: { free: number | null; plus: number | null };
 }
 
 const GB = 1024 ** 3;
 
-/** What 039 and 040 set; plan_limits is the truth. */
-export const DEFAULT_PLAN_LIMITS: PlanLimits = { free: 1 * GB, plus: 10 * GB, graceDays: 30 };
+/** What 039–041 set; plan_limits is the truth. */
+export const DEFAULT_PLAN_LIMITS: PlanLimits = {
+  free: 1 * GB,
+  plus: 10 * GB,
+  graceDays: 30,
+  members: { free: 4, plus: 4 },
+  voiceAnswers: { free: 10, plus: null },
+};
 
 /** What Family Plus costs, by the month or by the year (one month free). */
 export const PLUS_PRICE = {

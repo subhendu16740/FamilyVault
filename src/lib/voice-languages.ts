@@ -49,6 +49,7 @@ const PHRASES: Record<string, Record<string, string>> = {
     stop: 'Stop',
     empty_title: 'Tap the microphone and ask about your documents',
     empty_sub: 'For example: when does my passport expire?',
+    voice_limit: 'The answer is on the screen. Hearing more answers read aloud is part of Family Plus.',
   },
   hi: {
     tap_to_ask: 'माइक दबाएँ और पूछें',
@@ -63,6 +64,7 @@ const PHRASES: Record<string, Record<string, string>> = {
     stop: 'रोकें',
     empty_title: 'माइक दबाएँ और अपने दस्तावेज़ों के बारे में पूछें',
     empty_sub: 'जैसे: मेरा पासपोर्ट कब खत्म हो रहा है?',
+    voice_limit: 'जवाब स्क्रीन पर लिखा है। आगे के जवाब सुनने के लिए Family Plus लें।',
   },
 };
 

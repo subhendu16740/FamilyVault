@@ -9,9 +9,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFamily } from '../../lib/family-context';
 import {
-  fetchCategories, ragSearch, indexStatus, saveChat, getSavedChat, isMissingMigration,
+  fetchCategories, ragSearch, indexStatus, saveChat, getSavedChat, isMissingMigration, claimVoiceAnswer,
   type RagSearchResult, type RagHistoryTurn, type IndexStatus, type SavedChatMessage,
 } from '../../lib/api';
+import { plusPage } from '../../lib/family-plan';
 import type { Database } from '../../lib/database.types';
 import { usePreferences } from '../../lib/preferences';
 import { phrase } from '../../lib/voice-languages';
@@ -198,6 +199,39 @@ export default function SearchScreen() {
     });
   }, [voiceLanguage]);
 
+  // Answers read aloud (041): a free family hears its first 10, then the
+  // answer stays on the screen and Family Plus reads every answer. Each new
+  // answer is claimed before it is read; one heard already is read again
+  // without counting. When the server cannot be asked, the answer is read.
+  const heardIds = useRef(new Set<string>());
+  const [voiceQuota, setVoiceQuota] = useState<{ left: number; limit: number; blocked: boolean } | null>(null);
+
+  const readAnswer = useCallback(async (id: string, text: string, lang?: string) => {
+    if (!heardIds.current.has(id) && currentFamily) {
+      const allowance = await claimVoiceAnswer(currentFamily.id);
+      if (allowance?.limit != null) {
+        setVoiceQuota({
+          left: Math.max(0, allowance.limit - (allowance.used ?? allowance.limit)),
+          limit: allowance.limit,
+          blocked: !allowance.allowed,
+        });
+      }
+      if (allowance && !allowance.allowed) {
+        // Said once, in the person's language, so nobody waits for a voice
+        // that is not coming. Not an answer: it counts for nothing.
+        const notice = phrase(voiceLanguage, 'voice_limit');
+        setVoiceNotice(notice);
+        setVoice('idle');
+        speak(notice, voiceLanguage);
+        return;
+      }
+      heardIds.current.add(id);
+      // They tapped the mic while we asked: their new question comes first.
+      if (voiceStateRef.current === 'listening') return;
+    }
+    speakMessage(id, text, lang);
+  }, [currentFamily, speakMessage, voiceLanguage]);
+
   const stopVoice = useCallback(() => {
     stopListening();
     stopSpeaking();
@@ -262,7 +296,7 @@ export default function SearchScreen() {
             : m
         )
       );
-      if (wantVoice) speakMessage(aiPlaceholder.id, result.answer, result.answer_language);
+      if (wantVoice) readAnswer(aiPlaceholder.id, result.answer, result.answer_language);
       if (result.debug?.index_rebuilding && currentFamily) repairIndex(currentFamily.id);
     } catch (err) {
       console.error('RAG error:', err);
@@ -274,7 +308,10 @@ export default function SearchScreen() {
             : m
         )
       );
-      if (wantVoice) speakMessage(aiPlaceholder.id, failed);
+      if (wantVoice) {
+        heardIds.current.add(aiPlaceholder.id);   // an apology, not an answer: never counted
+        speakMessage(aiPlaceholder.id, failed);
+      }
     } finally {
       setIsAsking(false);
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
@@ -451,7 +488,7 @@ export default function SearchScreen() {
                             ) : (
                               <TouchableOpacity
                                 style={styles.voiceToolBtn}
-                                onPress={() => speakMessage(msg.id, msg.text)}
+                                onPress={() => readAnswer(msg.id, msg.text)}
                                 disabled={voiceState === 'listening' || voiceState === 'thinking'}
                               >
                                 <Feather name="volume-2" size={14} color="#2A3D66" />
@@ -542,6 +579,23 @@ export default function SearchScreen() {
             <Text style={[styles.indexStripText, styles.indexStripErrorText]} numberOfLines={2}>
               Couldn't finish improving search: {indexFix.error}
             </Text>
+          </View>
+        )}
+
+        {/* Answers read aloud: the last few free ones, and once they are used. */}
+        {voiceMode && voiceQuota && voiceQuota.left <= 3 && (
+          <View style={[styles.indexStrip, styles.voiceStrip]}>
+            <Feather name="volume-2" size={14} color={color.primary} />
+            <Text style={styles.indexStripText}>
+              {voiceQuota.blocked
+                ? `Your family has heard its ${voiceQuota.limit} free answers read aloud. Answers stay on the screen; ★ Family Plus reads every answer.`
+                : voiceQuota.left === 0
+                  ? `That was the last of your family's ${voiceQuota.limit} free answers read aloud.`
+                  : `${voiceQuota.left} free ${voiceQuota.left === 1 ? 'answer' : 'answers'} read aloud left for your family.`}
+            </Text>
+            <TouchableOpacity onPress={() => router.push(plusPage('voice') as any)} accessibilityRole="link" hitSlop={8}>
+              <Text style={styles.voiceStripLink}>Family Plus ›</Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -753,6 +807,8 @@ const styles = StyleSheet.create({
   indexStripText: { flex: 1, fontSize: 13, lineHeight: 18, color: color.primary },
   indexStripError: { backgroundColor: '#FFF7E6', borderTopColor: '#F5D9A0' },
   indexStripErrorText: { color: '#7A5200' },
+  voiceStrip: { backgroundColor: '#FBEDEB', borderTopColor: '#F3D3CF' },
+  voiceStripLink: { fontSize: 13, lineHeight: 18, fontWeight: '600', color: color.primary },
   // ─── Save chat ────────────────────────────────────────
   saveBar: {
     flexDirection: 'row',
