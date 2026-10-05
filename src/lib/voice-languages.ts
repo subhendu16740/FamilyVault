@@ -39,6 +39,8 @@ const PHRASES: Record<string, Record<string, string>> = {
   en: {
     tap_to_ask: 'Tap the microphone and ask',
     listening: 'Listening…',
+    cancel: 'Cancel',
+    cancelled: 'Cancelled. Nothing was asked.',
     thinking: 'Looking in your documents…',
     ask_another: 'Tap to ask another question',
     not_heard: "I didn't catch that. Tap and try again.",
@@ -58,6 +60,8 @@ const PHRASES: Record<string, Record<string, string>> = {
   hi: {
     tap_to_ask: 'माइक दबाएँ और पूछें',
     listening: 'सुन रहा हूँ…',
+    cancel: 'रद्द करें',
+    cancelled: 'रद्द कर दिया। कुछ नहीं पूछा गया।',
     thinking: 'आपके दस्तावेज़ों में देख रहा हूँ…',
     ask_another: 'दूसरा सवाल पूछने के लिए दबाएँ',
     not_heard: 'मैं समझ नहीं पाया। दबाकर फिर से बोलें।',

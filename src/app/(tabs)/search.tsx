@@ -18,7 +18,7 @@ import type { Database } from '../../lib/database.types';
 import { usePreferences } from '../../lib/preferences';
 import { phrase } from '../../lib/voice-languages';
 import {
-  recognitionSupported, listen, stopListening, speak, stopSpeaking, type SpeechErrorCode,
+  recognitionSupported, listen, stopListening, cancelListening, speak, stopSpeaking, type SpeechErrorCode,
 } from '../../lib/speech';
 import { toSpeech } from '../../lib/speech-text';
 import { ScreenHeader, HeaderIconButton, HeaderActions } from '../../components/screen-header';
@@ -372,7 +372,8 @@ export default function SearchScreen() {
   };
 
   // Tap to talk. The recogniser stops itself when the person pauses and the
-  // transcript goes straight to search — no send step.
+  // transcript goes straight to search — no send step. While it listens, the
+  // same button is Cancel, for words the person did not mean to say.
   const startListening = () => {
     stopSpeaking();
     setSpeakingId(null);
@@ -418,10 +419,19 @@ export default function SearchScreen() {
     }
     switch (voiceStateRef.current) {
       case 'idle': startListening(); break;
-      case 'listening': stopListening(); break;   // onend delivers what was said so far
+      case 'listening': cancelVoiceQuestion(); break; // throw away what was heard: nothing asked
       case 'thinking': break;                      // wait for the answer
       case 'speaking': startListening(); break;    // cut the voice off and ask again
     }
+  };
+
+  // Cancel: what was heard so far is thrown away — nothing is asked, and no
+  // voice chat is used. Back to ready, and the screen says so.
+  const cancelVoiceQuestion = () => {
+    cancelListening();
+    setQuery('');
+    setVoice('idle');
+    setVoiceNotice(t('cancelled'));
   };
 
   const voicePlaceholder = () => {
@@ -739,7 +749,8 @@ export default function SearchScreen() {
               <TouchableOpacity
                 onPress={onMicPress}
                 disabled={voiceState === 'thinking'}
-                accessibilityLabel={voicePlaceholder()}
+                accessibilityRole="button"
+                accessibilityLabel={voiceState === 'listening' ? t('cancel') : voicePlaceholder()}
                 style={styles.micBtn}
               >
                 {voiceState === 'thinking' ? (
@@ -747,8 +758,10 @@ export default function SearchScreen() {
                     <ActivityIndicator size="small" color="#6B7280" />
                   </View>
                 ) : voiceState === 'listening' ? (
-                  <View style={[styles.micCircle, styles.micListening]}>
-                    <Feather name="mic" size={26} color="#FFFFFF" />
+                  // Listening: the same button cancels, and says so.
+                  <View style={[styles.micCircle, styles.micListening, styles.micCancel]}>
+                    <Feather name="x" size={22} color="#FFFFFF" />
+                    <Text style={styles.micCancelText}>{t('cancel')}</Text>
                   </View>
                 ) : voiceState === 'speaking' ? (
                   <View style={[styles.micCircle, styles.micSpeaking]}>
@@ -946,6 +959,9 @@ const styles = StyleSheet.create({
   inputIcon: { marginLeft: 2 },
   input: {
     flex: 1,
+    // Without it a web text field keeps its own width and pushes the mic (or
+    // the wider Cancel) off the screen on a narrow phone.
+    minWidth: 0,
     fontSize: 15,
     color: '#1F2937',
     paddingVertical: 8,
@@ -967,6 +983,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#D4807B',
     boxShadow: '0px 0px 0px 8px rgba(212, 128, 123, 0.25)',
   },
+  micCancel: { width: 'auto', flexDirection: 'row', gap: 6, paddingHorizontal: 16 },
+  micCancelText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
   micThinking: { backgroundColor: '#E5E7EB' },
   micOff: { backgroundColor: '#E5E7EB' },
   micSpeaking: { backgroundColor: '#2F7D5C' },

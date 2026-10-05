@@ -8,7 +8,10 @@
 // Hindi terms are part of the answer, not a translation: they carry what
 // English leaves out. Your father's mother is Dadi and your mother's mother
 // is Nani; your father's sister is Bua and your mother's sister is Mausi.
-// "Nani's pension papers" is a question a family actually asks.
+// "Nani's pension papers" is a question a family actually asks — so Ask
+// understands them. The screens show only the English relation, and the
+// family's own nickname for the person (045), never a Hindi word on its own:
+// a family that says "Mummy" should not be told it says "Maa".
 //
 // Pure and dependency-free ON PURPOSE: the app imports this file for the
 // tree screen, rag-search imports it to resolve "Mom's passport" before
@@ -24,6 +27,8 @@ export interface KinPerson {
   gender: Gender;
   /** YYYY-MM-DD. Only used to tell elder from younger (Tau/Chacha, Jeth/Devar). */
   birthDate?: string | null;
+  /** The family's own name for them ("Pinky", "Bablu"), the same for everyone (045). */
+  nickname?: string | null;
 }
 
 /** `parent`: from is a parent of to. `spouse` and `sibling` read both ways. */
@@ -294,10 +299,10 @@ export function relationTo(g: KinGraph, meId: string, otherId: string): Relation
 
 const countOf = (s: string, ch: string) => s.split(ch).length - 1;
 
-/** "Mother (Maa)", "Cousin", "Grandmother (Nani)". */
+/** "Mother", "Cousin", "Grandmother" — what the screens show beside a name, with the nickname. */
 export function relationLabel(rel: Relation | null): string | null {
   if (!rel || rel.path === '') return null;
-  return rel.hi ? `${rel.en} (${rel.hi})` : rel.en;
+  return rel.en;
 }
 
 /**
@@ -314,7 +319,8 @@ export function relativesForPrompt(g: KinGraph, meId: string | null): string[] {
       continue;
     }
     const rel = meId ? relationTo(g, meId, p.id) : null;
-    lines.push(rel ? `${p.name}: your ${rel.en.toLowerCase()}${rel.hi ? ` (${rel.hi})` : ''}` : p.name);
+    const name = p.nickname ? `${p.name} (called "${p.nickname}")` : p.name;
+    lines.push(rel ? `${name}: your ${rel.en.toLowerCase()}${rel.hi ? ` (${rel.hi})` : ''}` : name);
   }
   return lines;
 }
@@ -330,9 +336,9 @@ export function relativesForPrompt(g: KinGraph, meId: string | null): string[] {
 export interface NamedRelative {
   personId: string;
   name: string;
-  /** The word in the question that named them: "nani", "mother". */
+  /** The word in the question that named them: "nani", "mother", "pinky". */
   term: string;
-  /** "Grandmother (Nani)". */
+  /** "Grandmother"; "family member" for someone named by nickname with no relation to the asker. */
   label: string;
 }
 
@@ -412,27 +418,31 @@ function termsFor(rel: Relation): string[] {
 }
 
 /**
- * The people a question names by relation, seen from `meId`. Longer terms win
+ * The people a question names by relation, seen from `meId` — or by the
+ * family's nickname for them ("Pinky's passport"). Longer terms win
  * ("mother-in-law" is not also "mother"), and a term that fits several people
  * ("grandmother", with both alive) names them all: the answer model, told who
- * each one is, sorts out which was meant.
+ * each one is, sorts out which was meant. A nickname of one or two letters
+ * names nobody: too easily an ordinary word.
  */
 export function relativesNamedIn(g: KinGraph, meId: string | null, ...texts: string[]): NamedRelative[] {
   if (!meId || !g.people.has(meId)) return [];
   let text = ` ${texts.flatMap(wordsOf).join(' ')} `;
   if (!text.trim()) return [];
 
-  const byTerm = new Map<string, Array<{ person: KinPerson; rel: Relation }>>();
+  const byTerm = new Map<string, Array<{ person: KinPerson; rel: Relation | null }>>();
+  const addTerm = (term: string, person: KinPerson, rel: Relation | null) => {
+    const key = wordsOf(term).join(' ');
+    if (!key) return;
+    if (!byTerm.has(key)) byTerm.set(key, []);
+    byTerm.get(key)!.push({ person, rel });
+  };
   for (const person of g.people.values()) {
     if (person.id === meId) continue;
     const rel = relationTo(g, meId, person.id);
-    if (!rel) continue;
-    for (const term of termsFor(rel)) {
-      const key = wordsOf(term).join(' ');
-      if (!key) continue;
-      if (!byTerm.has(key)) byTerm.set(key, []);
-      byTerm.get(key)!.push({ person, rel });
-    }
+    if (rel) for (const term of termsFor(rel)) addTerm(term, person, rel);
+    const nickname = person.nickname?.trim();
+    if (nickname && wordsOf(nickname).join('').length >= 3) addTerm(nickname, person, rel);
   }
 
   const found = new Map<string, NamedRelative>();
@@ -442,7 +452,7 @@ export function relativesNamedIn(g: KinGraph, meId: string | null, ...texts: str
     if (!text.includes(padded)) continue;
     for (const { person, rel } of byTerm.get(term)!) {
       if (!found.has(person.id)) {
-        found.set(person.id, { personId: person.id, name: person.name, term, label: relationLabel(rel) ?? rel.en });
+        found.set(person.id, { personId: person.id, name: person.name, term, label: rel ? relationLabel(rel) ?? rel.en : 'family member' });
       }
     }
     text = text.split(padded).join(' · ');            // a shorter term cannot match inside it

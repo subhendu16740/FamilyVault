@@ -67,7 +67,7 @@ export default function PersonScreen() {
       .then((t) => { if (!cancelled) setTree(t); })
       .catch((err) => {
         if (cancelled) return;
-        setTree({ people: [], links: [] });
+        setTree({ people: [], links: [], nicknames: false });
         setProblem(isMissingMigration(err) ? 'The family tree is not switched on yet.' : err?.message ?? 'Could not load this person.');
       });
     fetchPersonDocuments(currentFamily.id, id)
@@ -209,6 +209,7 @@ export default function PersonScreen() {
             <Card style={styles.hero}>
               <Avatar name={person.name} me={isMe} size={56} onApp={!!person.userId} />
               <Text style={styles.name}>{person.name}</Text>
+              {!!person.nickname && <Text style={styles.nickname}>"{person.nickname}"</Text>}
               {isMe && <Text style={styles.relation}>You</Text>}
               {!!relation && <Text style={styles.relation}>Your {relation.charAt(0).toLowerCase() + relation.slice(1)}</Text>}
               {!!person.birthDate && (
@@ -451,6 +452,7 @@ const styles = StyleSheet.create({
   hero: { alignItems: 'center', gap: space.sm },
   name: { ...type.heading, fontSize: 17, textAlign: 'center' },
   relation: { ...type.body, color: color.primary, fontWeight: '500', textAlign: 'center' },
+  nickname: { ...type.body, color: color.textBody, textAlign: 'center' },
   accountPill: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     backgroundColor: color.tint, borderRadius: radius.pill, paddingHorizontal: space.md, paddingVertical: space.xs,

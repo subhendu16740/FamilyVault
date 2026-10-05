@@ -545,10 +545,16 @@ interface FamilyTreeForSearch {
 async function loadTree(familyId: string, userId: string): Promise<FamilyTreeForSearch> {
   const none = (error?: string): FamilyTreeForSearch => ({ graph: null, meId: null, meName: null, ...(error ? { error } : {}) });
   try {
-    const [people, links] = await Promise.all([
-      supabase.from('family_people').select('id, display_name, gender, birth_date, user_id').eq('family_id', familyId).limit(500),
+    const PEOPLE = 'id, display_name, gender, birth_date, user_id';
+    const [withNicknames, links] = await Promise.all([
+      supabase.from('family_people').select(`${PEOPLE}, nickname`).eq('family_id', familyId).limit(500),
       supabase.from('family_links').select('from_person, to_person, kind').eq('family_id', familyId).limit(2000),
     ]);
+    // Before 045 there is no nickname column, and naming it fails the whole
+    // select: ask again without it rather than lose the tree.
+    const people = withNicknames.error && (withNicknames.error.code === '42703' || /nickname/.test(withNicknames.error.message))
+      ? await supabase.from('family_people').select(PEOPLE).eq('family_id', familyId).limit(500)
+      : withNicknames;
     const failed = people.error ?? links.error;
     if (failed) {
       // Not an error before 031: there is simply no tree yet.
@@ -556,7 +562,7 @@ async function loadTree(familyId: string, userId: string): Promise<FamilyTreeFor
         ? none()
         : none(failed.message.slice(0, 120));
     }
-    const rows = (people.data ?? []) as Array<{ id: string; display_name: string; gender: string | null; birth_date: string | null; user_id: string | null }>;
+    const rows = (people.data ?? []) as Array<{ id: string; display_name: string; gender: string | null; birth_date: string | null; user_id: string | null; nickname?: string | null }>;
     const me = rows.find(p => p.user_id === userId) ?? null;
     const graph = buildGraph(
       rows.map(p => ({
@@ -564,6 +570,7 @@ async function loadTree(familyId: string, userId: string): Promise<FamilyTreeFor
         name: p.display_name,
         gender: p.gender === 'female' || p.gender === 'male' ? p.gender : null,
         birthDate: p.birth_date,
+        nickname: p.nickname ?? null,
       })),
       ((links.data ?? []) as Array<{ from_person: string; to_person: string; kind: 'parent' | 'spouse' | 'sibling' }>)
         .map(l => ({ from: l.from_person, to: l.to_person, kind: l.kind })),

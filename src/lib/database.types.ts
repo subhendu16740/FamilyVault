@@ -499,6 +499,7 @@ export type Database = {
           family_id: string
           gender: string | null
           id: string
+          nickname: string | null
           updated_at: string
           user_id: string | null
         }
@@ -510,6 +511,7 @@ export type Database = {
           family_id: string
           gender?: string | null
           id?: string
+          nickname?: string | null
           updated_at?: string
           user_id?: string | null
         }
@@ -521,6 +523,7 @@ export type Database = {
           family_id?: string
           gender?: string | null
           id?: string
+          nickname?: string | null
           updated_at?: string
           user_id?: string | null
         }
@@ -1684,6 +1687,10 @@ export type Database = {
         Returns: { name: string }[]
       }
       queue_plan_notices: { Args: never; Returns: number }
+      set_family_person_nickname: {
+        Args: { p_nickname: string; p_person_id: string }
+        Returns: undefined
+      }
       set_family_plan: {
         Args: {
           p_family_id: string

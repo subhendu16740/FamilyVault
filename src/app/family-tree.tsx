@@ -1,10 +1,12 @@
 // The family tree: everyone in the family, with or without an account, and
 // how they are related. Opened from the drawer and from Manage Family.
 //
-// Each person is labelled from where the viewer stands ("Your mother (Maa)",
-// "Your aunt (Bua)"), computed by supabase/functions/_shared/kinship.ts —
-// the same rules rag-search uses to answer "Nani's pension papers". A person
-// with a document running out within three months carries a badge.
+// Each person is labelled from where the viewer stands ("Mother", "Aunt"),
+// computed by supabase/functions/_shared/kinship.ts — the same rules
+// rag-search uses to answer "Nani's pension papers" — with the nickname the
+// family gave them beside it ("Pinky", 045), never a Hindi word made up for
+// them. A person with a document running out within three months carries a
+// badge.
 //
 // Admins add and connect people; everyone sees the same tree. Every branch
 // is drawn, one below the other, in the same order for everyone — nothing
@@ -52,7 +54,7 @@ export default function FamilyTreeScreen() {
       .then((t) => { if (!cancelled) setTree(t); })
       .catch((err) => {
         if (cancelled) return;
-        setTree({ people: [], links: [] });
+        setTree({ people: [], links: [], nicknames: false });
         setProblem(isMissingMigration(err)
           ? { unavailable: true, text: 'The family tree is not switched on yet.' }
           : { unavailable: false, text: err?.message ?? 'Could not load the family tree.' });
@@ -160,7 +162,8 @@ export default function FamilyTreeScreen() {
                 <Text style={styles.section}>Everyone</Text>
                 <View style={styles.list}>
                   {everyone.map((p, i) => {
-                    const label = p.id === me?.id ? 'You' : labelFor(p.id);
+                    const label = [p.id === me?.id ? 'You' : labelFor(p.id), p.nickname ? `"${p.nickname}"` : null]
+                      .filter(Boolean).join(' · ');
                     const badge = badgeFor(p.id);
                     return (
                       <TouchableOpacity

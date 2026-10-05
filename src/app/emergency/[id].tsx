@@ -38,7 +38,7 @@ export default function EmergencyCardScreen() {
       .then((t) => { if (!cancelled) setTree(t); })
       .catch((err) => {
         if (cancelled) return;
-        setTree({ people: [], links: [] });
+        setTree({ people: [], links: [], nicknames: false });
         setProblem(isMissingMigration(err) ? 'The family tree is not switched on yet.' : err?.message ?? 'Could not load this person.');
       });
     fetchEmergencyCard(currentFamily.id, id)
@@ -64,6 +64,7 @@ export default function EmergencyCardScreen() {
 
   const about = person
     ? [isMe ? 'You' : relation ? `Your ${relation.charAt(0).toLowerCase()}${relation.slice(1)}` : null,
+       person.nickname ? `"${person.nickname}"` : null,
        person.birthDate ? `${ageInYears(person.birthDate)} years` : null].filter(Boolean).join(' · ')
     : '';
 

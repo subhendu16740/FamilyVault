@@ -35,7 +35,9 @@ export function useDocumentOwners(): Owner[] {
         const me = people.find((p) => p.userId === user?.id) ?? null;
         const list = people.map((p) => {
           const rel = me && p.id !== me.id ? relationTo(graph, me.id, p.id) : null;
-          return { id: p.id, name: p.name, label: p.id === me?.id ? 'Me' : rel ? (rel.hi ? `${rel.en} · ${rel.hi}` : rel.en) : null, isMe: p.id === me?.id };
+          // The relation and the family's own nickname (045), never a Hindi word on its own.
+          const label = [p.id === me?.id ? 'Me' : rel?.en, p.nickname ? `"${p.nickname}"` : null].filter(Boolean).join(' · ');
+          return { id: p.id, name: p.name, label: label || null, isMe: p.id === me?.id };
         });
         setOwners([...list.filter((o) => o.isMe), ...list.filter((o) => !o.isMe)]);
       })

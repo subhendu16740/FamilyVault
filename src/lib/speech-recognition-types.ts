@@ -14,6 +14,6 @@ export interface ListenHandlers {
   /** The finished transcript. Called at most once, only when non-empty. */
   onFinal: (text: string) => void;
   onError: (code: SpeechErrorCode, message: string) => void;
-  /** Always called last, whether it ended in a transcript, an error, or silence. */
+  /** Called last, whether it ended in a transcript, an error, or silence — but not after cancelListening(). */
   onEnd?: () => void;
 }
