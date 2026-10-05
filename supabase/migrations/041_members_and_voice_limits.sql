@@ -1,5 +1,5 @@
 -- ============================================================================
--- 041: What each plan allows: 4 members, and the first 10 answers read aloud
+-- 041: What each plan allows: 4 members, and the first 10 voice chats
 --
 -- Two more limits per plan, beside storage (038–040):
 --
@@ -7,10 +7,12 @@
 --                   4 on every plan. Everyone can still be in the family
 --                   tree — a grandmother who will never sign in is not a
 --                   member and does not count.
---   answers read    the first 10 answers read aloud are free, for the whole
---   aloud           family together; after that, hearing answers is part of
---                   Family Plus. Asking by voice stays free, and the answer
---                   is always on the screen.
+--   voice chats     the first 10 are free, for the whole family together:
+--                   a question asked by voice or an answer read aloud, one
+--                   per question (counted as voice_answers). After that the
+--                   family types and reads, and voice is part of Family
+--                   Plus. The answer is always on the screen. (042 adds a
+--                   way to read how many are left.)
 --
 -- Both are columns of plan_limits — max_members and voice_answers (NULL
 -- there: every answer) — so they change in the Table editor, like the storage

@@ -4,7 +4,8 @@ import { isSaveable, mimeTypeFor, unsupportedFileMessage } from './file-types';
 import type { Gender, KinLink, KinPerson } from '../../supabase/functions/_shared/kinship';
 import { isBloodGroup, type EmergencyCard, type EmergencyCardInput, type EmergencyContact } from './emergency';
 import {
-  DEFAULT_PLAN_LIMITS, fits, localPlusPrices, storageFullMessage, type PlanLimits, type PlanName, type StorageRoom,
+  DEFAULT_PLAN_LIMITS, chatStorageFullMessage, fits, localPlusPrices, storageFullMessage,
+  type PlanLimits, type PlanName, type StorageRoom,
 } from './plans';
 import type {
   FamilyWithMembership,
@@ -1225,9 +1226,11 @@ export interface FamilyPlanStatus extends StorageRoom {
    * when the newest documents above it are removed (040). Null otherwise.
    */
   removalAt: string | null;
+  /** How much of usedBytes is saved chats (042); 0 before. */
+  chatsBytes: number;
 }
 
-/** A family's plan, its limit and what its files add up to; null before 038. */
+/** A family's plan, its limit and what its files (and, since 042, saved chats) add up to; null before 038. */
 export async function fetchStorageStatus(familyId: string): Promise<FamilyPlanStatus | null> {
   const { data, error } = await supabase.rpc('family_storage_status', { p_family_id: familyId });
   if (error) {
@@ -1241,8 +1244,9 @@ export async function fetchStorageStatus(familyId: string): Promise<FamilyPlanSt
     paidUntil: row.paid_until ?? null,
     limitBytes: Number(row.limit_bytes),
     usedBytes: Number(row.used_bytes),
-    // Before 040 the row has no removal_at.
+    // Before 040 the row has no removal_at, and before 042 no chats_bytes.
     removalAt: (row as { removal_at?: string | null }).removal_at ?? null,
+    chatsBytes: Number((row as { chats_bytes?: number | null }).chats_bytes ?? 0),
   };
 }
 
@@ -1294,14 +1298,15 @@ export async function fetchPlanLimits(): Promise<PlanLimits> {
   };
 }
 
-// ─── Answers read aloud (041) ────────────────────────────────────
+// ─── Voice chats (041, 042) ──────────────────────────────────────
 //
-// A free family hears its first answers read aloud (plan_limits.voice_answers:
-// 10), counted on the server for the whole family, so another phone does not
-// start again. After that the answer is on the screen only, and Family Plus
-// reads every answer. Asked before reading each new answer. Before 041, or
-// offline, the answer is read: the app never goes quiet because it could not
-// ask.
+// A free family has its first 10 voice chats free (plan_limits.voice_answers):
+// a question asked by voice or an answer read aloud, one per question,
+// counted on the server for the whole family, so another phone does not start
+// again. After that the family types and reads, and Family Plus brings voice
+// back. A chat is claimed before its answer is read; fetchVoiceStatus() says
+// how many are left without using one. Before 041, or offline, voice works:
+// the app never goes quiet because it could not ask.
 
 export interface VoiceAllowance {
   allowed: boolean;
@@ -1316,6 +1321,26 @@ export async function claimVoiceAnswer(familyId: string): Promise<VoiceAllowance
   const r = data as { allowed?: unknown; used?: number | null; limit?: number | null } | null;
   if (!r || typeof r.allowed !== 'boolean') return null;
   return { allowed: r.allowed, used: r.used ?? null, limit: r.limit ?? null };
+}
+
+export interface VoiceStatus {
+  /** How many voice chats the family may have, has had, and has left; all null on a plan with no limit. */
+  limit: number | null;
+  used: number | null;
+  left: number | null;
+}
+
+/**
+ * How many voice chats the family has left, without using one (042), for Ask
+ * and Settings to show. Null when that cannot be told: before 042, or offline.
+ */
+export async function fetchVoiceStatus(familyId: string): Promise<VoiceStatus | null> {
+  const { data, error } = await supabase.rpc('family_voice_status', { p_family_id: familyId });
+  if (error) return null;
+  const r = data as { limit?: number | null; used?: number | null; left?: number | null } | null;
+  if (!r || !('limit' in r)) return null;
+  const n = (v: number | null | undefined) => (v == null ? null : Number(v));
+  return { limit: n(r.limit), used: n(r.used), left: n(r.left) };
 }
 
 /** The family's storage is full, in words the person can act on. */
@@ -1471,24 +1496,58 @@ export async function getSavedChat(id: string): Promise<SavedChat | null> {
 }
 
 /**
+ * A chat that does not fit in the family's storage (042: saved chats take
+ * the family's storage too), in words the person can act on. `room` is where
+ * the family stands, when that could be asked.
+ */
+export class ChatStorageFullError extends Error {
+  room: FamilyPlanStatus | null;
+
+  constructor(room: FamilyPlanStatus | null, serverMessage?: string) {
+    super(room
+      ? chatStorageFullMessage(room, { price: localPlusPrices() })
+      : serverMessage ?? 'There is no room to save this chat: your family\'s storage is full.');
+    this.name = 'ChatStorageFullError';
+    this.room = room;
+  }
+}
+
+/** What a chat adds to the family's storage, near enough: the server counts its JSON text. */
+function chatBytes(messages: SavedChatMessage[]): number {
+  return new TextEncoder().encode(JSON.stringify(messages)).length;
+}
+
+/**
  * Save a conversation: a new saved chat, or — given its id — the same one
  * brought up to date. Returns the id, which is new if the old chat had been
  * deleted meanwhile (from the list, or by leaving and rejoining the family).
+ *
+ * A new chat is checked against the family's storage first, so a full vault
+ * says why without trying; the server refuses one that does not fit anyway
+ * (HINT storage_full, 042), and a saved chat growing past the limit. Both
+ * throw ChatStorageFullError.
  */
 export async function saveChat(familyId: string, messages: SavedChatMessage[], id?: string | null): Promise<string> {
   const stored = chatForStorage(messages);
   const title = savedChatTitle(stored);
   const asJson = stored as unknown as Json;
+  const refused = async (error: { hint?: string; message?: string }): Promise<never> => {
+    if (error.hint !== 'storage_full') throw error;
+    throw new ChatStorageFullError(await fetchStorageStatus(familyId).catch(() => null), error.message);
+  };
   if (id) {
     const { data, error } = await savedChats()
       .update({ title, messages: asJson, updated_at: new Date().toISOString() })
       .eq('id', id)
       .select('id');
-    if (error) throw error;
+    if (error) return refused(error);
     if (data?.length) return id;
   }
+  // Before 038 (no limits) or offline, the server alone decides.
+  const room = await fetchStorageStatus(familyId).catch(() => null);
+  if (room && room.usedBytes + chatBytes(stored) > room.limitBytes) throw new ChatStorageFullError(room);
   const { data, error } = await savedChats().insert({ family_id: familyId, title, messages: asJson }).select('id').single();
-  if (error) throw error;
+  if (error) return refused(error);
   return data.id;
 }
 

@@ -1,22 +1,24 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, StyleSheet, Switch, Modal, Pressable,
   ActivityIndicator,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../lib/auth';
 import { isProduction, environmentDescription } from '../../lib/environment';
 import { useFamily } from '../../lib/family-context';
 import { usePreferences } from '../../lib/preferences';
-import { fetchPlanLimits, indexStatus, type IndexStatus } from '../../lib/api';
+import { fetchPlanLimits, fetchVoiceStatus, indexStatus, type IndexStatus, type VoiceStatus } from '../../lib/api';
 import { useFamilyPlan } from '../../lib/family-plan';
 import { DEFAULT_PLAN_LIMITS, type PlanLimits } from '../../lib/plans';
-import { VOICE_LANGUAGES, voiceLanguage } from '../../lib/voice-languages';
+import { VOICE_LANGUAGES, phrase, voiceLanguage } from '../../lib/voice-languages';
 import { OCR_LANGUAGES, describeOcrLanguages } from '../../lib/ocr-languages';
-import { hasVoiceFor } from '../../lib/speech';
+import {
+  chooseVoice, chosenVoice, hasVoiceFor, speak, stopSpeaking, voicesFor, type DeviceVoice,
+} from '../../lib/speech';
 import { ScreenHeader, PlusTag } from '../../components/screen-header';
 import { appVersion } from '../../lib/app-info';
 import { color, radius, shadow, size, space, type } from '../../constants/design';
@@ -69,16 +71,49 @@ export default function SettingsScreen() {
     voiceMode, voiceLanguage: voiceLang, documentLanguages, notificationsEnabled,
     setVoiceMode, setVoiceLanguage, setDocumentLanguages,
   } = usePreferences();
-  // A free family hears its first answers read aloud (041); say so where
-  // voice is switched on.
+  // A free family has its first voice chats free (041, 042); say how many
+  // are left where voice is switched on.
   const { isFree } = useFamilyPlan();
   const [limits, setLimits] = useState<PlanLimits>(DEFAULT_PLAN_LIMITS);
+  const [voiceChats, setVoiceChats] = useState<VoiceStatus | null>(null);
   useEffect(() => {
     let cancelled = false;
     fetchPlanLimits().then((l) => { if (!cancelled) setLimits(l); });
     return () => { cancelled = true; };
   }, []);
-  const freeVoiceAnswers = limits.voiceAnswers.free;
+  useFocusEffect(useCallback(() => {
+    if (!currentFamily) return;
+    let cancelled = false;
+    fetchVoiceStatus(currentFamily.id).then((v) => { if (!cancelled) setVoiceChats(v); });
+    return () => { cancelled = true; };
+  }, [currentFamily?.id]));
+  const freeVoiceChats = limits.voiceAnswers.free;
+
+  // Which voice reads the answers: this device's voices for the voice
+  // language, chosen by ear and kept on this device.
+  const [voicePickerOpen, setVoicePickerOpen] = useState(false);
+  const [deviceVoices, setDeviceVoices] = useState<DeviceVoice[]>([]);
+  const [voiceChoice, setVoiceChoice] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([voicesFor(voiceLang), chosenVoice(voiceLang)]).then(([list, chosen]) => {
+      if (cancelled) return;
+      setDeviceVoices(list);
+      setVoiceChoice(chosen && list.some((v) => v.id === chosen) ? chosen : null);
+    });
+    return () => { cancelled = true; };
+  }, [voiceLang]);
+  const pickVoice = (id: string | null) => {
+    setVoiceChoice(id);
+    chooseVoice(voiceLang, id);
+    // Heard straight away, so a voice is chosen by ear.
+    speak(phrase(voiceLang, 'voice_sample'), voiceLang, {}, id);
+  };
+  const closeVoicePicker = () => {
+    stopSpeaking();
+    setVoicePickerOpen(false);
+  };
+  const voiceLabel = deviceVoices.find((v) => v.id === voiceChoice)?.label ?? 'Automatic';
 
   const accountItems: LinkItem[] = [
     { icon: 'user', label: 'Profile', sub: 'Your name and phone number', route: '/settings/profile' },
@@ -245,11 +280,15 @@ export default function SettingsScreen() {
                 accessibilityLabel="Voice assistant"
               />
             </View>
-            {isFree && freeVoiceAnswers != null && (
+            {(voiceChats ? voiceChats.limit != null : isFree && freeVoiceChats != null) && (
               <View style={[styles.settingRow, styles.settingRowBorder, styles.plusNote]}>
                 <PlusTag link />
                 <Text style={styles.plusNoteText}>
-                  Your family hears its first {freeVoiceAnswers} answers read aloud free. Family Plus reads every answer.
+                  {voiceChats?.limit != null
+                    ? voiceChats.left === 0
+                      ? `Your family has used its ${voiceChats.limit} free voice chats. Family Plus brings voice back: every question by voice, every answer read aloud.`
+                      : `Your family has ${voiceChats.left} of ${voiceChats.limit} free voice chats left: a question asked by voice or an answer read aloud, one per question. Family Plus has no limit.`
+                    : `A free family has its first ${freeVoiceChats} voice chats free: a question asked by voice or an answer read aloud, one per question. Family Plus has no limit.`}
                 </Text>
               </View>
             )}
@@ -266,6 +305,21 @@ export default function SettingsScreen() {
                 <Text style={styles.settingSub}>What you speak, and what it speaks back</Text>
               </View>
               <Text style={styles.settingValue}>{voiceLanguage(voiceLang).native}</Text>
+              <Feather name="chevron-right" size={16} color="#9CA3AF" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.settingRow, styles.settingRowBorder]}
+              activeOpacity={0.7}
+              onPress={() => setVoicePickerOpen(true)}
+            >
+              <View style={styles.settingIconWrap}>
+                <Feather name="volume-2" size={16} color={color.primary} />
+              </View>
+              <View style={styles.settingText}>
+                <Text style={styles.settingLabel}>Voice</Text>
+                <Text style={styles.settingSub}>Who reads the answers on this device</Text>
+              </View>
+              <Text style={styles.settingValue} numberOfLines={1}>{voiceLabel}</Text>
               <Feather name="chevron-right" size={16} color="#9CA3AF" />
             </TouchableOpacity>
           </View>
@@ -367,6 +421,50 @@ export default function SettingsScreen() {
                 );
               })}
             </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={voicePickerOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={closeVoicePicker}
+      >
+        <Pressable style={styles.sheetBackdrop} onPress={closeVoicePicker}>
+          <Pressable style={styles.sheet} onPress={() => {}}>
+            <Text style={styles.sheetTitle}>Voice for {voiceLanguage(voiceLang).english}</Text>
+            <Text style={styles.sheetNote}>
+              {deviceVoices.length
+                ? 'Tap a voice to hear it. The one you tap last reads your answers on this device.'
+                : `This device has no ${voiceLanguage(voiceLang).english} voice of its own, so answers are read in its default voice. A phone's settings, or another browser, may offer more voices.`}
+            </Text>
+            <ScrollView style={styles.sheetList}>
+              {[{ id: null as string | null, label: 'Automatic', note: 'The best voice for the language' }, ...deviceVoices].map((v, i) => {
+                const selected = v.id === voiceChoice;
+                return (
+                  <TouchableOpacity
+                    key={v.id ?? 'automatic'}
+                    style={[styles.langRow, i > 0 && styles.settingRowBorder]}
+                    activeOpacity={0.7}
+                    onPress={() => pickVoice(v.id)}
+                    accessibilityRole="radio"
+                    accessibilityState={{ checked: selected }}
+                  >
+                    <View style={styles.settingText}>
+                      <Text style={[styles.langNative, selected && styles.langSelected]} numberOfLines={2}>{v.label}</Text>
+                      {!!v.note && <Text style={styles.settingSub}>{v.note}</Text>}
+                    </View>
+                    {selected
+                      ? <Feather name="check" size={18} color={color.primary} />
+                      : <Feather name="play-circle" size={18} color="#9CA3AF" />}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+            <TouchableOpacity style={styles.sheetDone} onPress={closeVoicePicker} accessibilityRole="button">
+              <Text style={styles.sheetDoneText}>Done</Text>
+            </TouchableOpacity>
           </Pressable>
         </Pressable>
       </Modal>
@@ -500,6 +598,16 @@ const styles = StyleSheet.create({
   sheetTitle: { ...type.title, paddingHorizontal: space.lg, marginBottom: space.sm },
   sheetNote: { ...type.caption, paddingHorizontal: space.lg, marginBottom: space.md },
   sheetList: { paddingHorizontal: 0 },
+  sheetDone: {
+    marginTop: space.md,
+    marginHorizontal: space.lg,
+    height: size.control,
+    borderRadius: radius.control,
+    backgroundColor: color.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sheetDoneText: { ...type.button, color: '#FFFFFF' },
   langRow: {
     flexDirection: 'row',
     alignItems: 'center',

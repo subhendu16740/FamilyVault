@@ -1244,11 +1244,13 @@ export type Database = {
       }
       family_storage_has_room: { Args: { p_folder: string }; Returns: boolean }
       end_family_plan: { Args: { p_family_id: string }; Returns: undefined }
+      family_chats_bytes: { Args: { p_family_id: string }; Returns: number }
       family_files_bytes: { Args: { p_ns: string }; Returns: number }
       family_plan_now: { Args: { p_family_id: string }; Returns: string }
       family_storage_status: {
         Args: { p_family_id: string }
         Returns: {
+          chats_bytes: number
           limit_bytes: number
           paid_until: string
           plan: string
@@ -1256,6 +1258,7 @@ export type Database = {
           used_bytes: number
         }[]
       }
+      family_voice_status: { Args: { p_family_id: string }; Returns: Json }
       get_document_chunks: {
         Args: { p_document_id: string; p_limit?: number; p_schema: string }
         Returns: {

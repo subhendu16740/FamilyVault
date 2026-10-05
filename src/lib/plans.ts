@@ -30,7 +30,7 @@ import {
 } from '../../supabase/functions/_shared/plan-text';
 
 export {
-  DEFAULT_PLAN_LIMITS, PLUS_FOR_SALE, PLUS_PRICE, fits, formatBytes, planLabel, plusAmount, plusPrice, plusPrices,
+  DEFAULT_PLAN_LIMITS, PLUS_FOR_SALE, PLUS_PRICE, chatStorageFullMessage, fits, formatBytes, planLabel, plusAmount, plusPrice, plusPrices,
   plusTwelveMonths, plusYearlyOffer, plusYearlySaving, storageFullMessage,
   type PlanLimits, type PlanName, type PriceCurrency, type PricePeriod, type StorageRoom,
 } from '../../supabase/functions/_shared/plan-text';
