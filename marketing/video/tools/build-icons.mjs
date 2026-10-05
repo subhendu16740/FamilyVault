@@ -10,6 +10,9 @@ const NEEDED = [
   'volume-2', 'square', 'shield', 'lock', 'layers', 'message-circle', 'refresh-cw', 'mail',
   'alert-circle', 'phone', 'phone-missed', 'phone-off', 'wifi', 'battery', 'x', 'key', 'inbox',
   'paperclip', 'more-vertical', 'chevron-right', 'smartphone', 'eye-off', 'heart', 'zap',
+  // v4 screens: drawer, family tree, emergency card, reminders, Gmail import, saved chats
+  'git-branch', 'plus-square', 'settings', 'log-out', 'chevron-down', 'check-square', 'droplet',
+  'alert-triangle', 'edit-2', 'maximize-2', 'calendar', 'gift', 'bookmark', 'star', 'link',
 ];
 const missing = NEEDED.filter(n => !icons[n]);
 if (missing.length) throw new Error(`Unknown Feather icons: ${missing.join(', ')}`);

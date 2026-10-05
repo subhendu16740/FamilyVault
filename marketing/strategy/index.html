@@ -264,7 +264,7 @@ footer { padding-block: 32px 64px; border-top: 1px solid var(--line); color: var
 
 <div class="page">
   <header class="masthead" id="top">
-    <div class="eyebrow"><span class="tag-internal">Internal draft</span><span class="dot"></span><span>Go-to-market v1</span><span class="dot"></span><span>27 September 2026</span></div>
+    <div class="eyebrow"><span class="tag-internal">Internal draft</span><span class="dot"></span><span>Go-to-market v2</span><span class="dot"></span><span>5 October 2026</span></div>
     <h1>FamilyVault go-to-market</h1>
     <p class="lede">How FamilyVault finds its first thousand families, written the way you would write a design doc. The problem is an incident report, the customer is a type, the funnel is a pipeline with named events, and the rollout ships behind gates.</p>
 
@@ -272,8 +272,8 @@ footer { padding-block: 32px 64px; border-top: 1px solid var(--line); color: var
     <figure class="film" aria-label="Intro film">
       <div class="film-bar">
         <div class="seg" role="group" aria-label="Choose a cut">
-          <button type="button" id="cut-full" aria-pressed="true" data-src="media/familyvault-intro-16x9.mp4" data-poster="media/poster-16x9.jpg" data-shape="wide">Full film · 16:9 · 1:39</button>
-          <button type="button" id="cut-short" aria-pressed="false" data-src="media/familyvault-intro-9x16-short.mp4" data-poster="media/poster-9x16.jpg" data-shape="tall">Short cut · 9:16 · 0:56</button>
+          <button type="button" id="cut-full" aria-pressed="true" data-src="media/familyvault-intro-16x9.mp4" data-poster="media/poster-16x9.jpg" data-shape="wide">Full film · 16:9 · 1:50</button>
+          <button type="button" id="cut-short" aria-pressed="false" data-src="media/familyvault-intro-9x16-short.mp4" data-poster="media/poster-9x16.jpg" data-shape="tall">Short cut · 9:16 · 1:01</button>
         </div>
       </div>
       <div class="film-stage wide" id="film-stage">
@@ -281,7 +281,7 @@ footer { padding-block: 32px 64px; border-top: 1px solid var(--line); color: var
           <source src="media/familyvault-intro-16x9.mp4" type="video/mp4">
         </video>
       </div>
-      <figcaption>The intro film, rendered from code in <code>marketing/video</code>. The screens reuse the real app's layouts and copy. The Sharma family, their insurer and the policy are fictional, and the soundtrack is synthesised, so there is nothing to license. Captions are burned in because a large share of feed video plays muted.</figcaption>
+      <figcaption>The intro film, rendered from code in <code>marketing/video</code>. The phone shows the app's current screens with their real layout and copy: Gmail import, scanning, Ask, Hindi voice, the family tree, an emergency card and a reminder arriving as a push. The Sharma family, their insurer, the senders in their inbox and the policy are fictional, and the soundtrack is synthesised, so there is nothing to license. Captions are burned in because a large share of feed video plays muted.</figcaption>
     </figure>
 
     <div class="spec" aria-labelledby="spec-title">
@@ -555,9 +555,9 @@ footer { padding-block: 32px 64px; border-top: 1px solid var(--line); color: var
 
         <h3>Why we win, ranked by how defensible it is</h3>
         <div class="two">
-          <div class="card"><h4>1. Family-native</h4><p>Members, roles and aliases: search understands “Papa”, “Maa”, “Neha didi”. Moderately defensible, because a vault full of a family's documents and people is sticky.</p></div>
+          <div class="card"><h4>1. Family-native</h4><p>A family tree with the Hindi words for each relation (Dadi or Nani, Tau or Chacha, Bua, Bhabhi), people with or without an account, and search that understands relations: “Nani's pension”, “Mummy ka PAN”. Moderately defensible, because a vault full of a family's documents and people is sticky.</p></div>
           <div class="card"><h4>2. Built for Indian parents</h4><p>Spoken questions and answers read aloud, offered in Hindi and eight more Indian languages on the web (the browser's voices decide which work), Indian ID formats, Indian scripts in OCR. Moderately defensible.</p></div>
-          <div class="card"><h4>3. Readiness, not storage</h4><p>Expiry reminders today; a readiness score, a family drill and an emergency card next (<a href="#product">section 10</a>). Defensible once built, because nobody else is framed this way.</p></div>
+          <div class="card"><h4>3. Readiness, not storage</h4><p>An emergency card for each person, and reminders 90, 30 and 7 days before an expiry on every phone that asks, today; a readiness score and a family drill next (<a href="#product">section 10</a>). Defensible once built, because nobody else is framed this way.</p></div>
           <div class="card"><h4>4. Ask instead of search</h4><p>Answers with the source attached. Weak on its own: Gemini and ChatGPT can already answer questions over files. Never lead with “AI”.</p></div>
         </div>
         <p><strong>What FamilyVault is not:</strong> a will or estate planner, a password manager, or a portfolio tracker. Saying so keeps the promise small enough to keep.</p>
@@ -743,25 +743,31 @@ footer { padding-block: 32px 64px; border-top: 1px solid var(--line); color: var
       <section id="claims">
         <span class="sec-num">09</span>
         <h2>What we can claim today</h2>
-        <p class="sec-lede">A document vault sells trust. Every public claim below was checked against the code in this repository on 27 September 2026. Treat this table as a gate on copy: nothing ships in an ad, page or pitch unless its row is green.</p>
+        <p class="sec-lede">A document vault sells trust. Every public claim below was checked against the code in this repository on 5 October 2026. Treat this table as a gate on copy: nothing ships in an ad, page or pitch unless its row is green.</p>
         <div class="tbl tbl-wide">
           <table>
             <thead><tr><th>Claim</th><th>Verdict</th><th>Evidence and caveats</th></tr></thead>
             <tbody>
-              <tr><td>Only the people you invite can open your vault</td><td><span class="chip ok"><i aria-hidden="true">✓</i>True today</span></td><td>Family membership plus row-level security. Storage was scoped to each family only in migration 019, and the schema-taking RPCs were locked to the service role in 022. Before those, this was not true. Get an external security review before paid acquisition.</td></tr>
+              <tr><td>Only the people you invite can open your vault</td><td><span class="chip ok"><i aria-hidden="true">✓</i>True today</span></td><td>Family membership plus row-level security. Since 037 nobody joins without saying yes: an admin invites, the person accepts, and until then they see nothing. Storage was scoped to each family only in migration 019, and the schema-taking RPCs were locked to the service role in 022; before those, this was not true. Get an external security review before paid acquisition.</td></tr>
               <tr><td>Every family's documents are isolated</td><td><span class="chip ok"><i aria-hidden="true">✓</i>True</span></td><td>One Postgres schema per family (<code>family_&lt;id&gt;</code>) and a per-family storage namespace.</td></tr>
               <tr><td>Encrypted in transit and at rest</td><td><span class="chip ok"><i aria-hidden="true">✓</i>True</span></td><td>At the infrastructure level (Supabase TLS and disk encryption). It is not application-level encryption.</td></tr>
               <tr><td>Answers come from your own documents, with the source</td><td><span class="chip ok"><i aria-hidden="true">✓</i>True</span></td><td><code>rag-search</code> returns sources and the Ask screen shows them. An answer can still be wrong, so the document must stay one tap away.</td></tr>
-              <tr><td>Works in Hindi and other Indian languages</td><td><span class="chip part"><i aria-hidden="true">◐</i>Partly</span></td><td>On the web: spoken questions (Chrome, Safari), answers written and read in the chosen language, and photo OCR in Indian scripts. In the native app the speech recogniser is a stub and OCR reads Latin script only. Scanned Indian-language PDFs are OCR'd in English only.</td></tr>
-              <tr><td>Reminds you before documents expire</td><td><span class="chip part"><i aria-hidden="true">◐</i>Partly</span></td><td>Expiry dates are extracted and <code>create_expiry_alert</code> is called, and reminders appear in the in-app Notifications list (there are no push notifications). The SQL for <code>create_expiry_alert</code> and <code>check_expiry_notifications</code> is not in <code>supabase/migrations</code>, so the schedule can't be verified from the repo. Commit it, then promise specific lead times.</td></tr>
-              <tr><td>Your documents never leave FamilyVault</td><td><span class="chip no"><i aria-hidden="true">✕</i>Not true</span></td><td>Relevant excerpts go to Groq to write answers, text goes to Hugging Face for embeddings, and scanned PDFs go to OCR.space. Photos are read on the device. Publish a sub-processor list, and check each provider's retention and training terms before saying anything about AI training.</td></tr>
+              <tr><td>Works in Hindi and other Indian languages</td><td><span class="chip part"><i aria-hidden="true">◐</i>Partly</span></td><td>On the web: spoken questions (Chrome, Safari), answers written and read in the chosen language, and photo OCR in Indian scripts. In the native app the speech recogniser is a stub and OCR reads Latin script only. Scanned Indian-language PDFs are OCR'd in English only, and PDFs made in Indian scripts lose letters in the server's text layer (a known issue QA tracks), so names in them may not be found; digits, dates and amounts are.</td></tr>
+              <tr><td>Reminds the whole family before documents expire, on their phones</td><td><span class="chip ok"><i aria-hidden="true">✓</i>True</span></td><td>The database's own clock (034) tells every member 90, 30 and 7 days before an expiry date and on the day, once each, under the bell and as a web push on each device where they turn it on, between 8 AM and 10 PM India time. Birthdays from the family tree too (035). An iPhone needs the web app on its Home Screen first. Not by email, and not in a native app yet.</td></tr>
+              <tr><td>Imports your documents from Gmail</td><td><span class="chip part"><i aria-hidden="true">◐</i>For test users</span></td><td>Built (026): it lists attachments that look like documents, nothing comes in without a tick, only the mailbox's owner sees what it finds, and no model reads the email. Web only and part of Family Plus. Google's restricted <code>gmail.readonly</code> scope is still in Testing: at most 100 listed test users can connect, and their access lapses after 7 days. Public use needs Google's verification and a paid security assessment.</td></tr>
+              <tr><td>A family tree that knows Dadi from Nani</td><td><span class="chip ok"><i aria-hidden="true">✓</i>True</span></td><td>031: relations and their Hindi words are worked out by <code>kinship.ts</code>, and search resolves “Nani's pension”, “Mummy ka PAN” and “नानी की पेंशन” to the right person without a model call. People need no account to be in the tree.</td></tr>
+              <tr><td>An emergency card for everyone in the family</td><td><span class="chip ok"><i aria-hidden="true">✓</i>True</span></td><td>032: blood group, allergies, conditions, medicines, the doctor, health insurance and up to three people to call, each number one tap from the dialler. Every member reads every card; the cards are never sent to the AI service.</td></tr>
+              <tr><td>Share one document with a link that expires</td><td><span class="chip ok"><i aria-hidden="true">✓</i>True</span></td><td>036: 1, 7 or 30 days, turned off at any time, opened without an account. The secret stays after <code>#</code> and only its hash is stored. Made on the web app only, for now.</td></tr>
+              <tr><td>Delete your account at once, nothing kept</td><td><span class="chip ok"><i aria-hidden="true">✓</i>True</span></td><td>029 and 030: Settings › Security › Delete account, with no waiting period. A family whose last admin leaves goes with them; the screen names who loses it first.</td></tr>
+              <tr><td>Free to start; Family Plus is ₹100 a month or ₹1,100 a year</td><td><span class="chip ok"><i aria-hidden="true">✓</i>True as a price</span></td><td>The server enforces each plan (038–043): Free holds 1 GB and gives each person 10 voice chats; Plus holds 10 GB with no voice limit; both allow 4 members. Paying is built on Razorpay (044), web only. A project without Razorpay's live keys shows “Coming soon”, so check PROD before an ad asks anyone to pay.</td></tr>
+              <tr><td>Your documents never leave FamilyVault</td><td><span class="chip no"><i aria-hidden="true">✕</i>Not true</span></td><td>Relevant excerpts go to Groq to write answers, text goes to Hugging Face for embeddings, and scanned PDFs and photos imported from Gmail go to OCR.space. Photos you upload are read on the device. Publish a sub-processor list (add Google for Gmail import and Razorpay for payments), and check each provider's retention and training terms before saying anything about AI training.</td></tr>
               <tr><td>End-to-end encrypted, or “even we can't see your files”</td><td><span class="chip no"><i aria-hidden="true">✕</i>Not true</span></td><td>Search and answers need the text on the server. Say who can see what instead.</td></tr>
-              <tr><td>On Android and iOS</td><td><span class="chip no"><i aria-hidden="true">✕</i>Not yet</span></td><td>No EAS configuration, <code>android.package</code> is still <code>com.anonymous.familyvault</code>, and there is no iOS bundle ID. Say “on the web, with Android and iOS coming”.</td></tr>
+              <tr><td>On Android and iOS</td><td><span class="chip no"><i aria-hidden="true">✕</i>Not yet</span></td><td>No EAS configuration, <code>android.package</code> is still <code>com.anonymous.familyvault</code>, and there is no iOS bundle ID. The web app installs to a phone's home screen (it has a manifest and an icon), which is also how reminders reach a phone today. Say “on the web, and on your phone's home screen; Android and iOS apps coming”.</td></tr>
               <tr><td>Bank-grade security</td><td><span class="chip no"><i aria-hidden="true">✕</i>Avoid</span></td><td>Unverifiable. Specific statements build more trust than superlatives.</td></tr>
             </tbody>
           </table>
         </div>
-        <p>The film only makes claims from green rows. Its reminder scene shows the in-app bell badge and Notifications screen, which is how reminders reach people today.</p>
+        <p>The film makes claims from green rows, with one exception to manage: its Gmail import scene, marked ★ Family Plus, is true only for test users until Google verifies the app. Keep the film off public channels until then, or publish the short cut re-rendered without that scene. Its reminder scene shows a web push on the lock screen that opens Notifications, which is exactly what <code>public/sw.js</code> does, and the end card's price line should match what PROD can actually sell.</p>
         <h3>Compliance you can market</h3>
         <p>India's Digital Personal Data Protection Rules were notified on 13 November 2025, and the core obligations apply from 13 May 2027. The ones that matter here: a plain-language notice and consent, reasonable security safeguards (penalties up to ₹250 crore), breach notice to users and the Board with a detailed report within 72 hours, contracts with every processor, and verifiable parental consent for anyone under 18 (family vaults will hold children's birth certificates). Section 14 of the Act lets a person nominate someone to exercise their rights on death or incapacity, which is almost exactly the emergency access feature this product should have anyway. UIDAI tells entities not to keep Aadhaar copies unless the first eight digits are masked, and the ingest pipeline currently extracts full Aadhaar numbers into metadata. Mask them by default and say so publicly.</p>
       </section>
@@ -770,19 +776,19 @@ footer { padding-block: 32px 64px; border-top: 1px solid var(--line); color: var
       <section id="product">
         <span class="sec-num">10</span>
         <h2>Product work that is marketing</h2>
-        <p class="sec-lede">In a product like this, the features that shorten time-to-value or create a reason to share are marketing. Ordered by what they unlock.</p>
+        <p class="sec-lede">In a product like this, the features that shorten time-to-value or create a reason to share are marketing. Ordered by what they unlock. Shipped since v1 of this page: the family tree, emergency cards, reminders on phones, birthdays, share links that expire, Gmail import, saved chats, Family Plus with Razorpay, and account deletion.</p>
         <div class="tbl tbl-wide">
           <table>
             <thead><tr><th>Work</th><th>Size</th><th>What it unlocks</th></tr></thead>
             <tbody>
               <tr><td>Analytics and the tracking plan (<a href="#funnel">section 6</a>)</td><td>S</td><td>Everything else. Without it, no stage can be measured.</td></tr>
-              <tr><td>Brand assets: app icon and splash (still the Expo defaults, splash <code>#208AEF</code>), app name “familyvault” to “FamilyVault”, final Android package, link-preview image</td><td>S</td><td>Anything you share looks finished. The film's end card makes a good preview image.</td></tr>
-              <tr><td>Commit the expiry-alert SQL and mask Aadhaar by default</td><td>S</td><td>Two claims move from yellow to green (<a href="#claims">section 9</a>).</td></tr>
+              <tr><td>Google's verification of Gmail import (restricted scope, with its security assessment)</td><td>M</td><td>The strongest answer to the core problem, policies scattered across inboxes, becomes something the public can use and the film can show everywhere</td></tr>
+              <tr><td>Brand assets for the native app: icon and splash (still the Expo defaults, splash <code>#208AEF</code>), app name “familyvault” to “FamilyVault”, final Android package; a link-preview image. The web app already has its icon and theme colour.</td><td>S</td><td>Anything you share looks finished. The film's end card makes a good preview image.</td></tr>
+              <tr><td>Mask Aadhaar numbers by default (the expiry-reminder SQL is committed now, in 024 and 034)</td><td>S</td><td>Closes the compliance gap in <a href="#claims">section 9</a></td></tr>
               <tr><td>Family drill: prompt a member to find one document themselves</td><td>S</td><td>The north-star clause, and proof that access works</td></tr>
               <tr><td>Readiness score: “7 of 12 essentials” across health, life, vehicle, IDs for each member, property, bank nominees</td><td>M</td><td>Activation and a number people share. It works like test coverage.</td></tr>
-              <tr><td>Forward-to-vault email address</td><td>M</td><td>Imports policies from any inbox without Gmail API access, whose restricted scopes require a third-party security assessment</td></tr>
-              <tr><td>Emergency card: a printable card with a QR code for the fridge or wallet, holding no sensitive data</td><td>S</td><td>A physical object that spreads word of mouth</td></tr>
-              <tr><td>Share one document with a link that expires, for the hospital TPA desk</td><td>S</td><td>The 2 AM moment itself. <code>getDocumentSignedUrl</code> already exists.</td></tr>
+              <tr><td>Forward-to-vault email address</td><td>M</td><td>Imports from Outlook, Yahoo and work mail too, and from any inbox while Gmail import waits on Google</td></tr>
+              <tr><td>The emergency card on paper: print the in-app card, or a wallet version with no medical detail</td><td>S</td><td>A physical object that spreads word of mouth</td></tr>
               <tr><td>Import a CAS statement to list all mutual fund and demat holdings</td><td>M</td><td>“Upload one PDF, see every investment”</td></tr>
               <tr><td>Emergency access for a nominee</td><td>M</td><td>Maps onto DPDP Section 14 and the core promise</td></tr>
               <tr><td>Ask on WhatsApp</td><td>L</td><td>Meets parents where they already are</td></tr>
@@ -794,15 +800,15 @@ footer { padding-block: 32px 64px; border-top: 1px solid var(--line); color: var
       <!-- 11 ────────────────────────────────────────────────────────── -->
       <section id="pricing">
         <span class="sec-num">11</span>
-        <h2>Pricing hypothesis</h2>
-        <p class="sec-lede">A starting point to test, not a decision. The one fixed rule is about trust.</p>
+        <h2>Pricing</h2>
+        <p class="sec-lede">Decided and built since v1 (038–044). What remains is testing it, and one rule about trust.</p>
         <div class="two">
-          <div class="card"><h4>Free</h4><ul><li>One family vault, every member</li><li>Up to 25 documents</li><li>Ask, by text or voice</li></ul></div>
-          <div class="card"><h4>Family: ₹99/month or ₹899/year</h4><ul><li>Unlimited documents</li><li>Reminders for everyone</li><li>Priority OCR for scanned PDFs</li><li>Later: an NRI price in dollars</li></ul></div>
+          <div class="card"><h4>Free</h4><ul><li>1 GB for the family, 4 members who sign in</li><li>Scan, add and ask, the family tree, emergency cards</li><li>Reminders on every phone, share links</li><li>10 voice chats for each person</li></ul></div>
+          <div class="card"><h4>★ Family Plus: ₹100 a month or ₹1,100 a year</h4><ul><li>10 GB, still 4 members</li><li>Voice chats with no limit</li><li>The Reminders page, every expiry date in one list</li><li>Import from Gmail</li><li>$10 or $110 abroad; paid by UPI, card or net banking through Razorpay, and nothing renews by itself</li></ul></div>
         </div>
-        <p><strong>The fixed rule: never hold documents hostage.</strong> Reading and exporting stay free forever, even after a plan lapses. It is the right thing to do for a product people rely on in an emergency, and it is a line worth printing on the pricing page.</p>
-        <p>Validate with a pricing page that records clicks before billing exists, and ask price questions in interviews (too cheap, a bargain, getting expensive, too expensive). For reference, Trustworthy charges $10–40 a month in the US, Everplans $99.99 a year, and 1Password Families about $72 a year.</p>
-        <p>Unit economics to watch, with the cost terms measured per family per month once analytics exists: <span class="mono">LTV = ARPU × gross margin × expected lifetime in months</span>. The variable costs are storage and egress, Groq tokens per question, Hugging Face embedding calls, and OCR.space pages. Aim for <span class="mono">LTV / CAC ≥ 3</span> and payback in under 12 months.</p>
+        <p><strong>The rule: a lapse never costs a family a document without warning.</strong> Today, 30 days after Family Plus ends, the newest documents above the free 1 GB are removed (040), after a notice when it ends and warnings 7 days and 1 day before; until then the family can read, search and download everything. That is defensible for storage nobody pays for, but it is the opposite of v1's “never hold documents hostage”, so make it impossible to miss: a one-tap download of everything from each warning, and these exact terms on the pricing page.</p>
+        <p>Test the price with what the Plus page already knows: which ★ feature brought each family there (<code>/plus?feature=</code>), and who then pays monthly or yearly. Ask price questions in interviews too (too cheap, a bargain, getting expensive, too expensive). For reference, Trustworthy charges $10–40 a month in the US, Everplans $99.99 a year, and 1Password Families about $72 a year.</p>
+        <p>Unit economics to watch, with the cost terms measured per family per month once analytics exists: <span class="mono">LTV = ARPU × gross margin × expected lifetime in months</span>. The variable costs are storage and egress, Groq tokens per question, Hugging Face embedding calls, OCR.space pages, and Razorpay's 2% plus GST on each payment. Aim for <span class="mono">LTV / CAC ≥ 3</span> and payback in under 12 months.</p>
       </section>
 
       <!-- 12 ────────────────────────────────────────────────────────── -->
@@ -835,7 +841,7 @@ footer { padding-block: 32px 64px; border-top: 1px solid var(--line); color: var
           <table>
             <thead><tr><th>Phase</th><th>Work</th><th>Exit criteria (gate)</th></tr></thead>
             <tbody>
-              <tr><td>Weeks 0–2<br>Instrument, fix claims</td><td>Tracking plan live; brand assets; masked Aadhaar; expiry SQL in a migration; a “how your data flows” page with the sub-processor list; landing page with the film and early access; external security review booked</td><td><strong>G1:</strong> a test family's full journey shows up end to end on the dashboard, and every public claim is green</td></tr>
+              <tr><td>Weeks 0–2<br>Instrument, fix claims</td><td>Tracking plan live; brand assets; masked Aadhaar; Google's Gmail verification started; Razorpay live keys on PROD; a “how your data flows” page with the sub-processor list; landing page with the film and early access; external security review booked</td><td><strong>G1:</strong> a test family's full journey shows up end to end on the dashboard, and every public claim is green</td></tr>
               <tr><td>Weeks 2–6<br>Hand-held families</td><td>20 problem interviews; onboard 30–50 families personally on 15-minute calls; run the family drill with each; founder posts three times a week; publish the film</td><td><strong>G2:</strong> ≥ 40% of hand-held families reach Ready within 7 days, and ≥ 10 families were referred without being asked</td></tr>
               <tr><td>Weeks 6–10<br>Fix the leakiest stage</td><td>Ship the readiness score and forward-to-vault; A/B the landing headline; 10 search pages; 1–2 creator collaborations; 3 advisor pilots</td><td><strong>G3:</strong> activation ≥ 40%, 30-day family retention ≥ 30%, and k measured for real</td></tr>
               <tr><td>Weeks 10–13<br>Earn the right to spend</td><td>₹50k–1 lakh of paid tests against the winning message; pricing test; PR push with the survey</td><td><strong>G4:</strong> cost per Ready family known per channel, with a path to payback under 12 months. Scale the winner; iterate the rest.</td></tr>
@@ -895,10 +901,10 @@ n ≈ 16 · 0.10 · 0.90 / 0.03² = <span class="k">1,600 per variant</span></pr
           <table>
             <thead><tr><th>File</th><th>Length</th><th>Use it for</th></tr></thead>
             <tbody>
-              <tr><td><code>familyvault-intro-16x9.mp4</code></td><td class="num">1:39</td><td>Landing page hero, YouTube, pinned LinkedIn post, pitch meetings</td></tr>
-              <tr><td><code>familyvault-intro-9x16.mp4</code></td><td class="num">1:39</td><td>Instagram and YouTube full-length vertical posts</td></tr>
-              <tr><td><code>familyvault-intro-9x16-short.mp4</code></td><td class="num">0:56</td><td>Reels, Shorts, WhatsApp forwards. The default for feeds.</td></tr>
-              <tr><td><code>familyvault-intro-16x9-short.mp4</code></td><td class="num">0:56</td><td>LinkedIn and X feeds</td></tr>
+              <tr><td><code>familyvault-intro-16x9.mp4</code></td><td class="num">1:50</td><td>Landing page hero, YouTube, pinned LinkedIn post, pitch meetings</td></tr>
+              <tr><td><code>familyvault-intro-9x16.mp4</code></td><td class="num">1:50</td><td>Instagram and YouTube full-length vertical posts</td></tr>
+              <tr><td><code>familyvault-intro-9x16-short.mp4</code></td><td class="num">1:01</td><td>Reels, Shorts, WhatsApp forwards. The default for feeds.</td></tr>
+              <tr><td><code>familyvault-intro-16x9-short.mp4</code></td><td class="num">1:01</td><td>LinkedIn and X feeds</td></tr>
               <tr><td><code>…-sfx-only.mp4</code> versions</td><td class="num">same</td><td>Posting with a platform's own licensed music track</td></tr>
             </tbody>
           </table>
@@ -907,7 +913,8 @@ n ≈ 16 · 0.10 · 0.90 / 0.03² = <span class="k">1,600 per variant</span></pr
           <li><strong>The first three seconds decide the view.</strong> Facebook and Nielsen found up to 47% of a video campaign's value lands in the first three seconds. Test the 2:14 AM notification opening against the ₹1.84 lakh crore statistic as the first frame.</li>
           <li><strong>Captions are burned in.</strong> In a 2019 US study, 69% of people watched video with the sound off in public. The Hindi and Hinglish lines carry English subtitles.</li>
           <li><strong>The 9:16 cut keeps its content inside the platforms' safe zone</strong>, clear of the top 220 px and bottom 350 px where Reels and Shorts draw their own interface.</li>
-          <li><strong>Before it goes public,</strong> set the end-card address in <code>STORY.url</code> and swap the vector mark for the final logo once one exists.</li>
+          <li><strong>The full cut walks the whole product</strong>: Gmail import, scanning, Ask, Hindi voice, the family tree, an emergency card, a reminder push and privacy. The short cut keeps Gmail import, Ask and voice.</li>
+          <li><strong>Before it goes public,</strong> set the end-card address in <code>STORY.url</code>, confirm the price line in <code>STORY.ctaNote</code> against what PROD sells, and hold back any cut with Gmail import until Google has verified it (<a href="#claims">section 9</a>).</li>
         </ul>
       </section>
 
@@ -925,6 +932,8 @@ n ≈ 16 · 0.10 · 0.90 / 0.03² = <span class="k">1,600 per variant</span></pr
               <tr><td>A wrong answer at the worst moment</td><td>One confident wrong policy number destroys trust</td><td>Always show the source; the document one tap away; watch the unanswered and low-confidence rates</td></tr>
               <tr><td>Google or DigiLocker add family Q&amp;A</td><td>Asking questions of documents is becoming a commodity</td><td>Own the family layer, the Indian-parent experience and readiness, which the platforms are not built around</td></tr>
               <tr><td>Regulation: DPDP from May 2027, Aadhaar rules</td><td>Penalties are large and the documents are sensitive</td><td>Consent, notice, processor contracts and masked Aadhaar now, while the user base is small</td></tr>
+              <tr><td>Google takes months to verify Gmail import, or says no</td><td>It is the most direct answer to “my policies are spread across inboxes”, and the film leads with it</td><td>Start verification now; build forward-to-vault as the fallback; lead public material with Scan and Ask until it lands</td></tr>
+              <tr><td>Documents removed when Family Plus lapses</td><td>One family that loses a policy this way will tell everyone, and it undercuts the emergency promise</td><td>Warnings with a one-tap download of everything, plain terms on the pricing page, and a look at keeping lapsed families read-only instead</td></tr>
             </tbody>
           </table>
         </div>
@@ -948,13 +957,13 @@ n ≈ 16 · 0.10 · 0.90 / 0.03² = <span class="k">1,600 per variant</span></pr
           <li>Bima Sugam marketplace expected by November 2026. <a href="https://www.moneycontrol.com/news/business/insurance/bima-sugam-marketplace-likely-to-launch-by-november-irdai-14039089.html" target="_blank" rel="noopener">Moneycontrol, 27 Sep 2026</a></li>
           <li>Competitor pricing: <a href="https://www.trustworthy.com/pricing" target="_blank" rel="noopener">Trustworthy</a>; <a href="https://familyfolder.com/blog/everplans-pricing.html" target="_blank" rel="noopener">Everplans (third-party summary)</a>. Indian legacy apps from their public sites: <a href="https://legaci.in" target="_blank" rel="noopener">Legaci</a>, <a href="https://www.assetpass.in" target="_blank" rel="noopener">Asset Pass</a>, <a href="https://www.niviapps.com" target="_blank" rel="noopener">One Inheritance</a>, <a href="https://www.outlookbusiness.com/spotlight/news-wire/unclaimedx-unveils-pass-down-to-tackle-india-s-silent-inheritance-crisis" target="_blank" rel="noopener">UnClaimedX</a>. <span class="conf">DigiLocker's sharing features were not verified.</span></li>
           <li>Video: 69% watch with sound off in public, <a href="https://www.forbes.com/sites/tjmccue/2019/07/31/verizon-media-says-69-percent-of-consumers-watching-video-with-sound-off/" target="_blank" rel="noopener">Verizon Media / Publicis, 2019 (US)</a>; first three seconds, <a href="https://www.facebook.com/business/news/updated-features-for-video-ads" target="_blank" rel="noopener">Facebook and Nielsen, 2016</a>. <span class="conf">Both are older, non-Indian studies; treat them as direction, not a benchmark.</span></li>
-          <li>Product claims: this repository at commit <code>cfaa1c5</code>, in particular <code>supabase/functions/_shared/ingest.ts</code>, <code>supabase/functions/rag-search</code>, <code>src/lib/ocr.ts</code>, <code>src/lib/speech-recognition.ts</code>, <code>app.json</code>, and migrations 019–022.</li>
+          <li>Product claims: this repository at <code>dev</code> commit <code>8927e6c</code>, in particular <code>supabase/functions/_shared/</code> (<code>ingest.ts</code>, <code>metadata.ts</code>, <code>gmail-rules.ts</code>, <code>kinship.ts</code>, <code>plan-text.ts</code>), <code>supabase/functions/rag-search</code>, <code>src/lib/ocr.ts</code>, <code>src/lib/speech-recognition.ts</code>, <code>public/sw.js</code>, <code>app.json</code>, and migrations 019–044.</li>
         </ol>
       </section>
     </main>
   </div>
 
-  <footer>FamilyVault go-to-market, draft v1, 27 September 2026. Internal. The film's family, insurer and documents are fictional.</footer>
+  <footer>FamilyVault go-to-market, draft v2, 5 October 2026. Internal. The film's family, insurer, inbox and documents are fictional.</footer>
 </div>
 
 <script>

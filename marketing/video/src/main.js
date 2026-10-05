@@ -13,9 +13,10 @@ const gsap = window.gsap;
 gsap.registerPlugin(window.TextPlugin);
 
 const PORTRAIT = new URLSearchParams(location.search).get('orientation') === 'portrait';
-// The short cut (~55s, for Reels/Shorts) keeps the story and one pass through
-// the product: hook, scramble, insight, the missed call, Ask, Hindi voice,
-// resolution. It drops the statistic, Scan, Family, Reminders and Privacy.
+// The short cut (about a minute, for Reels/Shorts) keeps the story and one
+// pass through the product: hook, scramble, insight, the missed call, Gmail
+// import, Ask, Hindi voice, resolution. It drops the statistic, Scan, the
+// family tree, the emergency card, Reminders and Privacy.
 const SHORT = new URLSearchParams(location.search).get('cut') === 'short';
 const W = PORTRAIT ? 1080 : 1920;
 const H = PORTRAIT ? 1920 : 1080;
@@ -24,16 +25,17 @@ const H = PORTRAIT ? 1920 : 1080;
 // Phone positions are the centre of the device in stage pixels.
 // Callouts sit beside the phone in 16:9 and in the band above it in 9:16.
 const L = PORTRAIT ? {
-  hookPhone: [540, 1150, 1.0], callPhone: [540, 1160, 0.96], dayPhone: [540, 1150, 1.0],
-  resPhone: [540, 1150, 1.0],
+  // Day scenes leave room above the phone for a callout to take the paragraph's place.
+  hookPhone: [540, 1150, 1.0], callPhone: [540, 1160, 0.96], dayPhone: [540, 1176, 0.94],
+  resPhone: [540, 1176, 0.94], coScale: 0.88,
   cards: { mail: [520, 590, -3], work: [590, 820, 3], pdf: [470, 1060, -2], otp: [620, 1290, 2.5], note: [470, 1500, -5] },
   // In 9:16 these take the place of the paragraph once it has been read.
-  coScan: 't-scan', coFamily: 't-family', coAlerts: 't-alerts', wave: 't-voice', resWave: null,
+  coGmail: 't-gmail', coScan: 't-scan', coTree: 't-tree', coAlerts: 't-alerts', wave: 't-voice', resWave: null,
 } : {
   hookPhone: [1260, 540, 0.98], callPhone: [660, 540, 0.95], dayPhone: [1270, 548, 0.94],
   resPhone: [1290, 548, 0.94],
   cards: { mail: [575, 430, -3], work: [1355, 345, 3], pdf: [985, 655, -2], otp: [1440, 790, 2.5], note: [505, 800, -5] },
-  coScan: [1628, 690], coFamily: [1628, 760], coAlerts: [1628, 770], wave: [1690, 548], resWave: [1705, 548],
+  coGmail: [1630, 700], coScan: [1628, 690], coTree: [1636, 720], coAlerts: [1636, 730], wave: [1690, 548], resWave: [1705, 548],
 };
 
 // ─── Build the stage ─────────────────────────────────────────────────────
@@ -65,16 +67,36 @@ addEventListener('resize', fit);
 
 await Promise.all([
   '700 86px "Bricolage Grotesque"', '300 190px "Bricolage Grotesque"', 'italic 400 120px "Instrument Serif"',
-  '400 15px Roboto', '500 15px Roboto', '700 15px Roboto', '400 15px "Noto Sans Devanagari"', '600 38px Caveat',
+  '400 15px Roboto', '500 15px Roboto', '700 15px Roboto', 'italic 400 12px Roboto',
+  '400 15px "Noto Sans Devanagari"', '600 38px Caveat',
 ].map((f) => document.fonts.load(f)));
 await document.fonts.ready;
 
-// Scroll areas start where their header ends, as a flex layout would place them.
+// ─── Layout passes: what flexbox would have settled in the app ──────────
+// Ask: the chat area runs from under the header to above the save bar.
 for (const [areaSel, scrSel] of [['#ask-area', '#scr-ask'], ['#v-area', '#scr-voice']]) {
   const scr = $(scrSel);
-  Object.assign($(areaSel).style, { top: `${$('.app-header', scr).offsetHeight}px`, bottom: `${$('.ask-inputbar', scr).offsetHeight + 80}px` });
+  const top = $('.sb-fill', scr).offsetHeight + $('.v4-bar', scr).offsetHeight;
+  Object.assign($(areaSel).style, { top: `${top}px`, bottom: `${$('.ask-bottom', scr).offsetHeight + 84}px` });
 }
-$('#tag-scroll').style.top = `${$('#scr-tag .app-header').offsetHeight}px`;
+$('#tag-scroll').style.top = `${$('#scr-tag .sb-fill').offsetHeight + $('#scr-tag .v4-bar').offsetHeight}px`;
+
+// The family tree opens scrolled to centre your own card (family-tree.tsx).
+{
+  const canvas = $('#tree-canvas');
+  const content = $('#tree-content');
+  const c = canvas.getBoundingClientRect();
+  const me = $('#tc-me').getBoundingClientRect();
+  const cx = me.left + me.width / 2 - c.left - canvas.clientLeft;
+  const max = Math.max(0, content.offsetWidth - canvas.clientWidth);
+  const scrollX = Math.min(max, Math.max(0, cx - canvas.clientWidth / 2));
+  content.style.transform = `translateX(${-scrollX}px)`;
+}
+
+// Upload's text-extracted row is shorter than the progress card it replaces;
+// taps are measured in the layout they happen in, after reading.
+const ocrSlot = $('.ocr-slot');
+ocrSlot.style.height = `${$('#ocr-done').offsetHeight}px`;
 
 // A long question scrolls the input sideways to keep the caret in view.
 function inputOverflow(lineSel, text) {
@@ -88,9 +110,8 @@ function inputOverflow(lineSel, text) {
   return { over: Math.max(0, over), frac: Math.min(1, frac) };
 }
 const Q1 = "What is Papa's health insurance policy number?";
-const Q2 = "When does Maa's passport expire?";
 const VQ = 'पापा की हेल्थ इंश्योरेंस का पॉलिसी नंबर क्या है?';
-const OV = { q1: inputOverflow('#ask-line', Q1), q2: inputOverflow('#ask-line', Q2), vq: inputOverflow('#v-line', VQ) };
+const OV = { q1: inputOverflow('#ask-line', Q1), vq: inputOverflow('#v-line', VQ) };
 
 // ─── Measure tap targets before anything is transformed ─────────────────
 const screenEl = $('#screen');
@@ -102,15 +123,36 @@ function at(el) {
   return { x: (r.left - s.left + r.width / 2) * k, y: (r.top - s.top + r.height / 2) * k, top: (r.top - s.top) * k, h: r.height * k };
 }
 const P = {
-  scan: at('#up-scan'), shutter: at('#cam-shutter'), papa: at('#p-papa'), health: at('#c-6'),
-  save: at('#save-btn'), askInput: at($('#ask-typed').closest('.ask-inputbox')),
-  askSend: at('#ask-send-on'), mic: at('#v-mic'), famAdd: at('#fam-add'),
-  email: at($('#inv-email').parentElement), sister: at('#rel-sister'), alias: at($('#inv-alias').parentElement),
-  invSend: at('#inv-send'), bell: at('#home-bell'),
-  whoTitle: at($$('#tag-inner .up-sec')[0]), catTitle: at($$('#tag-inner .up-sec')[1]),
-  tagTop: at('#tag-inner'),
+  gmail: at('#up-gmail'), gmFind: at('#gm-find'), gmImport: at('#gm-import'),
+  scan: at('#up-scan'), shutter: at('#cam-shutter'), papa: at('#p-papa'), health: at('#c-6'), save: at('#save-btn'),
+  whoTitle: at($$('#tag-inner .up-h')[0]), catTitle: at($$('#tag-inner .up-h')[1]), tagTop: at('#tag-inner'),
+  askInput: at($('#ask-typed').closest('.ask-inputbox')), askSend: at('#ask-send-on'), askSave: at('#ask-save'),
+  mic: at('#v-mic'), vTabHome: at('#v-tab-home'), homeAvatar: at('#home-avatar'), drTree: at('#dr-tree'),
+  tcPapa: at('#tc-papa'), ppOpen: at('#pp-open'), pn1: at('#pn1'),
 };
+const tagView = $('#tag-scroll').offsetHeight;
+const tagMax = $('#tag-inner').offsetHeight - tagView;
+ocrSlot.style.height = '';
 const moreH = { ln1: $('#ln1-more1').offsetHeight };
+
+// Gmail import: the scan card takes the height of whichever state it shows.
+const gmH = Object.fromEntries(['idle', 'scanning', 'done'].map((k) => [k, $(`#gm-${k}`).offsetHeight + 32]));
+// Scrolls that bring what matters into view, never past the end.
+const scrollTo = (innerSel, viewSel, targetSel, margin) => {
+  const inner = $(innerSel);
+  const max = inner.offsetHeight - $(viewSel).offsetHeight;
+  const target = $(targetSel).getBoundingClientRect().top - inner.getBoundingClientRect().top;
+  return Math.max(0, Math.min(max, target - margin));
+};
+const gmScroll = (() => {
+  // The list is laid out with the card in its finished state.
+  const card = $('.gm-card');
+  card.style.height = `${gmH.done}px`;
+  const v = scrollTo('#gm-inner', '.gm-scroll', '.gm-group', 12);
+  card.style.height = '';
+  return v;
+})();
+const emScroll = scrollTo('#em-inner', '.em-scroll', '#em-ins', 150);
 
 // Chat bubbles are placed absolutely, in order, the way the ScrollView lays
 // them out; scrolling to the newest one is then a tween of the stack.
@@ -129,7 +171,7 @@ function layoutChat(areaSel, groups) {
   const areaH = area.offsetHeight;
   return (id) => Math.max(0, slots[id].top + slots[id].h + 8 - areaH);
 }
-const askScroll = layoutChat('#ask-area', [['ask-q1'], ['ask-l1', 'ask-a1'], ['ask-q2'], ['ask-l2', 'ask-a2']]);
+layoutChat('#ask-area', [['ask-q1'], ['ask-l1', 'ask-a1']]);
 const vScroll = layoutChat('#v-area', [['v-q1'], ['v-l1', 'v-a1']]);
 
 // ─── Initial state ───────────────────────────────────────────────────────
@@ -146,14 +188,14 @@ gsap.set($$('.callout, #wave'), { autoAlpha: 0 });
 gsap.set($$('.scr'), { autoAlpha: 0 });
 gsap.set('#scr-lock', { autoAlpha: 1 });
 gsap.set(['#touch', '#shutter'], { autoAlpha: 0 });
-gsap.set('#sb-dark', { autoAlpha: 0 });
 gsap.set('#hb-dark', { autoAlpha: 0 });
-gsap.set('#ln1', { autoAlpha: 0 });
-gsap.set('#ln2', { autoAlpha: 0 });
+gsap.set(['#ln1', '#ln2', '#pn1', '#pn2'], { autoAlpha: 0 });
 gsap.set('#ln1-more1', { height: 0, autoAlpha: 0 });
-gsap.set(['#ocr-done', '#fam-dim'], { autoAlpha: 0 });
-gsap.set('#fam-sheet', { yPercent: 105 });
-gsap.set(['#ask-title', '#v-title'].filter((s) => $(s)), { x: -40 });
+gsap.set('#ocr-done', { autoAlpha: 0 });
+gsap.set('.gm-card', { height: gmH.idle });
+gsap.set('#drawer', { autoAlpha: 0 });
+gsap.set('#drawer-dim', { opacity: 0 });
+gsap.set('#drawer-panel', { x: -330 });
 gsap.set($$('.msg'), { autoAlpha: 0 });
 gsap.set('#sc-count', { autoAlpha: 0 });
 gsap.set('#call-missed', { autoAlpha: 0 });
@@ -163,23 +205,16 @@ place('#phone', L.hookPhone, { autoAlpha: 0 });
 for (const [name, pos] of Object.entries(L.cards)) place(`#sc-${name}`, [pos[0], pos[1]], { rotation: pos[2], autoAlpha: 0 });
 // In 9:16 a callout sits where its scene's paragraph was: centred, top-aligned
 // with the paragraph, which fades out as the callout arrives.
-function bandPos(id, el) {
+function bandPos(id, el, s) {
   const block = $(`#${id}`);
   const subEl = $('.sub', block);
   const top = block.offsetTop + subEl.offsetTop + 6;
-  return [W / 2, top + el.offsetHeight / 2];
+  return [W / 2, top + (el.offsetHeight * s) / 2, s];
 }
-for (const [id, key] of [['co-scan', 'coScan'], ['co-family', 'coFamily'], ['co-alerts', 'coAlerts'], ['wave', 'wave']]) {
+const CALLOUTS = { 'co-gmail': 'coGmail', 'co-scan': 'coScan', 'co-tree': 'coTree', 'co-alerts': 'coAlerts', wave: 'wave' };
+for (const [id, key] of Object.entries(CALLOUTS)) {
   const el = $(`#${id}`);
-  place(el, typeof L[key] === 'string' ? bandPos(L[key], el) : L[key]);
-}
-function showCallout(sel, t) {
-  const d = PORTRAIT ? { y: 30 } : { x: 36 };
-  const from = Object.fromEntries(Object.entries(d).map(([k, v]) => [k, `+=${v}`]));
-  const to = Object.fromEntries(Object.entries(d).map(([k, v]) => [k, `-=${v}`]));
-  if (PORTRAIT) tl.to(`#${{ '#co-scan': 't-scan', '#co-family': 't-family', '#co-alerts': 't-alerts' }[sel]} .sub`, { autoAlpha: 0, duration: 0.3, ease: 'none' }, t - 0.1);
-  tl.fromTo(sel, { autoAlpha: 0, ...from }, { autoAlpha: 1, ...to, duration: 0.7, ...IR }, t);
-  cue(t + 0.05, 'pop');
+  place(el, typeof L[key] === 'string' ? bandPos(L[key], el, id === 'wave' ? 1 : L.coScale) : L[key]);
 }
 
 // ─── Timeline helpers ────────────────────────────────────────────────────
@@ -188,6 +223,14 @@ const cues = [];
 const cue = (t, type, extra = {}) => cues.push({ t: Math.round(t * 1000) / 1000, type, ...extra });
 const IR = { immediateRender: false };
 
+function showCallout(sel, t) {
+  const d = PORTRAIT ? { y: 30 } : { x: 36 };
+  const from = Object.fromEntries(Object.entries(d).map(([k, v]) => [k, `+=${v}`]));
+  const to = Object.fromEntries(Object.entries(d).map(([k, v]) => [k, `-=${v}`]));
+  if (PORTRAIT) tl.to(`#${L[CALLOUTS[sel.slice(1)]]} .sub`, { autoAlpha: 0, duration: 0.3, ease: 'none' }, t - 0.1);
+  tl.fromTo(sel, { autoAlpha: 0, ...from }, { autoAlpha: 1, ...to, duration: 0.7, ...IR }, t);
+  cue(t + 0.05, 'pop');
+}
 function reveal(container, t, { stagger = 0.055, dur = 0.95 } = {}) {
   const el = typeof container === 'string' ? $(container) : container;
   tl.set(el, { autoAlpha: 1 }, t);
@@ -214,6 +257,11 @@ function nav(from, to, t, how = 'push', dur = 0.45) {
   if (how === 'push') {
     tl.fromTo(b, { xPercent: 100 }, { xPercent: 0, duration: dur, ease: 'power3.inOut', ...IR }, t);
     tl.to(a, { xPercent: -28, duration: dur, ease: 'power3.inOut' }, t);
+  } else if (how === 'back') {
+    // Back: the screen in front slides away and uncovers the one behind it.
+    tl.set(a, { zIndex: ++z }, t);
+    tl.fromTo(b, { xPercent: -28 }, { xPercent: 0, duration: dur, ease: 'power3.inOut', ...IR }, t);
+    tl.to(a, { xPercent: 100, duration: dur, ease: 'power3.inOut' }, t);
   } else if (how === 'zoom') {
     tl.fromTo(b, { scale: 0.92, autoAlpha: 0 }, { scale: 1, autoAlpha: 1, duration: dur, ease: 'power2.out', ...IR }, t);
   } else {
@@ -221,11 +269,14 @@ function nav(from, to, t, how = 'push', dur = 0.45) {
   }
   tl.set(a, { autoAlpha: 0, xPercent: 0 }, t + dur);
 }
-function statusBar(t, mode, time) {
-  const light = mode === 'light';
-  tl.to(['#sb-light', '#hb-light'], { autoAlpha: light ? 1 : 0, duration: 0.2, ease: 'none' }, t);
-  tl.to(['#sb-dark', '#hb-dark'], { autoAlpha: light ? 0 : 1, duration: 0.2, ease: 'none' }, t);
-  if (time) tl.set($$('.sb-time'), { text: time }, t);
+// The status bar is white throughout: over the night wallpaper, the camera,
+// and the theme-colour strip the web app paints. The gesture bar follows the
+// bottom of the screen: dark over the app, light over the system's own screens.
+function chrome(t, mode, time) {
+  const app = mode === 'app';
+  tl.to('#hb-light', { autoAlpha: app ? 0 : 1, duration: 0.2, ease: 'none' }, t);
+  tl.to('#hb-dark', { autoAlpha: app ? 1 : 0, duration: 0.2, ease: 'none' }, t);
+  if (time) tl.set('.sb-time', { text: time }, t);
 }
 function tap(t, p, { scroll = 0, press } = {}) {
   tl.set('#touch', { x: p.x, y: p.y - scroll }, t - 0.2);
@@ -249,6 +300,11 @@ function vibrate(t) {
 function phoneTo(t, [x, y, s], dur = 0.9, extra = {}) {
   tl.to('#phone', { x, y, scale: s, duration: dur, ease: 'power3.inOut', ...extra }, t);
 }
+function phoneIn(t) {
+  tl.fromTo('#phone', { autoAlpha: 0, x: L.dayPhone[0] + (PORTRAIT ? 0 : 260), y: L.dayPhone[1] + (PORTRAIT ? 260 : 0), scale: L.dayPhone[2], rotation: PORTRAIT ? 0 : 6 },
+    { autoAlpha: 1, x: L.dayPhone[0], y: L.dayPhone[1], rotation: 0, duration: 1.0, ...IR }, t);
+  cue(t, 'whoosh-soft');
+}
 function popCard(sel, t) {
   tl.fromTo(sel, { autoAlpha: 0, scale: 0.82, y: '+=46' }, { autoAlpha: 1, scale: 1, y: '-=46', duration: 0.6, ease: 'back.out(1.5)', ...IR }, t);
   cue(t, 'pop');
@@ -256,6 +312,11 @@ function popCard(sel, t) {
 function sub(id, t0, t1) {
   tl.fromTo(`#${id}`, { autoAlpha: 0, y: 10 }, { autoAlpha: 1, y: 0, duration: 0.3, ...IR }, t0);
   tl.to(`#${id}`, { autoAlpha: 0, duration: 0.25, ease: 'none' }, t1);
+}
+// A number on screen that counts up, driven by the playhead so it survives seeking.
+function count(t, dur, draw) {
+  const o = { v: 0 };
+  tl.fromTo(o, { v: 0 }, { v: 1, duration: dur, ease: 'power1.inOut', ...IR, onUpdate: () => draw(o.v) }, t);
 }
 
 // Continuous motion, driven by the playhead so it survives seeking.
@@ -281,7 +342,7 @@ cue(0, 'section', { name: 'night' });
 tl.to('#fade', { autoAlpha: 0, duration: 1.2, ease: 'power1.inOut' }, 0);
 tl.fromTo('#phone', { autoAlpha: 0, y: `+=70`, scale: L.hookPhone[2] * 0.94 },
   { autoAlpha: 1, y: L.hookPhone[1], scale: L.hookPhone[2], duration: 1.4, ...IR }, 0.25);
-statusBar(0, 'light', '2:14');
+chrome(0, 'os', '2:14');
 tl.set('#t-hook', { autoAlpha: 1 }, 0.5);
 tl.fromTo('#t-hook .clock-big', { autoAlpha: 0, y: 30 }, { autoAlpha: 1, y: 0, duration: 1.1, ...IR }, 0.5);
 tl.fromTo('#t-hook .where', { autoAlpha: 0, y: 24 }, { autoAlpha: 1, y: 0, duration: 1.0, ...IR }, 1.0);
@@ -307,7 +368,7 @@ S.scramble = 6.9;
     ['cap4', '#sc-otp', '2:26 AM'], ['cap5', '#sc-note', '2:31 AM'],
   ];
   const beats = SHORT ? [all[0], all[2], all[4]] : all;
-  const step = 1.85;
+  const step = SHORT ? 1.7 : 1.85;
   beats.forEach(([cap, card, time], i) => {
     const t = t0 + 0.15 + i * step;
     if (i > 0) {
@@ -348,22 +409,22 @@ S.scramble = 6.9;
   S.stat = s0;
   const stat = { v: 0 };
   if (!SHORT) {
-  tl.set('#t-stat', { autoAlpha: 1, y: 0 }, s0);
-  tl.fromTo('#stat-num', { autoAlpha: 0, scale: 0.94 }, { autoAlpha: 1, scale: 1, duration: 0.8, ...IR }, s0);
-  tl.fromTo(stat, { v: 0 }, {
-    v: 1.84, duration: 1.3, ease: 'power2.out', ...IR,
-    onUpdate: () => { $('#stat-val').textContent = stat.v.toFixed(2); },
-  }, s0);
-  fadeIn('#stat-line', s0 + 0.7, { from: 18, duration: 0.7 });
-  fadeIn('#stat-src', s0 + 1.2, { from: 8, duration: 0.6 });
-  hide('#t-stat', s0 + 3.75);
+    tl.set('#t-stat', { autoAlpha: 1, y: 0 }, s0);
+    tl.fromTo('#stat-num', { autoAlpha: 0, scale: 0.94 }, { autoAlpha: 1, scale: 1, duration: 0.8, ...IR }, s0);
+    tl.fromTo(stat, { v: 0 }, {
+      v: 1.84, duration: 1.3, ease: 'power2.out', ...IR,
+      onUpdate: () => { $('#stat-val').textContent = stat.v.toFixed(2); },
+    }, s0);
+    fadeIn('#stat-line', s0 + 0.7, { from: 18, duration: 0.7 });
+    fadeIn('#stat-src', s0 + 1.2, { from: 8, duration: 0.6 });
+    hide('#t-stat', s0 + 3.75);
   }
 
   const c0 = SHORT ? s0 : s0 + 4.25;
   S.call = c0;
   tl.set('#scr-call', { autoAlpha: 1, zIndex: ++z }, c0);
   tl.set('#scr-lock', { autoAlpha: 0 }, c0);
-  statusBar(c0, 'light', '2:14');
+  chrome(c0, 'os', '2:14');
   tl.fromTo('#phone', { autoAlpha: 0, x: L.callPhone[0], y: L.callPhone[1] + 40, scale: L.callPhone[2] * 0.95 },
     { autoAlpha: 1, x: L.callPhone[0], y: L.callPhone[1], scale: L.callPhone[2], duration: 0.9, ...IR }, c0);
   [0, 1, 2].forEach((i) => {
@@ -398,151 +459,177 @@ S.scramble = 6.9;
   cue(t0 + 0.4, 'pop');
   tl.fromTo('#wordmark', { clipPath: 'inset(0% 100% 0% 0%)', y: 12 }, { clipPath: 'inset(0% 0% 0% 0%)', y: 0, duration: 0.8, ease: 'power3.out', ...IR }, t0 + 0.85);
   fadeIn('#tagline', t0 + 1.5, { from: 16, duration: 0.7 });
-  hide('#brand', t0 + (SHORT ? 3.0 : 3.9), { y: -40 });
-  S.scan = t0 + (SHORT ? 3.5 : 4.4);
+  hide('#brand', t0 + (SHORT ? 2.8 : 3.9), { y: -40 });
+  S.gmail = t0 + (SHORT ? 3.25 : 4.4);
 }
 
-// ─── 5. Scan ─────────────────────────────────────────────────────────────
+// ─── 5. Import from Gmail ────────────────────────────────────────────────
+{
+  const t0 = S.gmail;
+  // The short cut runs the same steps a little faster.
+  const k = SHORT ? { open: 1.2, find: 2.15, scan: 1.1, scroll: 0.45, imp: 1.35, row: 0.22, out: 0.95 }
+    : { open: 1.3, find: 2.35, scan: 1.45, scroll: 0.6, imp: 1.75, row: 0.3, out: 1.2 };
+  cue(t0, 'section', { name: 'day' });
+  showBlock('t-gmail', t0);
+  tl.set('#scr-upload', { autoAlpha: 1, zIndex: ++z }, t0);
+  tl.set(['#scr-call', '#scr-lock'], { autoAlpha: 0 }, t0);
+  chrome(t0, 'app', '9:41');
+  phoneIn(t0 + 0.05);
+  tap(t0 + k.open, P.gmail, { press: '#up-gmail' });
+  nav('scr-upload', 'scr-gmail', t0 + k.open + 0.15, 'push');
+  tap(t0 + k.find, P.gmFind, { press: '#gm-find' });
+  swap('#gm-idle', '#gm-scanning', t0 + k.find + 0.05, 0.2);
+  tl.to('.gm-card', { height: gmH.scanning, duration: 0.3, ease: 'power2.out' }, t0 + k.find + 0.05);
+  count(t0 + k.find + 0.1, k.scan, (v) => { $('#gm-count').textContent = `${Math.round(412 * v)} checked, ${Math.floor(10 * v ** 1.15 + 0.0001)} found`; });
+  cue(t0 + k.find + 0.1, 'process', { dur: k.scan });
+  showCallout('#co-gmail', t0 + k.find + 0.35);
+  tl.fromTo($$('#co-gmail .co-check'), { autoAlpha: 0, x: 14 }, { autoAlpha: 1, x: 0, duration: 0.45, stagger: 0.14, ...IR }, t0 + k.find + 0.55);
+  const d0 = t0 + k.find + 0.15 + k.scan;
+  swap('#gm-scanning', '#gm-done', d0, 0.2);
+  tl.to('.gm-card', { height: gmH.done, duration: 0.3, ease: 'power2.out' }, d0);
+  fadeIn('#gm-list', d0 + 0.05, { from: 10, duration: 0.4 });
+  fadeIn('#gm-footer', d0 + 0.1, { from: 20, duration: 0.4 });
+  cue(d0 + 0.05, 'ding');
+  tl.to('#gm-inner', { y: -gmScroll, duration: SHORT ? 0.7 : 0.8, ease: 'power2.inOut' }, d0 + k.scroll);
+  const i0 = d0 + k.imp;
+  tap(i0, P.gmImport, { press: '#gm-import' });
+  tl.to('#gm-busy', { autoAlpha: 1, duration: 0.12, ease: 'none' }, i0 + 0.02);
+  tl.to('#gm-import', { opacity: 0.8, duration: 0.12, ease: 'none' }, i0 + 0.3);
+  ['gm-r1', 'gm-r2', 'gm-r3', 'gm-r4', 'gm-r5'].forEach((id, i) => {
+    const t = i0 + 0.35 + i * k.row;
+    if (i < 4) tl.set('#gm-busy-label', { text: `Importing ${i + 2} of 5…` }, t + 0.02);
+    swap(`#${id} .gm-on`, `#${id} .gm-ok`, t, 0.12);
+    swap(`#${id} .gm-why`, `#${id} .gm-imported`, t, 0.12);
+  });
+  cue(i0 + 0.35, 'process', { dur: 5 * k.row - 0.1 });
+  const done = i0 + 0.35 + 5 * k.row;
+  tl.to('#gm-footer', { autoAlpha: 0, y: 24, duration: 0.3, ease: 'power2.in' }, done);
+  cue(done + 0.05, 'success');
+  hide('#t-gmail', done + k.out - 0.45);
+  hide('#co-gmail', done + k.out - 0.55, { y: '-=20' });
+  S.scan = done + k.out;
+}
+
+// ─── 6. Scan the paper ones ──────────────────────────────────────────────
 S.ask = S.scan;
 if (!SHORT) {
   const t0 = S.scan;
-  cue(t0, 'section', { name: 'day' });
   showBlock('t-scan', t0);
-  tl.set('#scr-upload', { autoAlpha: 1, zIndex: ++z }, t0);
-  tl.set(['#scr-call', '#scr-lock'], { autoAlpha: 0 }, t0);
-  statusBar(t0, 'dark', '9:41');
-  tl.fromTo('#phone', { autoAlpha: 0, x: L.dayPhone[0] + (PORTRAIT ? 0 : 260), y: L.dayPhone[1] + (PORTRAIT ? 260 : 0), scale: L.dayPhone[2], rotation: PORTRAIT ? 0 : 6 },
-    { autoAlpha: 1, x: L.dayPhone[0], y: L.dayPhone[1], rotation: 0, duration: 1.0, ...IR }, t0 + 0.05);
-  cue(t0 + 0.05, 'whoosh-soft');
-  tap(t0 + 1.45, P.scan, { press: '#up-scan' });
-  nav('scr-upload', 'scr-camera', t0 + 1.6, 'zoom', 0.4);
-  statusBar(t0 + 1.6, 'light');
-  tl.fromTo('#cam-guides', { scale: 1.08, autoAlpha: 0 }, { scale: 1, autoAlpha: 1, duration: 0.5, ...IR }, t0 + 1.95);
-  tl.set('#cam-scan', { autoAlpha: 1 }, t0 + 2.15);
-  tl.fromTo('#cam-scan', { y: 0 }, { y: 440, duration: 1.05, ease: 'power1.inOut', ...IR }, t0 + 2.15);
-  tl.set('#cam-scan', { autoAlpha: 0 }, t0 + 3.2);
-  cue(t0 + 2.15, 'scan', { dur: 1.05 });
-  tap(t0 + 3.4, P.shutter, { press: '#cam-shutter' });
-  tl.fromTo('#shutter', { autoAlpha: 0 }, { autoAlpha: 0.95, duration: 0.06, ease: 'none', ...IR }, t0 + 3.42);
-  tl.to('#shutter', { autoAlpha: 0, duration: 0.35, ease: 'power1.out' }, t0 + 3.5);
-  cue(t0 + 3.42, 'shutter');
-  nav('scr-camera', 'scr-tag', t0 + 3.75, 'fade', 0.35);
-  statusBar(t0 + 3.75, 'dark');
-  tl.fromTo('#ocr-fill', { scaleX: 0 }, { scaleX: 1, duration: 1.75, ease: 'power1.inOut', ...IR }, t0 + 4.05);
-  cue(t0 + 4.05, 'process', { dur: 1.75 });
-  tl.to('#ocr-card', { autoAlpha: 0, duration: 0.2, ease: 'none' }, t0 + 5.85);
-  fadeIn('#ocr-done', t0 + 5.85, { from: 4, duration: 0.3 });
-  cue(t0 + 5.9, 'ding');
-  showCallout('#co-scan', t0 + 6.05);
-  tl.fromTo($$('#co-scan .co-row, #co-scan .co-foot'), { autoAlpha: 0, x: 14 }, { autoAlpha: 1, x: 0, duration: 0.45, stagger: 0.12, ...IR }, t0 + 6.25);
-  const maxScroll = $('#tag-inner').offsetHeight - $('#tag-scroll').offsetHeight;
-  const scroll1 = Math.min(maxScroll, P.whoTitle.top - P.tagTop.top - 12);
-  const scroll2 = Math.min(maxScroll, P.catTitle.top - P.tagTop.top - 12);
-  tl.to('#tag-inner', { y: -scroll1, duration: 0.65, ease: 'power2.inOut' }, t0 + 6.8);
-  tap(t0 + 7.65, P.papa, { scroll: scroll1 });
-  swap('#p-rohan-sel', '#p-papa-sel', t0 + 7.66, 0.16);
-  tl.to('#tag-inner', { y: -scroll2, duration: 0.65, ease: 'power2.inOut' }, t0 + 8.1);
-  tap(t0 + 8.95, P.health, { scroll: scroll2 });
-  swap('#c-0-sel', '#c-6-sel', t0 + 8.96, 0.16);
-  tap(t0 + 9.6, P.save, { scroll: scroll2 });
-  tl.to('#save-busy', { autoAlpha: 1, duration: 0.12, ease: 'none' }, t0 + 9.62);
-  tl.fromTo('#up-dialog', { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.22, ease: 'none', ...IR }, t0 + 10.3);
-  tl.fromTo('#up-dialog-box', { scale: 0.88 }, { scale: 1, duration: 0.4, ease: 'back.out(1.8)', ...IR }, t0 + 10.3);
-  cue(t0 + 10.35, 'success');
-  hide('#t-scan', t0 + 11.1);
-  hide('#co-scan', t0 + 11.0, { y: '-=20' });
-  S.ask = t0 + 11.55;
+  nav('scr-gmail', 'scr-upload', t0, 'back', 0.4);
+  tap(t0 + 1.0, P.scan, { press: '#up-scan' });
+  nav('scr-upload', 'scr-camera', t0 + 1.15, 'zoom', 0.4);
+  chrome(t0 + 1.15, 'os');
+  tl.fromTo('#cam-guides', { scale: 1.08, autoAlpha: 0 }, { scale: 1, autoAlpha: 1, duration: 0.5, ...IR }, t0 + 1.5);
+  tl.set('#cam-scan', { autoAlpha: 1 }, t0 + 1.7);
+  tl.fromTo('#cam-scan', { y: 0 }, { y: 440, duration: 1.0, ease: 'power1.inOut', ...IR }, t0 + 1.7);
+  tl.set('#cam-scan', { autoAlpha: 0 }, t0 + 2.7);
+  cue(t0 + 1.7, 'scan', { dur: 1.0 });
+  tap(t0 + 2.9, P.shutter, { press: '#cam-shutter' });
+  tl.fromTo('#shutter', { autoAlpha: 0 }, { autoAlpha: 0.95, duration: 0.06, ease: 'none', ...IR }, t0 + 2.92);
+  tl.to('#shutter', { autoAlpha: 0, duration: 0.35, ease: 'power1.out' }, t0 + 3.0);
+  cue(t0 + 2.92, 'shutter');
+  nav('scr-camera', 'scr-tag', t0 + 3.25, 'fade', 0.35);
+  chrome(t0 + 3.25, 'app');
+  tl.fromTo('#ocr-fill', { scaleX: 0 }, { scaleX: 1, duration: 1.55, ease: 'power1.inOut', ...IR }, t0 + 3.5);
+  cue(t0 + 3.5, 'process', { dur: 1.55 });
+  const r0 = t0 + 5.1;
+  tl.to('#ocr-card', { autoAlpha: 0, duration: 0.2, ease: 'none' }, r0);
+  fadeIn('#ocr-done', r0, { from: 4, duration: 0.3 });
+  tl.to(ocrSlot, { height: $('#ocr-done').offsetHeight, duration: 0.3, ease: 'power2.out' }, r0);
+  cue(r0 + 0.05, 'ding');
+  showCallout('#co-scan', r0 + 0.2);
+  tl.fromTo($$('#co-scan .co-row, #co-scan .co-foot'), { autoAlpha: 0, x: 14 }, { autoAlpha: 1, x: 0, duration: 0.45, stagger: 0.12, ...IR }, r0 + 0.4);
+  // Scrolls are measured in the after-reading layout, like the taps.
+  const scroll1 = Math.min(tagMax, P.whoTitle.top - P.tagTop.top - 12);
+  const scroll2 = Math.min(tagMax, P.catTitle.top - P.tagTop.top - 12);
+  // The Save button may still be below the fold once the categories are in view.
+  const scroll3 = Math.max(scroll2, Math.min(tagMax, P.save.top + P.save.h + 16 - (P.tagTop.top + tagView)));
+  tl.to('#tag-inner', { y: -scroll1, duration: 0.65, ease: 'power2.inOut' }, r0 + 0.75);
+  tap(r0 + 1.6, P.papa, { scroll: scroll1 });
+  swap('#p-me-sel', '#p-papa-sel', r0 + 1.61, 0.16);
+  tl.to('#tag-inner', { y: -scroll2, duration: 0.6, ease: 'power2.inOut' }, r0 + 2.0);
+  tap(r0 + 2.8, P.health, { scroll: scroll2 });
+  swap('#c-0-sel', '#c-6-sel', r0 + 2.81, 0.16);
+  if (scroll3 > scroll2 + 2) tl.to('#tag-inner', { y: -scroll3, duration: 0.45, ease: 'power2.inOut' }, r0 + 3.05);
+  tap(r0 + 3.55, P.save, { scroll: scroll3 });
+  tl.to('#save-busy', { autoAlpha: 1, duration: 0.12, ease: 'none' }, r0 + 3.57);
+  tl.to('#save-btn', { opacity: 0.7, duration: 0.12, ease: 'none' }, r0 + 3.6);
+  // The upload is done when the dialog opens: the button is itself again.
+  tl.set('#save-busy', { autoAlpha: 0 }, r0 + 4.2);
+  tl.set('#save-btn', { opacity: 1 }, r0 + 4.2);
+  tl.fromTo('#up-dialog', { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.25, ease: 'none', ...IR }, r0 + 4.2);
+  tl.fromTo('#up-dialog-box', { scale: 0.92 }, { scale: 1, duration: 0.35, ease: 'power2.out', ...IR }, r0 + 4.2);
+  cue(r0 + 4.25, 'success');
+  hide('#t-scan', r0 + 4.95);
+  hide('#co-scan', r0 + 4.85, { y: '-=20' });
+  S.ask = r0 + 5.4;
 }
 
-// ─── 6. Ask ──────────────────────────────────────────────────────────────
+// ─── 7. Ask ──────────────────────────────────────────────────────────────
 {
   const t0 = S.ask;
+  // Typing, sending, the answer: a touch quicker in the short cut.
+  const k = SHORT ? { type: 1.6, think: 1.25 } : { type: 1.9, think: 1.4 };
+  const sent = t0 + 0.9 + k.type + 0.3;
+  const ans = sent + 0.25 + k.think;
   showBlock('t-ask', t0);
-  if (SHORT) {
-    cue(t0, 'section', { name: 'day' });
-    tl.set('#scr-ask', { autoAlpha: 1, zIndex: ++z }, t0);
-    tl.set(['#scr-call', '#scr-lock'], { autoAlpha: 0 }, t0);
-    statusBar(t0, 'dark', '9:41');
-    tl.fromTo('#phone', { autoAlpha: 0, x: L.dayPhone[0] + (PORTRAIT ? 0 : 260), y: L.dayPhone[1] + (PORTRAIT ? 260 : 0), scale: L.dayPhone[2], rotation: PORTRAIT ? 0 : 6 },
-      { autoAlpha: 1, x: L.dayPhone[0], y: L.dayPhone[1], rotation: 0, duration: 1.0, ...IR }, t0 + 0.05);
-    cue(t0 + 0.05, 'whoosh-soft');
-  } else {
-    nav('scr-tag', 'scr-ask', t0, 'fade', 0.4);
-  }
-  const q1 = Q1;
-  const q2 = Q2;
+  nav(SHORT ? 'scr-gmail' : 'scr-tag', 'scr-ask', t0, 'fade', 0.4);
   tap(t0 + 0.75, P.askInput);
   tl.set('#ask-ph', { autoAlpha: 0 }, t0 + 0.9);
   tl.set('#ask-caret', { autoAlpha: 1 }, t0 + 0.8);
   swap('#ask-send-off', '#ask-send-on', t0 + 0.95, 0.15);
-  type('#ask-typed', q1, t0 + 0.9, 1.9);
-  if (OV.q1.over) tl.to('#ask-line', { x: -OV.q1.over, duration: 1.9 * (1 - OV.q1.frac), ease: 'none' }, t0 + 0.9 + 1.9 * OV.q1.frac);
-  tap(t0 + 3.1, P.askSend, { press: '#ask-send-on' });
-  cue(t0 + 3.12, 'send');
-  tl.set('#ask-typed', { text: '' }, t0 + 3.15);
-  tl.set('#ask-line', { x: 0 }, t0 + 3.15);
-  tl.set('#ask-caret', { autoAlpha: 0 }, t0 + 3.15);
-  tl.set('#ask-ph', { autoAlpha: 1 }, t0 + 3.15);
-  swap('#ask-send-on', '#ask-send-off', t0 + 3.15, 0.1);
-  tl.to('#ask-empty', { autoAlpha: 0, duration: 0.2, ease: 'none' }, t0 + 3.15);
-  tl.to(['#ask-back', '#ask-new'], { autoAlpha: 1, duration: 0.2, ease: 'none' }, t0 + 3.15);
-  tl.to('#ask-title', { x: 0, duration: 0.25, ease: 'power2.out' }, t0 + 3.15);
-  fadeIn('#ask-q1', t0 + 3.2, { duration: 0.3 });
-  fadeIn('#ask-l1', t0 + 3.35, { duration: 0.3 });
-  tl.to('#ask-l1', { autoAlpha: 0, duration: 0.15, ease: 'none' }, t0 + 4.75);
-  fadeIn('#ask-a1', t0 + 4.75, { from: 8, duration: 0.4 });
-  cue(t0 + 4.75, 'answer');
-  tl.to('#ask-hl', { backgroundSize: '100% 100%', duration: 0.6, ease: 'power2.inOut' }, t0 + 5.35);
+  type('#ask-typed', Q1, t0 + 0.9, k.type);
+  if (OV.q1.over) tl.to('#ask-line', { x: -OV.q1.over, duration: k.type * (1 - OV.q1.frac), ease: 'none' }, t0 + 0.9 + k.type * OV.q1.frac);
+  tap(sent, P.askSend, { press: '#ask-send-on' });
+  cue(sent + 0.02, 'send');
+  tl.set('#ask-typed', { text: '' }, sent + 0.05);
+  tl.set('#ask-line', { x: 0 }, sent + 0.05);
+  tl.set('#ask-caret', { autoAlpha: 0 }, sent + 0.05);
+  tl.set('#ask-ph', { autoAlpha: 1 }, sent + 0.05);
+  swap('#ask-send-on', '#ask-send-off', sent + 0.05, 0.1);
+  tl.to('#ask-empty', { autoAlpha: 0, duration: 0.2, ease: 'none' }, sent + 0.05);
+  tl.to('#ask-new', { autoAlpha: 1, duration: 0.2, ease: 'none' }, sent + 0.05);
+  // The save bar comes with the first message, and wakes once there is an answer.
+  tl.set('#ask-save', { opacity: 0.45 }, sent + 0.05);
+  tl.to('#ask-savebar', { autoAlpha: 1, duration: 0.2, ease: 'none' }, sent + 0.05);
+  fadeIn('#ask-q1', sent + 0.1, { duration: 0.3 });
+  fadeIn('#ask-l1', sent + 0.25, { duration: 0.3 });
+  tl.to('#ask-l1', { autoAlpha: 0, duration: 0.15, ease: 'none' }, ans);
+  fadeIn('#ask-a1', ans, { from: 8, duration: 0.4 });
+  tl.to('#ask-save', { opacity: 1, duration: 0.2, ease: 'none' }, ans + 0.05);
+  cue(ans, 'answer');
+  tl.to('#ask-hl', { backgroundSize: '100% 100%', duration: 0.6, ease: 'power2.inOut' }, ans + 0.6);
   if (SHORT) {
-    hide('#t-ask', t0 + 6.0);
-    S.voice = t0 + 6.45;
+    hide('#t-ask', ans + 1.3);
+    S.voice = ans + 1.75;
   } else {
-
-  tap(t0 + 6.35, P.askInput);
-  tl.set('#ask-ph', { autoAlpha: 0 }, t0 + 6.45);
-  tl.set('#ask-caret', { autoAlpha: 1 }, t0 + 6.4);
-  swap('#ask-send-off', '#ask-send-on', t0 + 6.5, 0.15);
-  type('#ask-typed', q2, t0 + 6.45, 1.25);
-  if (OV.q2.over) tl.to('#ask-line', { x: -OV.q2.over, duration: 1.25 * (1 - OV.q2.frac), ease: 'none' }, t0 + 6.45 + 1.25 * OV.q2.frac);
-  tap(t0 + 8.0, P.askSend, { press: '#ask-send-on' });
-  cue(t0 + 8.02, 'send');
-  tl.set('#ask-typed', { text: '' }, t0 + 8.05);
-  tl.set('#ask-line', { x: 0 }, t0 + 8.05);
-  tl.set('#ask-caret', { autoAlpha: 0 }, t0 + 8.05);
-  tl.set('#ask-ph', { autoAlpha: 1 }, t0 + 8.05);
-  swap('#ask-send-on', '#ask-send-off', t0 + 8.05, 0.1);
-  fadeIn('#ask-q2', t0 + 8.1, { duration: 0.3 });
-  tl.to('#ask-stack', { y: -askScroll('ask-q2'), duration: 0.45, ease: 'power2.out' }, t0 + 8.1);
-  fadeIn('#ask-l2', t0 + 8.25, { duration: 0.3 });
-  tl.to('#ask-stack', { y: -askScroll('ask-l2'), duration: 0.4, ease: 'power2.out' }, t0 + 8.25);
-  tl.to('#ask-l2', { autoAlpha: 0, duration: 0.15, ease: 'none' }, t0 + 9.35);
-  fadeIn('#ask-a2', t0 + 9.35, { from: 8, duration: 0.4 });
-  tl.to('#ask-stack', { y: -askScroll('ask-a2'), duration: 0.45, ease: 'power2.out' }, t0 + 9.35);
-  cue(t0 + 9.35, 'answer');
-  tl.to('#ask-hl2', { backgroundSize: '100% 100%', duration: 0.6, ease: 'power2.inOut' }, t0 + 9.9);
-  hide('#t-ask', t0 + 10.55);
-  S.voice = t0 + 11.0;
+    // Save chat: kept for later behind the clock at the top (saved-chats.tsx).
+    tap(ans + 1.55, P.askSave, { press: '#ask-save' });
+    tl.to('#ask-saved', { autoAlpha: 1, duration: 0.18, ease: 'none' }, ans + 1.57);
+    fadeIn('#ask-savenote', ans + 1.65, { from: 4, duration: 0.3 });
+    cue(ans + 1.6, 'ding');
+    tl.fromTo('#ask-clock', { scale: 1 }, { scale: 1.22, duration: 0.22, yoyo: true, repeat: 1, ease: 'sine.inOut', ...IR }, ans + 2.15);
+    hide('#t-ask', ans + 2.8);
+    S.voice = ans + 3.25;
   }
 }
 
-// ─── 7. Voice, in Hindi ──────────────────────────────────────────────────
+// ─── 8. Voice, in Hindi ──────────────────────────────────────────────────
 {
   const t0 = S.voice;
   showBlock('t-voice', t0);
   nav('scr-ask', 'scr-voice', t0, 'fade', 0.4);
-  const q = VQ;
   tap(t0 + 1.0, P.mic);
   cue(t0 + 1.0, 'mic-on');
   swap('#mic-idle', '#mic-listen', t0 + 1.02, 0.15);
   swap('#v-ph-idle', '#v-ph-listen', t0 + 1.02, 0.15);
   tl.to('#v-icon-on', { autoAlpha: 1, duration: 0.15 }, t0 + 1.02);
-  tl.fromTo('#mic-ring', { autoAlpha: 0.9, scale: 0.85 }, { autoAlpha: 0, scale: 1.45, duration: 0.9, ease: 'power1.out', repeat: 2, ...IR }, t0 + 1.05);
   if (PORTRAIT) tl.to('#t-voice .sub', { autoAlpha: 0, duration: 0.3, ease: 'none' }, t0 + 0.9);
   tl.to('#wave', { autoAlpha: 1, duration: 0.3 }, t0 + 1.0);
   tl.to(motion, { amp: 1, duration: 0.4, ease: 'power1.out' }, t0 + 1.2);
   sub('sub-3', t0 + 1.3, t0 + 4.05);
   tl.set('#v-ph-listen', { autoAlpha: 0 }, t0 + 1.55);
-  type('#v-typed', q, t0 + 1.55, 2.0, ' ');
+  type('#v-typed', VQ, t0 + 1.55, 2.0, ' ');
   if (OV.vq.over) tl.to('#v-line', { x: -OV.vq.over, duration: 2.0 * (1 - OV.vq.frac), ease: 'none' }, t0 + 1.55 + 2.0 * OV.vq.frac);
   tl.to(motion, { amp: 0, duration: 0.35, ease: 'power1.in' }, t0 + 3.65);
   tl.to('#wave', { autoAlpha: 0, duration: 0.25 }, t0 + 3.8);
@@ -552,12 +639,14 @@ if (!SHORT) {
   tl.to('#v-icon-on', { autoAlpha: 0, duration: 0.15 }, t0 + 3.95);
   tl.set('#v-ph-think', { autoAlpha: 1 }, t0 + 3.95);
   tl.to('#v-empty', { autoAlpha: 0, duration: 0.2, ease: 'none' }, t0 + 3.95);
-  tl.to(['#v-back', '#v-new'], { autoAlpha: 1, duration: 0.2, ease: 'none' }, t0 + 3.95);
-  tl.to('#v-title', { x: 0, duration: 0.25, ease: 'power2.out' }, t0 + 3.95);
+  tl.to('#v-new', { autoAlpha: 1, duration: 0.2, ease: 'none' }, t0 + 3.95);
+  tl.set('#v-save', { opacity: 0.45 }, t0 + 3.95);
+  tl.to('#v-savebar', { autoAlpha: 1, duration: 0.2, ease: 'none' }, t0 + 3.95);
   fadeIn('#v-q1', t0 + 4.0, { duration: 0.3 });
   fadeIn('#v-l1', t0 + 4.15, { duration: 0.3 });
   tl.to('#v-l1', { autoAlpha: 0, duration: 0.15, ease: 'none' }, t0 + 5.45);
   fadeIn('#v-a1', t0 + 5.45, { from: 8, duration: 0.4 });
+  tl.to('#v-save', { opacity: 1, duration: 0.2, ease: 'none' }, t0 + 5.5);
   tl.to('#v-stack', { y: -vScroll('v-a1'), duration: 0.45, ease: 'power2.out' }, t0 + 5.45);
   swap('#mic-think', '#mic-speak', t0 + 5.45, 0.15);
   swap('#v-ph-think', '#v-ph-again', t0 + 5.45, 0.15);
@@ -573,78 +662,98 @@ if (!SHORT) {
   swap('#v-stop1', '#v-again1', t0 + 8.9, 0.2);
   tl.to('#wave', { autoAlpha: 0, duration: 0.3 }, t0 + 8.9);
   hide('#t-voice', t0 + 9.55);
-  S.family = t0 + 10.0;
+  S.tree = t0 + 10.0;
 }
 
-// ─── 8. Family ───────────────────────────────────────────────────────────
-if (SHORT) S.res = S.family;
+// ─── 9. The family tree ──────────────────────────────────────────────────
+if (SHORT) S.res = S.tree;
 if (!SHORT) {
-  const t0 = S.family;
-  showBlock('t-family', t0);
-  nav('scr-voice', 'scr-family', t0, 'push', 0.45);
-  showCallout('#co-family', t0 + 0.9);
-  tap(t0 + 1.35, P.famAdd, { press: '#fam-add' });
-  tl.to('#fam-dim', { autoAlpha: 1, duration: 0.3, ease: 'none' }, t0 + 1.45);
-  tl.to('#fam-sheet', { yPercent: 0, duration: 0.5, ease: 'power3.out' }, t0 + 1.45);
-  cue(t0 + 1.45, 'whoosh-soft');
-  tap(t0 + 2.15, P.email);
-  tl.set('#inv-email-ph', { autoAlpha: 0 }, t0 + 2.25);
-  tl.set('#inv-caret', { autoAlpha: 1 }, t0 + 2.25);
-  type('#inv-email', 'neha.sharma@gmail.com', t0 + 2.3, 1.0);
-  tl.set('#inv-caret', { autoAlpha: 0 }, t0 + 3.45);
-  tap(t0 + 3.6, P.sister);
-  tl.to('#rel-sister-sel', { autoAlpha: 1, duration: 0.15, ease: 'none' }, t0 + 3.62);
-  tap(t0 + 4.15, P.alias);
-  tl.set('#inv-alias-ph', { autoAlpha: 0 }, t0 + 4.25);
-  tl.set('#inv-caret2', { autoAlpha: 1 }, t0 + 4.25);
-  type('#inv-alias', 'Neha didi', t0 + 4.3, 0.55);
-  tl.set('#inv-caret2', { autoAlpha: 0 }, t0 + 5.0);
-  tap(t0 + 5.2, P.invSend, { press: '#inv-send' });
-  tl.to('#fam-sheet', { yPercent: 105, duration: 0.4, ease: 'power2.in' }, t0 + 5.4);
-  tl.to('#fam-dim', { autoAlpha: 0, duration: 0.3, ease: 'none' }, t0 + 5.5);
-  fadeIn('#fam-pending', t0 + 5.8, { from: 14, duration: 0.45 });
-  cue(t0 + 5.85, 'success');
-  hide('#t-family', t0 + 6.7);
-  hide('#co-family', t0 + 6.6, { y: '-=20' });
-  S.alerts = t0 + 7.15;
+  const t0 = S.tree;
+  showBlock('t-tree', t0);
+  // Home, then the drawer behind your initial, then Family tree.
+  tap(t0 + 0.45, P.vTabHome);
+  nav('scr-voice', 'scr-home', t0 + 0.55, 'fade', 0.3);
+  tap(t0 + 1.3, P.homeAvatar, { press: '#home-avatar' });
+  tl.set('#drawer', { autoAlpha: 1 }, t0 + 1.38);
+  tl.to('#drawer-dim', { opacity: 1, duration: 0.22, ease: 'power3.out' }, t0 + 1.38);
+  tl.to('#drawer-panel', { x: 0, duration: 0.22, ease: 'power3.out' }, t0 + 1.38);
+  cue(t0 + 1.38, 'whoosh-soft');
+  tap(t0 + 2.2, P.drTree, { press: '#dr-tree' });
+  tl.to('#drawer-panel', { x: -330, duration: 0.18, ease: 'power3.in' }, t0 + 2.3);
+  tl.to('#drawer-dim', { opacity: 0, duration: 0.18, ease: 'power3.in' }, t0 + 2.3);
+  tl.set('#drawer', { autoAlpha: 0 }, t0 + 2.5);
+  nav('scr-home', 'scr-tree', t0 + 2.45, 'push');
+  // Generation by generation, as the cards settle in.
+  const gens = [['#tc-dadi'], ['#tc-papa', '#tc-maa'], ['#tc-neha', '#tc-me', '#tc-priya'], ['#tc-aarav']];
+  gens.forEach((g, i) => tl.fromTo(g, { autoAlpha: 0, y: 10 }, { autoAlpha: 1, y: 0, duration: 0.4, ...IR }, t0 + 2.75 + i * 0.12));
+  tl.fromTo($$('#tree-content .vl, #tree-content .ml, #tree-content .bar'), { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.4, ...IR }, t0 + 2.9);
+  showCallout('#co-tree', t0 + 3.45);
+  tl.fromTo($$('#co-tree .co-ask, #co-tree .co-quiet'), { autoAlpha: 0, x: 14 }, { autoAlpha: 1, x: 0, duration: 0.45, stagger: 0.14, ...IR }, t0 + 3.65);
+  // Each relation lights the card it means.
+  [['#tc-papa', 3.75], ['#tc-dadi', 3.89]].forEach(([card, d]) => {
+    tl.fromTo(card, { boxShadow: '0 0 0 0px rgba(212,128,123,0)' }, { boxShadow: '0 0 0 4px rgba(212,128,123,0.45)', duration: 0.3, yoyo: true, repeat: 1, ease: 'sine.inOut', ...IR }, t0 + d);
+  });
+  hide('#t-tree', t0 + 6.15);
+  hide('#co-tree', t0 + 6.05, { y: '-=20' });
+  S.emerg = t0 + 6.6;
 }
 
-// ─── 9. Reminders ────────────────────────────────────────────────────────
+// ─── 10. The emergency card ──────────────────────────────────────────────
+if (!SHORT) {
+  const t0 = S.emerg;
+  showBlock('t-emerg', t0);
+  tap(t0 + 0.35, P.tcPapa, { press: '#tc-papa' });
+  nav('scr-tree', 'scr-person', t0 + 0.5, 'push');
+  tap(t0 + 1.75, P.ppOpen, { press: '#pp-open' });
+  nav('scr-person', 'scr-emerg', t0 + 1.9, 'push');
+  tl.to('#em-inner', { y: -emScroll, duration: 1.0, ease: 'power2.inOut' }, t0 + 3.5);
+  tl.to('#em-hl', { backgroundSize: '100% 100%', duration: 0.6, ease: 'power2.inOut' }, t0 + 4.45);
+  hide('#t-emerg', t0 + 6.1);
+  S.alerts = t0 + 6.55;
+}
+
+// ─── 11. Reminders ───────────────────────────────────────────────────────
 if (!SHORT) {
   const t0 = S.alerts;
   showBlock('t-alerts', t0);
-  nav('scr-family', 'scr-home', t0, 'fade', 0.4);
-  statusBar(t0, 'light');
-  // Reminders arrive as in-app notifications (the app has no push): the bell's
-  // unread badge is what the person sees.
-  tl.fromTo('#bell-badge', { scale: 0 }, { scale: 1, duration: 0.5, ease: 'back.out(2.4)', ...IR }, t0 + 0.8);
-  tl.fromTo('#home-bell', { rotation: 0 }, { rotation: 14, duration: 0.07, yoyo: true, repeat: 5, ease: 'sine.inOut', ...IR }, t0 + 0.95);
+  // The next morning: a reminder reaches the phone, as a web push.
+  nav('scr-emerg', 'scr-lockday', t0, 'fade', 0.45);
+  chrome(t0, 'os', '9:05');
+  vibrate(t0 + 0.75);
+  tl.fromTo('#pn1', { autoAlpha: 0, y: -26, scale: 0.97 }, { autoAlpha: 1, y: 0, scale: 1, duration: 0.5, ease: 'back.out(1.4)', ...IR }, t0 + 0.8);
   cue(t0 + 0.8, 'notif');
-  showCallout('#co-alerts', t0 + 1.25);
-  tl.fromTo($$('#co-alerts .co-row'), { autoAlpha: 0, x: 14 }, { autoAlpha: 1, x: 0, duration: 0.45, stagger: 0.12, ...IR }, t0 + 1.45);
-  tap(t0 + 3.25, P.bell, { press: '#home-bell' });
-  nav('scr-home', 'scr-notifs', t0 + 3.4, 'push', 0.45);
-  statusBar(t0 + 3.4, 'dark');
-  tl.fromTo($$('#nt-list .nt-card'), { autoAlpha: 0, y: 16 }, { autoAlpha: 1, y: 0, duration: 0.4, stagger: 0.08, ...IR }, t0 + 3.6);
-  hide('#t-alerts', t0 + 5.55);
-  hide('#co-alerts', t0 + 5.5, { y: '-=20' });
-  tl.to('#phone', { autoAlpha: 0, y: `+=60`, duration: 0.55, ease: 'power2.in' }, t0 + 5.55);
-  S.trust = t0 + 6.1;
+  vibrate(t0 + 1.5);
+  tl.fromTo('#pn2', { autoAlpha: 0, y: -26, scale: 0.97 }, { autoAlpha: 1, y: 0, scale: 1, duration: 0.5, ease: 'back.out(1.4)', ...IR }, t0 + 1.55);
+  cue(t0 + 1.55, 'notif');
+  showCallout('#co-alerts', t0 + 2.0);
+  tl.fromTo('#co-alerts .track', { scaleX: 0 }, { scaleX: 1, duration: 0.8, ease: 'power2.inOut', ...IR }, t0 + 2.2);
+  tl.fromTo($$('#co-alerts .co-step'), { autoAlpha: 0, y: 10 }, { autoAlpha: 1, y: 0, duration: 0.4, stagger: 0.16, ...IR }, t0 + 2.2);
+  tl.fromTo('#co-alerts .co-foot', { autoAlpha: 0, y: 8 }, { autoAlpha: 1, y: 0, duration: 0.4, ...IR }, t0 + 2.9);
+  // Tapping it opens Notifications (public/sw.js).
+  tap(t0 + 3.7, P.pn1, { press: '#pn1' });
+  nav('scr-lockday', 'scr-notifs', t0 + 3.85, 'zoom', 0.4);
+  chrome(t0 + 3.85, 'app');
+  tl.fromTo($$('#nt-list .nt-card'), { autoAlpha: 0, y: 16 }, { autoAlpha: 1, y: 0, duration: 0.4, stagger: 0.08, ...IR }, t0 + 4.0);
+  hide('#t-alerts', t0 + 6.2);
+  hide('#co-alerts', t0 + 6.1, { y: '-=20' });
+  tl.to('#phone', { autoAlpha: 0, y: `+=60`, duration: 0.55, ease: 'power2.in' }, t0 + 6.2);
+  S.trust = t0 + 6.75;
 }
 
-// ─── 10. Privacy ─────────────────────────────────────────────────────────
+// ─── 12. Privacy ─────────────────────────────────────────────────────────
 if (!SHORT) {
   const t0 = S.trust;
+  const cards = ['#tc1', '#tc2', '#tc3', '#tc4'];
   tl.set('#t-trust', { autoAlpha: 1 }, t0);
   tl.fromTo('#t-trust .kicker', { autoAlpha: 0, y: 14 }, { autoAlpha: 1, y: 0, duration: 0.6, ...IR }, t0);
   tl.fromTo($$('#t-trust .h1 .wi'), { yPercent: 118 }, { yPercent: 0, duration: 0.95, ease: 'power4.out', stagger: 0.06, ...IR }, t0 + 0.1);
-  tl.fromTo(['#tc1', '#tc2', '#tc3'], { autoAlpha: 0, y: 50 }, { autoAlpha: 1, y: 0, duration: 0.8, stagger: 0.14, ...IR }, t0 + 0.55);
-  [0, 1, 2].forEach((i) => cue(t0 + 0.6 + i * 0.14, 'pop-soft'));
-  hide('#t-trust', t0 + 4.3, { y: -30 });
-  S.res = t0 + 4.85;
+  tl.fromTo(cards, { autoAlpha: 0, y: 50 }, { autoAlpha: 1, y: 0, duration: 0.8, stagger: 0.14, ...IR }, t0 + 0.55);
+  cards.forEach((c, i) => cue(t0 + 0.6 + i * 0.14, 'pop-soft'));
+  hide('#t-trust', t0 + 4.8, { y: -30 });
+  S.res = t0 + 5.35;
 }
 
-// ─── 11. The same night ──────────────────────────────────────────────────
+// ─── 13. The same night ──────────────────────────────────────────────────
 {
   const t0 = S.res;
   cue(t0, 'section', { name: 'night2' });
@@ -660,7 +769,7 @@ if (!SHORT) {
   tl.set('#scr-voice', { autoAlpha: 1, zIndex: ++z, xPercent: 0 }, t0 + 0.3);
   tl.set(['#mic-idle', '#v-again1'], { autoAlpha: 0 }, t0 + 0.3);
   tl.set(['#mic-speak', '#v-stop1', '#v-ph-again'], { autoAlpha: 1 }, t0 + 0.3);
-  statusBar(t0 + 0.3, 'dark', '2:14');
+  chrome(t0 + 0.3, 'app', '2:14');
   if (SHORT) phoneTo(t0, L.resPhone, 1.0);
   else {
     tl.fromTo('#phone', { autoAlpha: 0, x: L.resPhone[0], y: L.resPhone[1] + 50, scale: L.resPhone[2] },
@@ -676,9 +785,9 @@ if (!SHORT) {
   }
   cue(t0 + 1.0, 'speak', { dur: 2.2 });
   // Rohan's phone, a minute later.
-  const m = t0 + 3.5;
+  const m = t0 + (SHORT ? 3.25 : 3.5);
   nav('scr-voice', 'scr-lock2', m, 'fade', 0.5);
-  statusBar(m, 'light', '2:15');
+  chrome(m, 'os', '2:15');
   tl.to('#res-time', { text: '2:15', duration: 0.01 }, m + 0.1);
   tl.fromTo('#t-res .clock-big', { scale: 1.06 }, { scale: 1, duration: 0.5, ...IR }, m + 0.1);
   tl.to('#res-h1a', { autoAlpha: 0, duration: 0.3 }, m + 0.1);
@@ -694,7 +803,7 @@ if (!SHORT) {
   S.end = m + 4.8;
 }
 
-// ─── 12. End card ────────────────────────────────────────────────────────
+// ─── 14. End card ────────────────────────────────────────────────────────
 {
   const t0 = S.end;
   cue(t0, 'section', { name: 'end' });
@@ -708,15 +817,16 @@ if (!SHORT) {
   tl.fromTo('#end-word', { clipPath: 'inset(0% 100% 0% 0%)', y: 12 }, { clipPath: 'inset(0% 0% 0% 0%)', y: 0, duration: 0.8, ...IR }, t0 + 0.85);
   fadeIn('#end-tag', t0 + 1.45, { from: 16, duration: 0.7 });
   tl.fromTo('#end-cta', { autoAlpha: 0, scale: 0.9, y: 16 }, { autoAlpha: 1, scale: 1, y: 0, duration: 0.7, ease: 'back.out(1.6)', ...IR }, t0 + 2.1);
-  if ($('#end-url')) fadeIn('#end-url', t0 + 2.5, { from: 8 });
   cue(t0 + 2.15, 'pop-soft');
-  S.total = t0 + 5.8;
+  if ($('#end-note')) fadeIn('#end-note', t0 + 2.55, { from: 10, duration: 0.6 });
+  if ($('#end-url')) fadeIn('#end-url', t0 + 2.75, { from: 8 });
+  S.total = t0 + (SHORT ? 5.0 : 5.8);
 }
 
 // Whole-film motion: blobs drift, spinners spin, waveform breathes.
 const T = S.total;
 tl.to(motion, { t: T, duration: T, ease: 'none' }, 0);
-tl.to($$('.spinner'), { rotation: 360 * T * 1.15, duration: T, ease: 'none' }, 0);
+tl.to($$('.spinner'), { rotation: 360 * T / 0.75, duration: T, ease: 'none' }, 0);
 tl.to('#bg-day .b1', { x: 260, y: 140, duration: T, ease: 'sine.inOut' }, 0);
 tl.to('#bg-day .b2', { x: -220, y: -160, duration: T, ease: 'sine.inOut' }, 0);
 tl.to('#bg-day .b3', { x: -180, y: 90, duration: T, ease: 'sine.inOut' }, 0);
