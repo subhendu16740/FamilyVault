@@ -18,6 +18,8 @@ import { reconstructLayout } from '../../supabase/functions/_shared/pdf-text.ts'
 import { extractMetadata, parseFlexibleDate } from '../../supabase/functions/_shared/metadata.ts';
 import { cleanText } from '../../supabase/functions/_shared/text.ts';
 import { ticketCodeNotes, ticketSearchTerms } from '../../supabase/functions/_shared/tickets.ts';
+import { digitsFromWords } from '../../supabase/functions/_shared/numbers.ts';
+import { toSpeech } from '../../src/lib/speech-text.ts';
 import { acceptedCurrencies, hmacSha256Hex, paymentSignatureOk, plusOrderAmount, plusOrderDescription, sameText, webhookSignatureOk, ORDER_ID, PAYMENT_ID } from '../../supabase/functions/_shared/razorpay.ts';
 import { createHmac } from 'node:crypto';
 import {
@@ -189,6 +191,34 @@ await test('tickets: a seat question searches a ticket\'s words, and its codes a
   ]);
   assert.deepEqual(ticketCodeNotes(['Policy No. 2400000001, BOWL 12, MAIL 3, Quota GN, Class SL']), [], 'nothing that is not a status code');
   assert.equal(ticketCodeNotes(['WL 1 WL 2 WL 3 WL 4 WL 5 WL 6 WL 7 WL 8']).length, 6, 'at most six notes');
+});
+
+await test('numbers stay in digits on the screen, and are read out digit by digit from those digits', () => {
+  // A model told to write for the ear once wrote a train number in words and
+  // swapped two digits. Words go back to digits, in English and Hindi…
+  assert.equal(digitsFromWords('Your train number is One six seven eight two.'), 'Your train number is 16782.');
+  assert.equal(digitsFromWords('Call nine-eight-seven-six now'), 'Call 9876 now');
+  assert.equal(digitsFromWords('Six, one, two, zero is the code'), '6120 is the code');
+  assert.equal(digitsFromWords('ट्रेन नंबर एक छह सात आठ दो है।'), 'ट्रेन नंबर 16782 है।');
+  assert.equal(digitsFromWords('PNR 4 5 1 2 6 7 is confirmed'), 'PNR 451267 is confirmed', 'single digits spaced apart join up');
+  // …and ordinary words stay words.
+  for (const plain of ['It takes one or two days.', 'two three days', 'Seats one, two and three', 'someone, everyone, no one two',
+    'मुझे दो तीन दिन चाहिए', 'Pages 1 2 3 only', 'Aadhaar 1234 5678 9012', 'Policy SMV2026990177 and ₹3,00,000']) {
+    assert.equal(digitsFromWords(plain), plain, plain);
+  }
+  const once = digitsFromWords('one two three four and 5 6 7 8');
+  assert.equal(digitsFromWords(once), once, 'idempotent');
+
+  // Read aloud: a number named as one is spelled out, by the app, from the digits.
+  assert.equal(toSpeech('Your train number is 16782.'), 'Your train number is 1 6 7 8 2.');
+  assert.equal(toSpeech('Train No. 16782 leaves at 5:40 from platform 3.'), 'Train No. 1 6 7 8 2 leaves at 5:40 from platform 3.');
+  assert.equal(toSpeech('ट्रेन का नंबर 16782 है।'), 'ट्रेन का नंबर 1 6 7 8 2 है।');
+  assert.equal(toSpeech('PIN code 751001'), 'PIN code 7 5 1 0 0 1');
+  assert.equal(toSpeech('PNR 4512678901 is confirmed.'), 'PNR 4 5 1 2, 6 7 8 9, 0 1 is confirmed.', 'long numbers in groups of four');
+  // Seat and berth numbers, amounts and years are left to the voice.
+  for (const plain of ['Seat number 17, coach B4, upper berth.', 'The fee is ₹18500.', 'It expires in 2027.', 'There is no 2027 renewal.']) {
+    assert.equal(toSpeech(plain), plain, plain);
+  }
 });
 
 await test('cleanText makes extracted text storable', () => {
@@ -667,4 +697,4 @@ if (failures.length) {
   console.error(`\n${failures.length} self-test(s) failed, ${passed} passed.`);
   process.exit(1);
 }
-console.log(`✓ ${passed} self-tests passed — matchers, judge, run-time PDF, metadata, ticket codes, text cleaning, Gmail rules and token sealing, kinship and the family tree, emergency card checks, web push, plan limits, Razorpay signatures, questions and budget.`);
+console.log(`✓ ${passed} self-tests passed — matchers, judge, run-time PDF, metadata, ticket codes, text cleaning, Gmail rules and token sealing, kinship and the family tree, emergency card checks, web push, plan limits, Razorpay signatures, numbers in digits, questions and budget.`);

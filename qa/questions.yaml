@@ -188,12 +188,13 @@ questions:
   - id: voice-mode
     tier: rotate
     group: 3
-    ask: When does Asha Verma's passport expire?
+    ask: When does Asha Verma's passport expire, and what is its number?
     voice: true
     expect:
       date: 2033-07-19
+      text: Z7391046
       no_markdown: true
-    guards: voice answers are plain speakable sentences
+    guards: voice answers are plain speakable sentences, and keep numbers in digits, exactly (one wrote a train number in words, two digits swapped)
 
   # ── languages: by hand only (suite `languages`) ────────────────
   # One household document per Indian language the app offers, beyond

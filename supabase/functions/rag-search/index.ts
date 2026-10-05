@@ -10,6 +10,7 @@ import { runReembed, afterResponse } from '../_shared/reembed.ts';
 import { groqChat, groqText, hasGroqKey } from '../_shared/groq.ts';
 import { buildGraph, relativesNamedIn, type KinGraph, type NamedRelative } from '../_shared/kinship.ts';
 import { ticketCodeNotes, ticketSearchTerms } from '../_shared/tickets.ts';
+import { digitsFromWords } from '../_shared/numbers.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -680,7 +681,7 @@ Score how well each passage answers the question, 0 to 10.
 Use the document type: an insurance question is not answered by a tax return, a placements question is not answered by a resume.
 A passage may be a TABLE, one row per line with columns separated by two spaces. Read every row before scoring it: the row that answers the question is often not the first one, and a table whose other rows are irrelevant still scores 10 if any single row answers it.
 Reply with JSON only: {"scores":[{"i":0,"s":7}, ...]} — one entry for EVERY passage index, including the ones you score 0.${codeNotes.length
-  ? `\nTicket codes in these passages, in words: ${codeNotes.join(' ')} On a train ticket the seat is this berth, in Booking Status or Current Status.`
+  ? `\nTicket codes in these passages, explained: ${codeNotes.join(' ')} On a train ticket the seat is this berth, in Booking Status or Current Status.`
   : ''}`,
         },
         {
@@ -979,12 +980,15 @@ async function generateAnswer(
 ): Promise<AnswerResult> {
   const langName = opts.language ? languageName(opts.language) : undefined;
   const languageRule = langName && !opts.language!.toLowerCase().startsWith('en')
-    ? `\nReply in ${langName}. The documents are in English: translate naturally, but keep proper names, numbers, dates and identifiers exactly as written.`
+    ? `\nReply in ${langName}. The documents are in English: translate naturally, but keep proper names, numbers (in digits), dates and identifiers exactly as written.`
     : '';
-  // Spoken answers: no markdown (a voice reads "asterisk"), no lists, dates
-  // in words, and the document described rather than its file name read out.
+  // Spoken answers: no markdown (a voice reads "asterisk"), no lists, a
+  // date's month as a word, and the document described rather than its file
+  // name read out. Never numbers in words: told to write for the ear, the
+  // model once wrote a train number as words and swapped two of its digits.
+  // The app reads numbers aloud itself (toSpeech), from the digits.
   const voiceRule = opts.voice
-    ? `\nYour answer will be read aloud by a voice assistant to an elderly person. Write two or three short, plain spoken sentences. No markdown, no bullet points, no asterisks, no headings. Write dates in words (for example "14 March 2027"). Describe the document naturally ("this is from Mom's passport") instead of reading out a file name.`
+    ? `\nYour answer will be read aloud by a voice assistant to an elderly person. Write two or three short, plain spoken sentences. No markdown, no bullet points, no asterisks, no headings. Write a date with its month as a word (for example "14 March 2027"), but every other number in digits, exactly as written: the app reads numbers aloud itself. Describe the document naturally ("this is from Mom's passport") instead of reading out a file name.`
     : '\nIf you mention a document, reference it by its filename.';
 
   if (!hasGroqKey) {
@@ -1003,7 +1007,8 @@ Today's date is ${todayLabel()}. Use it to interpret "this year", "recently", "l
 You ONLY answer based on the provided document context.
 The context is whatever search returned — it may not actually answer the question. If it doesn't, say so plainly and, if a related document exists, say what it does cover instead. NEVER answer a different question just because the context happens to contain information about it.
 This is an ongoing conversation: use earlier turns to understand what the user is referring to.
-Keep answers concise (1-3 sentences). Include specific details like dates, amounts, and document names.${opts.family ? `\n${opts.family} Answer about that person, and say whose document it is.` : ''}${opts.notes?.length ? `\nTicket codes in the context, in words: ${opts.notes.join(' ')} On a train ticket the seat is this berth (coach and berth number), shown in Booking Status or Current Status.` : ''}${languageRule}${voiceRule}`,
+Keep answers concise (1-3 sentences). Include specific details like dates, amounts, and document names.
+Copy every number exactly as the document writes it, in digits: train, PNR, seat, berth, policy, account, phone and ID numbers, and amounts. Never write a number in words, and never reorder, round or respell its digits.${opts.family ? `\n${opts.family} Answer about that person, and say whose document it is.` : ''}${opts.notes?.length ? `\nTicket codes in the context, explained: ${opts.notes.join(' ')} On a train ticket the seat is this berth (coach and berth number), shown in Booking Status or Current Status.` : ''}${languageRule}${voiceRule}`,
         },
         // Prior turns, so "this one" and "that policy" resolve naturally.
         ...history.map(t => ({ role: t.role, content: t.content })),
@@ -1042,7 +1047,8 @@ Keep answers concise (1-3 sentences). Include specific details like dates, amoun
       return { answer: buildFallbackAnswer(chunks, 'unavailable'), degraded: true, model };
     }
 
-    return { answer: text, degraded: false, model };
+    // Digits written as words despite the prompt go back to digits (_shared/numbers.ts).
+    return { answer: digitsFromWords(text), degraded: false, model };
 
   } catch (err) {
     console.warn('[rag] Groq generation failed:', err);
