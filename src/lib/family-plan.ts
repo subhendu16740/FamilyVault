@@ -1,8 +1,8 @@
 // ─── Is the family on Family Plus? ──────────────────────────────
 //
 // Starred features (★, <PlusTag />) are for Family Plus families: today the
-// Reminders page, Import from Gmail, and voice chats after a free family's
-// first 10 (041, 042). For a free family, tapping one opens
+// Reminders page, Import from Gmail, and voice chats after each person's
+// first 10 (041–043). For a free family, tapping one opens
 // /plus, which shows Free and Plus side by side, and the screens themselves
 // send a free family there too (after a refresh, or from a link). Storage
 // beyond the free 1 GB is kept by the server (038), and Gmail import refuses

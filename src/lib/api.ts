@@ -1298,19 +1298,20 @@ export async function fetchPlanLimits(): Promise<PlanLimits> {
   };
 }
 
-// ─── Voice chats (041, 042) ──────────────────────────────────────
+// ─── Voice chats (041–043) ───────────────────────────────────────
 //
-// A free family has its first 10 voice chats free (plan_limits.voice_answers):
-// a question asked by voice or an answer read aloud, one per question,
-// counted on the server for the whole family, so another phone does not start
-// again. After that the family types and reads, and Family Plus brings voice
-// back. A chat is claimed before its answer is read; fetchVoiceStatus() says
-// how many are left without using one. Before 041, or offline, voice works:
-// the app never goes quiet because it could not ask.
+// On the free plan each person has 10 voice chats of their own
+// (plan_limits.voice_answers, per person since 043): a question asked by
+// voice or an answer read aloud, one per question, counted on the server for
+// that person in that family, so another phone does not start them again.
+// After that they type and read, and Family Plus brings voice back. A chat is
+// claimed before its answer is read; fetchVoiceStatus() says how many are
+// left without using one. Before 041, or offline, voice works: the app never
+// goes quiet because it could not ask.
 
 export interface VoiceAllowance {
   allowed: boolean;
-  /** How many the family has heard, and may; both null on a plan that reads every answer. */
+  /** How many voice chats the person asking has had, and may; both null on a plan with no limit. */
   used: number | null;
   limit: number | null;
 }
@@ -1324,15 +1325,16 @@ export async function claimVoiceAnswer(familyId: string): Promise<VoiceAllowance
 }
 
 export interface VoiceStatus {
-  /** How many voice chats the family may have, has had, and has left; all null on a plan with no limit. */
+  /** How many voice chats the person asking may have, has had, and has left; all null on a plan with no limit. */
   limit: number | null;
   used: number | null;
   left: number | null;
 }
 
 /**
- * How many voice chats the family has left, without using one (042), for Ask
- * and Settings to show. Null when that cannot be told: before 042, or offline.
+ * How many voice chats the person asking has left in this family, without
+ * using one (042; per person since 043), for Ask and Settings to show. Null
+ * when that cannot be told: before 042, or offline.
  */
 export async function fetchVoiceStatus(familyId: string): Promise<VoiceStatus | null> {
   const { data, error } = await supabase.rpc('family_voice_status', { p_family_id: familyId });

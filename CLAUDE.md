@@ -59,9 +59,10 @@ Four things will mislead you if you assume otherwise:
    countdown after Plus ends, and the removal at its end, are the server's
    alone; 041's limits are kept by the server too: triggers refuse a
    membership or an invitation past the plan's number of members, and
-   `family_usage`, the count of voice chats, is written only through
-   `claim_voice_answer`; 042 counts saved chats in a family's storage, and
-   a trigger refuses a chat that does not fit).
+   `member_usage` (043; `family_usage` before), each person's count of
+   voice chats, is written only through `claim_voice_answer`; 042 counts
+   saved chats in a family's storage, and a trigger refuses a chat that
+   does not fit).
    **A new writable
    column needs its own `GRANT` in a migration.** Nobody joins a family
    without saying yes: only an admin asks a person in, through the
@@ -464,7 +465,7 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `dates.ts` | `parseDocumentDate()`: expiry dates exactly as ingest stores them (DD/MM/YYYY and kin, YYYY-MM-DD, "19 October 2026") |
 | `emergency.ts` | The emergency card's shape, blood groups (`bloodGroupLabel()`: "A−", "Bombay (hh)"), `telHref()`, and `cardProblem()` — the same checks and messages as `save_emergency_card()`, so the form can say what is wrong before saving |
 | `family-people.ts` | Whose a document can be: everyone in the tree, you first (`useDocumentOwners()`, members only before 031), and a person's expiry badge (`badgeFromExpiries()`) |
-| `plans.ts` | What each plan allows (038–042): the limits as 039–041 set them — storage, 4 members, and a free family's 10 voice chats (`DEFAULT_PLAN_LIMITS`, used only when the database cannot be asked), Family Plus's prices, monthly and yearly (`PLUS_PRICE`; `localPlusPrice()` / `localPlusPrices()` show rupees in India, dollars elsewhere, by the device's time zone; the yearly one against twelve months, crossed out, and the months it saves: `plusTwelveMonths()`, `plusYearlySaving()`), `storageLevel()`, and the words for a full vault (`storageFullMessage()`; for a chat, `chatStorageFullMessage()`), which live in `supabase/functions/_shared/plan-text.ts` so Gmail import says the same. `PLUS_FOR_SALE` is false until payments exist |
+| `plans.ts` | What each plan allows (038–043): the limits as 039–043 set them — storage, 4 members, and 10 voice chats for each person on Free (`DEFAULT_PLAN_LIMITS`, used only when the database cannot be asked), Family Plus's prices, monthly and yearly (`PLUS_PRICE`; `localPlusPrice()` / `localPlusPrices()` show rupees in India, dollars elsewhere, by the device's time zone; the yearly one against twelve months, crossed out, and the months it saves: `plusTwelveMonths()`, `plusYearlySaving()`), `storageLevel()`, and the words for a full vault (`storageFullMessage()`; for a chat, `chatStorageFullMessage()`), which live in `supabase/functions/_shared/plan-text.ts` so Gmail import says the same. `PLUS_FOR_SALE` is false until payments exist |
 | `family-plan.ts` | Is the current family on Family Plus? `useFamilyPlan()` (from `family_storage_status()`, kept a minute per family): `isFree`, and `routeFor(feature, route)`, which sends a free family to `/plus?feature=…` instead of a starred feature. Unknown (before 038, offline) gates nothing |
 | `file-types.ts` | What a picked file is (`detectFileType()`: MIME type, then name, never a web `blob:` uri) and whether the vault can keep it (PDF, JPG, PNG) |
 | `app-info.ts` | Version, release date and commit (stamped into `extra` by `app.config.ts` at build time), and the support contact Help shows |
@@ -476,7 +477,7 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `speech-text.ts` | `toSpeech()`: strips markdown and spells out ID numbers before they are read aloud |
 | `voice-languages.ts` | The language picker list and the few phrases the app itself says, per language |
 | `storage.ts` | Key-value cache: localStorage on web, AsyncStorage on native |
-| `database.types.ts` | Generated Supabase types, current to 042 (030 changed nothing in them). Regenerate after every migration and re-append the hand-written block at the bottom (see the typecheck note) |
+| `database.types.ts` | Generated Supabase types, current to 043 (030 changed nothing in them). Regenerate after every migration and re-append the hand-written block at the bottom (see the typecheck note) |
 
 ---
 
@@ -541,7 +542,7 @@ Supabase, cloud-hosted. Three layers:
   invitations, document_categories, notifications, audit_logs, feedback,
   saved_chats, family_people, family_links, family_emergency_cards,
   push_subscriptions, reminders_sent, push_config, document_shares,
-  family_invites, plan_limits, family_plans, family_usage. RLS enabled.
+  family_invites, plan_limits, family_plans, member_usage. RLS enabled.
 - **Layer 2 (private)** — one isolated schema per family (`family_<short_uuid>`)
   holding documents, document_metadata, document_chunks, expiry_alerts,
   family_relationships. Created by the `public.create_family()` PG function.
@@ -1106,7 +1107,7 @@ so storage policies live only in `019`.
   page.** `/plus` (`src/app/plus.tsx`) shows what Plus gives side by side
   with Free, the price where the person is, and the family's own plan. For a
   free family, tapping a ★ feature — the Reminders page in the drawer, From
-  Gmail on Upload, the read-aloud strip on Ask — opens `/plus?feature=…`, which says which feature brought
+  Gmail on Upload, the voice-chat strip on Ask — opens `/plus?feature=…`, which says which feature brought
   them there and marks its row; the screens redirect there too, after a
   refresh or from a link (Gmail import not while Google is handing back a
   connection). A ★ tag drawn on its own (`<PlusTag link />`), Settings ›
@@ -1115,17 +1116,21 @@ so storage policies live only in `019`.
   — under the bell and on devices — reach every family. While Plus cannot be
   bought (`PLUS_FOR_SALE`), the page says "Coming soon" rather than showing a
   button that does nothing.
-- **Voice chats: a free family's first 10, then Family Plus** (041, 042;
-  `plan_limits.voice_answers`, NULL for no limit, which is Plus). A voice
-  chat is a question asked by voice or an answer read aloud, one per
-  question; the answer is always on the screen. In voice mode Ask always
-  shows how many are left ("7 of 10 free voice chats left for your
-  family", from `family_voice_status()`, 042, which counts nothing), and
-  Settings › Accessibility says it too. Before reading a new answer, Ask
-  calls `claim_voice_answer()` (the caller from `auth.uid()`, their own
-  family only), which counts one in `family_usage` for the whole family —
-  so another phone does not start again — in one statement, so two answers
-  at once cannot both take the last one. "Read again" of an answer already
+- **Voice chats: 10 for each person on Free, then Family Plus** (041–043;
+  `plan_limits.voice_answers`, per person, NULL for no limit, which is
+  Plus). A voice chat is a question asked by voice or an answer read aloud,
+  one per question; the answer is always on the screen. Each person in a
+  free family has their own 10 — a family of four up to 40 — and nobody's
+  use takes from anyone else's (043; 041 counted one 10 for the whole
+  family, and 043 started everyone again from 10). In voice mode Ask always
+  shows how many the person has left ("You have 7 of 10 free voice chats
+  left", from `family_voice_status()`, which counts nothing), and Settings
+  › Accessibility says it too. Before reading a new answer, Ask calls
+  `claim_voice_answer()` (the caller from `auth.uid()`, their own family
+  only), which counts one in `member_usage` for that person in that family
+  — so another phone does not start them again, and nor does leaving and
+  being asked back — in one statement, so two answers at once cannot both
+  take the last one. "Read again" of an answer already
   heard counts nothing, nor does an apology when an answer failed. Once
   none are left, the mic goes quiet: a tap says why aloud
   (`voice_limit_mic`) and listens to nothing; answers are asked for as
@@ -1559,8 +1564,8 @@ rule again once pinned chunks are mixed in.
   six rows with an arrow that went nowhere, and the document viewer had a
   menu button with no menu. Add the control when its screen exists.
 - **★ Family Plus marks what only Plus families get** (`<PlusTag />`):
-  10 GB instead of 1 GB, voice chats with no limit (a free family has its
-  first 10), the Reminders page (in the drawer) and Import from
+  10 GB instead of 1 GB, voice chats with no limit (on Free, each person
+  has 10), the Reminders page (in the drawer) and Import from
   Gmail (on Upload) — ₹100 a month or ₹1,100 a year in India, $10 or $110
   elsewhere, given by hand
   until payments exist. For a free family a starred feature opens the

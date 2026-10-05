@@ -33,8 +33,8 @@ interface Row {
   feature?: PlusFeature;
 }
 
-// "First 10", or ✓ for a plan with no limit on voice chats.
-const voiceCell = (n: number | null): Cell => (n == null ? true : `First ${n}`);
+// "10 each" (per person, 043), or ✓ for a plan with no limit on voice chats.
+const voiceCell = (n: number | null): Cell => (n == null ? true : `${n} each`);
 
 function rows(limits: PlanLimits): Row[] {
   return [
