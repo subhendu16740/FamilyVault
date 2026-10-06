@@ -12,8 +12,9 @@ import { Feather } from '@expo/vector-icons';
 import { useAuth } from '../lib/auth';
 import { useFamily } from '../lib/family-context';
 import {
-  createShareLink, fetchShareLinks, revokeShareLink, shareLinkUrl, type ShareDays, type ShareLink,
+  createShareLink, fetchFamilyMembers, fetchShareLinks, revokeShareLink, shareLinkUrl, type ShareDays, type ShareLink,
 } from '../lib/api';
+import type { FamilyMemberWithUser } from '../lib/database.types';
 import { longDate } from '../lib/dates';
 import { Field, Muted, PrimaryButton, SecondaryButton, Status } from './settings-ui';
 import { color, radius, size, space, type } from '../constants/design';
@@ -34,8 +35,18 @@ interface Props {
 
 export function ShareSheet({ visible, onClose, familyId, documentId, fileName }: Props) {
   const { user } = useAuth();
-  const { members, membership } = useFamily();
-  const isAdmin = membership?.role === 'admin';
+  // The document's vault, which need not be the open one (046: a document
+  // found by Ask opens in its own vault): its role, and its members' names.
+  const { members: openMembers, membership, currentFamily, families } = useFamily();
+  const isOpenVault = familyId === currentFamily?.id;
+  const role = isOpenVault ? membership?.role : families.find((f) => f.family_id === familyId)?.role;
+  const isAdmin = role === 'admin';
+  const [vaultMembers, setVaultMembers] = useState<FamilyMemberWithUser[]>([]);
+  useEffect(() => {
+    if (!visible || isOpenVault) return;
+    fetchFamilyMembers(familyId).then(setVaultMembers).catch(() => setVaultMembers([]));
+  }, [visible, isOpenVault, familyId]);
+  const members = isOpenVault ? openMembers : vaultMembers;
   const [links, setLinks] = useState<ShareLink[] | 'unavailable' | null>(null);
   const [days, setDays] = useState<ShareDays>(7);
   const [note, setNote] = useState('');

@@ -26,6 +26,7 @@ import {
 } from '../../../supabase/functions/_shared/kinship';
 import { ScreenHeader, HeaderIconButton } from '../../components/screen-header';
 import { Avatar } from '../../components/family-tree-view';
+import { isPersonalVault } from '../../lib/vaults';
 import { PersonSheet, type PersonSheetState } from '../../components/person-sheet';
 import { BloodPill } from '../../components/emergency-card-view';
 import { Card, CardTitle, Field, Muted, PrimaryButton, SecondaryButton, DangerButton, Status, screenStyles } from '../../components/settings-ui';
@@ -359,7 +360,8 @@ export default function PersonScreen() {
                   icon="link"
                   onPress={() => setSheet({ mode: 'connect', personId: person.id })}
                 />
-                {!person.userId && !invite && (
+                {/* Nobody else can join a personal vault (046), so there is no account to link here. */}
+                {!person.userId && !invite && !isPersonalVault(currentFamily) && (
                   <SecondaryButton label="Link to their AskLocker account" icon="smartphone" onPress={openLink} />
                 )}
                 {!person.userId && !!invite && (

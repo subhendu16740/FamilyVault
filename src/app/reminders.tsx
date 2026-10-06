@@ -11,6 +11,7 @@ import { Feather } from '@expo/vector-icons';
 import { Redirect, router, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFamily } from '../lib/family-context';
+import { vaultName } from '../lib/vaults';
 import { fetchExpiringDocuments, type ExpiringDocument } from '../lib/api';
 import { plusPage, useFamilyPlan } from '../lib/family-plan';
 import { expiryPhrase, longDate } from '../lib/dates';
@@ -64,7 +65,7 @@ export default function RemindersScreen() {
         </View>
 
         <Text style={styles.sectionTitle}>
-          {currentFamily ? `Expiry dates in ${currentFamily.name}` : 'Expiry dates'}
+          {currentFamily ? `Expiry dates in ${vaultName(currentFamily)}` : 'Expiry dates'}
         </Text>
 
         {items === null ? (

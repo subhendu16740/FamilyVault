@@ -1,6 +1,7 @@
-import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, useCallback, ReactNode } from 'react';
 import { useAuth } from './auth';
-import { fetchUserFamilies, fetchFamilyMembers } from './api';
+import { fetchUserFamilies, fetchFamilyMembers, ensurePersonalVault } from './api';
+import { isPersonalVault } from './vaults';
 import { storageGet, storageSet, accountKey } from './storage';
 import type { Database, FamilyMemberWithUser, FamilyWithMembership } from './database.types';
 
@@ -8,6 +9,7 @@ type Family = Database['public']['Tables']['families']['Row'];
 
 interface FamilyContextType {
   currentFamily: Family | null;
+  /** Every vault this person is in: their personal vault (046) and their families, oldest first. */
   families: FamilyWithMembership[];
   membership: FamilyWithMembership | null;
   members: FamilyMemberWithUser[];
@@ -97,6 +99,21 @@ export function FamilyProvider({ children }: { children: ReactNode }) {
       .catch(() => {})
       .finally(() => setFetched(true));
   }, [user?.id]);
+
+  // Every account has a personal vault (046): made the first time the app
+  // sees someone without one, once a session. It is their newest membership,
+  // so it never becomes the vault an existing family member sees by itself;
+  // for someone in no family it is the only one. Where 046 is not applied
+  // the call finds no function, and the app carries on with families only.
+  const ensured = useRef<string | null>(null);
+  useEffect(() => {
+    if (!user || !fetched || ensured.current === user.id) return;
+    ensured.current = user.id;
+    if (families.some((f) => isPersonalVault(f.families))) return;
+    ensurePersonalVault()
+      .then((id) => (id ? fetchUserFamilies(user.id).then(setFamilies) : undefined))
+      .catch(() => {});
+  }, [user?.id, fetched, families]);
 
   // Load members when current family changes
   useEffect(() => {

@@ -14,6 +14,7 @@ import { Feather } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFamily } from '../lib/family-context';
+import { vaultName } from '../lib/vaults';
 import { listSavedChats, deleteSavedChat, isMissingMigration, type SavedChatSummary } from '../lib/api';
 import { longDate } from '../lib/dates';
 import { ScreenHeader } from '../components/screen-header';
@@ -125,7 +126,7 @@ export default function SavedChatsScreen() {
             {!problem && (
               <Text style={styles.footnote}>
                 Only you can see your saved chats. They are deleted if you leave
-                {currentFamily ? ` ${currentFamily.name}` : ' this family'}.
+                {currentFamily ? ` ${vaultName(currentFamily)}` : ' this family'}.
               </Text>
             )}
           </>

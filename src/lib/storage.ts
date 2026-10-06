@@ -55,6 +55,7 @@ export async function storageRemove(key: string): Promise<void> {
 export const accountKey = {
   family: (userId: string) => `fv:family:${userId}`, // the vault last chosen
   prefs: (userId: string) => `fv:prefs:${userId}`,   // voice, languages, notifications
+  askIn: (userId: string) => `fv:ask-in:${userId}`,  // where Ask searches: all vaults, or one (046)
 };
 
 export async function forgetAccount(userId: string): Promise<void> {

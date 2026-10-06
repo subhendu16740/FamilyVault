@@ -1304,6 +1304,7 @@ export type Database = {
       }
       family_storage_has_room: { Args: { p_folder: string }; Returns: boolean }
       end_family_plan: { Args: { p_family_id: string }; Returns: undefined }
+      ensure_personal_vault: { Args: never; Returns: string }
       family_chats_bytes: { Args: { p_family_id: string }; Returns: number }
       family_files_bytes: { Args: { p_ns: string }; Returns: number }
       family_plan_now: { Args: { p_family_id: string }; Returns: string }

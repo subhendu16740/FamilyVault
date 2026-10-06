@@ -23,11 +23,15 @@ function faq(payments: PaymentsStatus | null): { q: string; a: string }[] {
   return [
     {
       q: 'How do I add a document?',
-      a: 'Open Upload at the bottom of the screen. Take a photo with Scan, pick a file with Browse Files, or choose a picture from your Gallery. AskLocker reads the text, so you can find it later. On a computer you can also bring documents in From Gmail.',
+      a: 'Open Upload at the bottom of the screen. Take a photo with Scan, pick a file with Browse Files, or choose a picture from your Gallery. AskLocker reads the text, so you can find it later. If you are in a family, it asks where the document goes: your personal vault, which only you see, or one of your families. On a computer you can also bring documents in From Gmail.',
+    },
+    {
+      q: 'What is my personal vault?',
+      a: 'Everyone has one: a vault only you can see, which nobody can be invited to. If you are not in a family, everything you upload goes there. To share documents, create a family from Manage Family and invite the people you want, or accept an invitation from one. Home shows one vault at a time; tap Showing at the top of Home to move between them.',
     },
     {
       q: 'How do I find a document or an answer?',
-      a: 'Open Search and ask in your own words, for example "When does Mom\'s passport expire?". AskLocker answers and shows which document the answer came from.',
+      a: 'Open Search and ask in your own words, for example "When does Mom\'s passport expire?". AskLocker searches all your vaults at once — your personal vault and every family — answers, and shows which document the answer came from. To get an answer sooner, tap Search in and pick one vault.',
     },
     {
       q: 'Can I ask by speaking?',
