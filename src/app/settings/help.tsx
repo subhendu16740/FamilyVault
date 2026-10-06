@@ -23,11 +23,11 @@ function faq(payments: PaymentsStatus | null): { q: string; a: string }[] {
   return [
     {
       q: 'How do I add a document?',
-      a: 'Open Upload at the bottom of the screen. Take a photo with Scan, pick a file with Browse Files, or choose a picture from your Gallery. FamilyVault reads the text, so you can find it later. On a computer you can also bring documents in From Gmail.',
+      a: 'Open Upload at the bottom of the screen. Take a photo with Scan, pick a file with Browse Files, or choose a picture from your Gallery. AskLocker reads the text, so you can find it later. On a computer you can also bring documents in From Gmail.',
     },
     {
       q: 'How do I find a document or an answer?',
-      a: 'Open Search and ask in your own words, for example "When does Mom\'s passport expire?". FamilyVault answers and shows which document the answer came from.',
+      a: 'Open Search and ask in your own words, for example "When does Mom\'s passport expire?". AskLocker answers and shows which document the answer came from.',
     },
     {
       q: 'Can I ask by speaking?',
@@ -39,11 +39,11 @@ function faq(payments: PaymentsStatus | null): { q: string; a: string }[] {
     },
     {
       q: 'How do I share a document with someone outside the family?',
-      a: 'Open the document, choose Share, then Make a link, and send the link by message or email. Anyone with it can open that one document, without an account, for 1, 7 or 30 days. The same screen shows every working link and how often it was opened, and turns a link off at once. A family admin, whoever added the document, or the person it belongs to can share it. For now, Share is in FamilyVault on the web.',
+      a: 'Open the document, choose Share, then Make a link, and send the link by message or email. Anyone with it can open that one document, without an account, for 1, 7 or 30 days. The same screen shows every working link and how often it was opened, and turns a link off at once. A family admin, whoever added the document, or the person it belongs to can share it. For now, Share is in AskLocker on the web.',
     },
     {
       q: 'How do I add someone to my family?',
-      a: `If you are an admin, open Manage Family and choose Add, then type the email they use for FamilyVault. They need to have signed up first. They get an invitation and join once they accept — until then they show in Manage Family as Pending approval, and you can withdraw it. A family can have up to ${DEFAULT_PLAN_LIMITS.members.free} members, and invitations waiting for an answer count too. Anyone can be in the family tree without an account.`,
+      a: `If you are an admin, open Manage Family and choose Add, then type the email they use for AskLocker. They need to have signed up first. They get an invitation and join once they accept — until then they show in Manage Family as Pending approval, and you can withdraw it. A family can have up to ${DEFAULT_PLAN_LIMITS.members.free} members, and invitations waiting for an answer count too. Anyone can be in the family tree without an account.`,
     },
     {
       q: 'Someone invited me to their family. What do I do?',
@@ -51,11 +51,11 @@ function faq(payments: PaymentsStatus | null): { q: string; a: string }[] {
     },
     {
       q: 'Who is in the family tree?',
-      a: 'Everyone in your family, with or without an account — a grandmother who will never sign in included. Admins add people and say how they are related; everyone in the family sees the tree, with how each person is related to you (mother, aunt, cousin…) and any nickname the family gave them, like "Pinky". A green phone on someone\'s picture means they are on FamilyVault with their own account; nobody else needs one. You can change your own name, nickname and date of birth. Mark a document as someone\'s and you can ask about it by relation or nickname, like "Nani\'s pension papers" or "Pinky\'s passport".',
+      a: 'Everyone in your family, with or without an account — a grandmother who will never sign in included. Admins add people and say how they are related; everyone in the family sees the tree, with how each person is related to you (mother, aunt, cousin…) and any nickname the family gave them, like "Pinky". A green phone on someone\'s picture means they are on AskLocker with their own account; nobody else needs one. You can change your own name, nickname and date of birth. Mark a document as someone\'s and you can ask about it by relation or nickname, like "Nani\'s pension papers" or "Pinky\'s passport".',
     },
     {
       q: 'Someone in our tree has just signed up. How do I connect them?',
-      a: 'If you are an admin, open them in the family tree and choose Link to their FamilyVault account, then type the email they sign in with. They get an invitation, and once they accept they join the family as a viewer and keep their place in the tree, their documents and their emergency card. If you already added them in Manage Family and they now appear twice, linking makes the two one.',
+      a: 'If you are an admin, open them in the family tree and choose Link to their AskLocker account, then type the email they sign in with. They get an invitation, and once they accept they join the family as a viewer and keep their place in the tree, their documents and their emergency card. If you already added them in Manage Family and they now appear twice, linking makes the two one.',
     },
     {
       q: 'What is an emergency card?',
@@ -67,7 +67,7 @@ function faq(payments: PaymentsStatus | null): { q: string; a: string }[] {
     },
     {
       q: 'How do reminders work?',
-      a: 'When a document with an expiry date is added, FamilyVault reminds everyone in the family 90, 30 and 7 days before it expires, and on the day — under the bell on Home. To get them as notifications on your phone or computer, even when FamilyVault is closed, open Settings › Notifications and turn them on for that device. On iPhone, add FamilyVault to your Home Screen first. Birthdays in your family tree are reminded of on the morning of the day; switch them off in Settings › Notifications if you would rather not. It is free.',
+      a: 'When a document with an expiry date is added, AskLocker reminds everyone in the family 90, 30 and 7 days before it expires, and on the day — under the bell on Home. To get them as notifications on your phone or computer, even when AskLocker is closed, open Settings › Notifications and turn them on for that device. On iPhone, add AskLocker to your Home Screen first. Birthdays in your family tree are reminded of on the morning of the day; switch them off in Settings › Notifications if you would rather not. It is free.',
     },
     {
       q: 'What does ★ Family Plus mean?',
@@ -75,14 +75,14 @@ function faq(payments: PaymentsStatus | null): { q: string; a: string }[] {
     },
     ...(forSale ? [{
       q: 'How do I pay for Family Plus?',
-      a: `Open Settings › Family Plus, or tap any ★, and choose a year or a month. You pay through Razorpay, by UPI, card or net banking — FamilyVault never sees your card or UPI details. Anyone in the family can pay, and Family Plus starts as soon as the payment goes through. Nothing renews by itself: paying again adds another month or year to the time left.${payments?.currencies.includes('USD') ? '' : ' For now, payments are in Indian rupees.'} Paying is in FamilyVault on the web for now. If something goes wrong with a payment, send us feedback from this screen.`,
+      a: `Open Settings › Family Plus, or tap any ★, and choose a year or a month. You pay through Razorpay, by UPI, card or net banking — AskLocker never sees your card or UPI details. Anyone in the family can pay, and Family Plus starts as soon as the payment goes through. Nothing renews by itself: paying again adds another month or year to the time left.${payments?.currencies.includes('USD') ? '' : ' For now, payments are in Indian rupees.'} Paying is in AskLocker on the web for now. If something goes wrong with a payment, send us feedback from this screen.`,
     }] : []),
     {
       q: 'How do I delete my account?',
       a: 'Open Settings › Security and choose Delete account. It is immediate and nothing is kept. A family nobody else looks after is deleted with it, documents and all; the screen shows which ones before you confirm. To keep a family for the others, make one of them an admin first.',
     },
     {
-      q: 'Why can\'t FamilyVault find something that is in a document?',
+      q: 'Why can\'t AskLocker find something that is in a document?',
       a: 'A blurred or dark photo is hard to read. Try again in good light, holding the phone steady. If your documents are in another language, choose it in Settings, under Documents.',
     },
   ];
@@ -121,7 +121,7 @@ export default function HelpScreen() {
 
         <Card>
           <CardTitle icon="send">Send us feedback</CardTitle>
-          <Body>Something not working, an idea, or a question? Write to us here — it goes straight to the FamilyVault team.</Body>
+          <Body>Something not working, an idea, or a question? Write to us here — it goes straight to the AskLocker team.</Body>
           <PrimaryButton label="Send feedback" icon="edit-3" onPress={() => router.push('/settings/feedback' as any)} />
         </Card>
 
@@ -148,7 +148,7 @@ export default function HelpScreen() {
             </TouchableOpacity>
           )}
           {!SUPPORT_EMAIL && !SUPPORT_PHONE && (
-            <Body>Send feedback, above, reaches the FamilyVault team directly.</Body>
+            <Body>Send feedback, above, reaches the AskLocker team directly.</Body>
           )}
         </Card>
       </ScrollView>

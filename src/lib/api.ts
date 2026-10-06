@@ -1749,7 +1749,7 @@ export async function signOutThisDevice(): Promise<void> {
 
 // ─── Family tree (031) ───────────────────────────────────────────
 //
-// Everyone in a family, with or without a FamilyVault account: a grandparent
+// Everyone in a family, with or without a AskLocker account: a grandparent
 // who will never sign in, a child too young to. public.family_people holds
 // the people and public.family_links how they are related (parent, spouse,
 // sibling) — never a label: "Mother" depends on who is looking, and is

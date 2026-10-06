@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# FamilyVault — cloud environment bootstrap.
+# AskLocker — cloud environment bootstrap.
 #
 # Brings a fresh machine (cloud VM, CI runner, new clone) to the point
 # where `npm run build` and `npm run web` both work. Safe to re-run.

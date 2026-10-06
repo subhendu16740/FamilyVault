@@ -78,6 +78,6 @@ export function nameWithType(name: string | null | undefined, type: string, fall
 
 /** Said instead of trying to save a file the bucket would refuse. */
 export function unsupportedFileMessage(type: string | null | undefined): string {
-  const what = type ? `a ${type.toUpperCase()} file` : 'a kind of file FamilyVault does not recognise';
-  return `This is ${what}. FamilyVault can keep PDFs, and pictures in JPG or PNG.`;
+  const what = type ? `a ${type.toUpperCase()} file` : 'a kind of file AskLocker does not recognise';
+  return `This is ${what}. AskLocker can keep PDFs, and pictures in JPG or PNG.`;
 }

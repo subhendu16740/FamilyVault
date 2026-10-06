@@ -3,7 +3,7 @@
 // The one Gmail function deployed WITHOUT JWT verification: Google's
 // redirect carries no Supabase session, and cannot. So it does nothing that
 // needs one. It looks up the state Google echoes back, and relays the browser
-// to the FamilyVault page that started the flow, with the code attached. The
+// to the AskLocker page that started the flow, with the code attached. The
 // code is traded for a token by gmail-connect's `finish`, an authenticated
 // call that only the account which pressed "Connect" can make.
 //
@@ -45,7 +45,7 @@ Deno.serve(async (req) => {
   const googleError = url.searchParams.get('error');
 
   if (!state) {
-    return page(400, 'Something went wrong', 'Go back to FamilyVault and press Connect Gmail again.');
+    return page(400, 'Something went wrong', 'Go back to AskLocker and press Connect Gmail again.');
   }
 
   const { data: row, error } = await supabase
@@ -62,10 +62,10 @@ Deno.serve(async (req) => {
       return page(503, 'Not set up yet', 'Gmail import is not set up on this server yet.');
     }
     console.error('[gmail-callback] state lookup failed:', error.message);
-    return page(500, 'Something went wrong', 'Go back to FamilyVault and try again in a moment.');
+    return page(500, 'Something went wrong', 'Go back to AskLocker and try again in a moment.');
   }
   if (!row) {
-    return page(400, 'This link has expired', 'Connecting Gmail has to be finished within ten minutes. Go back to FamilyVault and press Connect Gmail again.');
+    return page(400, 'This link has expired', 'Connecting Gmail has to be finished within ten minutes. Go back to AskLocker and press Connect Gmail again.');
   }
 
   const target = new URL(row.return_to);

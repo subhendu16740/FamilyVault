@@ -28,7 +28,7 @@ export default function AboutScreen() {
           <LinearGradient colors={['#2A3D66', '#4A6491']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.logo}>
             <Feather name="shield" size={26} color="#FFFFFF" />
           </LinearGradient>
-          <Text style={styles.name}>FamilyVault</Text>
+          <Text style={styles.name}>AskLocker</Text>
           <Text style={styles.tagline}>Your family's important papers, safe and easy to find.</Text>
         </Card>
 

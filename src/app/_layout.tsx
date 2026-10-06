@@ -43,7 +43,7 @@ export default function RootLayout() {
       .catch(() => setFontsLoaded(true));
   }, []);
 
-  // Web: what makes FamilyVault installable (public/manifest.json) — an
+  // Web: what makes AskLocker installable (public/manifest.json) — an
   // iPhone shows notifications only to a web app added to its Home Screen
   // (034). Added here because the single-page export never uses +html.tsx.
   useEffect(() => {

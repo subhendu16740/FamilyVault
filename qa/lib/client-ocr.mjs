@@ -26,7 +26,7 @@ const MODEL = '4.0.0_best_int'; // what tesseract.js loads for OEM 1 when no lan
 // tesseract.js reads every language from ONE directory, and each npm package
 // holds one language, so the ones asked for are gathered into a temp folder.
 function languageDir(languages) {
-  const dir = join(tmpdir(), 'familyvault-qa-tessdata');
+  const dir = join(tmpdir(), 'asklocker-qa-tessdata');
   mkdirSync(dir, { recursive: true });
   for (const lang of languages) {
     const file = `${lang}.traineddata.gz`;

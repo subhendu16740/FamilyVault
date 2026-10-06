@@ -49,7 +49,7 @@ export default function FeedbackScreen() {
         {sent ? (
           <Card>
             <CardTitle icon="check-circle">Thank you</CardTitle>
-            <Body>Your message has been sent to the FamilyVault team.</Body>
+            <Body>Your message has been sent to the AskLocker team.</Body>
             <SecondaryButton label="Write another message" onPress={() => setSent(false)} />
           </Card>
         ) : (

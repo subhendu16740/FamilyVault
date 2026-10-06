@@ -464,7 +464,7 @@ export default function SearchScreen() {
             a new question (what the old arrow here used to do), and the clock
             opens Saved chats. The clock never moves; + appears beside it. */}
         <ScreenHeader
-          title="Ask FamilyVault"
+          title="Ask"
           right={(
             <HeaderActions>
               {hasMessages && (

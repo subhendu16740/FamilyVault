@@ -2,7 +2,7 @@ import { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, ScrollView, KeyboardAvoidingView, Platform,
-  Alert, ActivityIndicator,
+  Alert, ActivityIndicator, Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
@@ -69,9 +69,9 @@ export default function LoginScreen() {
               end={{ x: 1, y: 1 }}
               style={styles.logoBox}
             >
-              <Text style={styles.logoEmoji}>🏛️</Text>
+              <Image source={require('@/assets/images/logo-mark.png')} style={styles.logoMark} accessibilityIgnoresInvertColors />
             </LinearGradient>
-            <Text style={styles.logoTitle}>FamilyVault</Text>
+            <Text style={styles.logoTitle}>AskLocker</Text>
           </View>
 
           {/* Display Name (sign up only) */}
@@ -240,7 +240,7 @@ const styles = StyleSheet.create({
     boxShadow: '0px 2px 8px rgba(42, 61, 102, 0.25)',
     elevation: 4,
   },
-  logoEmoji: { fontSize: 28 },
+  logoMark: { width: 44, height: 44 },
   logoTitle: { fontSize: 20, lineHeight: 26, fontWeight: '600', color: color.primary },
   inputWrapper: {
     flexDirection: 'row',

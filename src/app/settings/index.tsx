@@ -134,7 +134,7 @@ export default function SettingsScreen() {
     // The badge says WHICH build this is at a glance; About says what that
     // means, in the one place someone goes to check.
     {
-      icon: 'info', label: 'About FamilyVault',
+      icon: 'info', label: 'About AskLocker',
       sub: isProduction ? `Version ${appVersion}` : `Version ${appVersion} · ${environmentDescription}`,
       route: '/settings/about',
     },

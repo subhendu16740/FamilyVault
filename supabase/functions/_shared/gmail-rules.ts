@@ -63,7 +63,7 @@ export function header(headers: GmailPart['headers'], name: string): string | un
   return headers?.find((h) => h.name.toLowerCase() === wanted)?.value;
 }
 
-/** The type FamilyVault stores this as, or null. The extension wins: mail
+/** The type AskLocker stores this as, or null. The extension wins: mail
  *  clients often label a PDF application/octet-stream. */
 function supportedType(fileName: string, mimeType?: string): string | null {
   const ext = fileName.includes('.') ? fileName.split('.').pop()!.toLowerCase() : '';
@@ -252,7 +252,7 @@ const a = (kind: string) => (/^[aeiou]/.test(kind) ? `an ${kind}` : `a ${kind}`)
  * always allowed — a browser sent there stays on the person's own machine.
  *
  * This is half of what keeps a Gmail token with the right person: Google's
- * code only ever lands on a FamilyVault page, never on one someone else
+ * code only ever lands on a AskLocker page, never on one someone else
  * controls. The other half is that only the account that pressed "Connect"
  * can finish (gmail-connect).
  */
