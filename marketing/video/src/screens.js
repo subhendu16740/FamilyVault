@@ -34,17 +34,22 @@ const CATEGORIES = [
 
 // ─── Small parts ─────────────────────────────────────────────────────────
 
-export function logoMark(color = '#fff') {
-  // The app's own mark (public/icon-512.png), traced at its 512px geometry:
-  // pediment, architrave, four columns, base.
-  return `<svg viewBox="0 0 512 512" aria-hidden="true"><g fill="${color}">
-    <path d="M256 100 412 185H100Z"/>
-    <rect x="116" y="197" width="280" height="24" rx="6"/>
-    <rect x="138" y="232" width="38" height="139" rx="8"/>
-    <rect x="204" y="232" width="38" height="139" rx="8"/>
-    <rect x="270" y="232" width="38" height="139" rx="8"/>
-    <rect x="336" y="232" width="38" height="139" rx="8"/>
-    <rect x="104" y="382" width="304" height="27" rx="6"/></g></svg>`;
+export function logoMark() {
+  // The app's icon (public/icon-512.png): a locker with a speech bubble. The
+  // shapes are assets/expo.icon/Assets/asklocker-mark.svg, placed, weighted
+  // and coloured as the icon has them (it matches the PNG pixel for pixel):
+  // the bubble coral, ringed in the tile's navy where it crosses the locker,
+  // its "?" white (Liberation Sans Bold, as a path, so the mark needs no font).
+  // .lm-bubble lets the reveal pop the bubble in.
+  return `<svg viewBox="0 0 1024 1024" aria-hidden="true"><g transform="translate(-30 20)">
+    <g fill="none" stroke="#fff" stroke-width="44" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="300" y="236" width="330" height="588" rx="54"/><path d="M382 340H548M382 412H548M568 560V650"/></g>
+    <circle cx="465" cy="640" r="30" fill="#fff"/>
+    <g class="lm-bubble">
+      <path d="M708 150h118a86 86 0 0 1 86 86v96a86 86 0 0 1-86 86h-82l-74 64v-64a86 86 0 0 1-48-78v-104a86 86 0 0 1 86-86z"
+        fill="#D4807B" stroke="#2A3D66" stroke-width="28" stroke-linejoin="round"/>
+      <path fill="#fff" d="M809.6 233.8Q809.6 243.3 805.3 250.8Q801.1 258.3 789.4 266.6L782 272Q775.4 276.8 772.1 281.7Q768.8 286.5 768.5 292.4H742.5Q743.1 282.4 748.1 274.6Q753.1 266.8 762.9 260Q773.3 252.8 777.6 247.2Q781.9 241.7 781.9 235Q781.9 226.4 776.3 221.4Q770.7 216.4 760.3 216.4Q750.5 216.4 743.8 222.2Q737.1 227.9 735.9 237.4L708.1 236.2Q710.7 216.4 724.4 205.4Q738.1 194.4 760 194.4Q783.1 194.4 796.3 204.8Q809.6 215.3 809.6 233.8ZM741.7 334V307.6H769.9V334Z"/></g>
+  </g></svg>`;
 }
 
 function spinner(color = '#2A3D66', size = 20, cls = '') {
@@ -168,11 +173,11 @@ function lockNotif(id, lines) {
   </div>`;
 }
 
-// A FamilyVault notification as public/sw.js shows it: the title and body the
+// An AskLocker notification as public/sw.js shows it: the title and body the
 // server wrote (034, 035), the app's icon, the app's name from the manifest.
 function pushNotif(id, title, body) {
   return `<div class="lnotif push" id="${id}">
-    <div class="ln-head"><span class="ln-app fv">${logoMark()}</span><span>FamilyVault</span><span>•</span><span>now</span></div>
+    <div class="ln-head"><span class="ln-app mark">${logoMark()}</span><span>AskLocker</span><span>•</span><span>now</span></div>
     <div class="ln-title">${title}</div><div class="ln-text">${body}</div>
   </div>`;
 }
@@ -326,7 +331,7 @@ function gmailScreen() {
   </section>`;
 }
 
-// ─── Ask FamilyVault (src/app/(tabs)/search.tsx) ─────────────────────────
+// ─── Ask (src/app/(tabs)/search.tsx): the tab is titled just "Ask" ───────
 
 function askMessages(prefix, turns, voice) {
   // Each turn: a user bubble, a loading bubble and the answer bubble. They are
@@ -345,7 +350,7 @@ function askMessages(prefix, turns, voice) {
 
 function askHeader(prefix) {
   // New question appears once there are messages; the Saved chats clock never moves.
-  return header('Ask FamilyVault', { right: `<div class="v4-actions">
+  return header('Ask', { right: `<div class="v4-actions">
     <span class="v4-iconbtn" id="${prefix}-new" style="opacity:0">${icon('plus', 24, '#2A3D66')}</span>
     <span class="v4-iconbtn" id="${prefix}-clock">${icon('clock', 24, '#2A3D66')}</span></div>` });
 }
@@ -461,7 +466,7 @@ function homeScreen() {
             .map(([id, ic, label, plus]) => `<div class="dr-row" id="${id}"><span class="dr-ic">${icon(ic, 16, '#2A3D66')}</span><span class="dr-l">${label}</span>
               ${plus ? plusTag() : icon('chevron-right', 16, '#9CA3AF')}</div>`).join('')}
         </div>
-        <div class="dr-foot"><div class="dr-out">${icon('log-out', 16, '#DC2626')}<span>Sign Out</span></div><div class="dr-ver">FamilyVault 1.0.0</div></div>
+        <div class="dr-foot"><div class="dr-out">${icon('log-out', 16, '#DC2626')}<span>Sign Out</span></div><div class="dr-ver">AskLocker 1.0.0</div></div>
       </div>
     </div>
   </section>`;
@@ -498,13 +503,13 @@ function treeScreen() {
   return `<section class="scr" id="scr-tree">${sbFill}
     ${header('Family tree', { sub: STORY.familyName, right: `<div class="v4-hbtn">${icon('user-plus', 16, '#fff')}<span>Add</span></div>` })}
     <div class="tree-body">
-      <div class="onapp-key"><i class="dot">${icon('smartphone', 9, '#fff', 2.4)}</i><span>On FamilyVault (has an account)</span></div>
+      <div class="onapp-key"><i class="dot">${icon('smartphone', 9, '#fff', 2.4)}</i><span>On AskLocker (has an account)</span></div>
       <div class="tree-canvas" id="tree-canvas"><div class="tree-content" id="tree-content">${tree}</div></div>
       <div class="overline" style="margin-top:8px">Everyone</div>
       <div class="ev-list">
         ${row(STORY.youFull, 'You', { me: true, onApp: true })}
-        ${row(STORY.papa, 'Father (Papa) · On FamilyVault', { onApp: true })}
-        ${row(STORY.maa, 'Mother (Maa) · On FamilyVault', { onApp: true })}
+        ${row(STORY.papa, 'Father (Papa) · On AskLocker', { onApp: true })}
+        ${row(STORY.maa, 'Mother (Maa) · On AskLocker', { onApp: true })}
       </div>
     </div>
   </section>`;
@@ -523,7 +528,7 @@ function personScreen() {
       <div class="card hero">${avatar(STORY.papa, 56, { onApp: true })}
         <div class="hero-n">${STORY.papa}</div><div class="hero-r">Your father (Papa)</div>
         <div class="muted">Born 14 March 1966 · 60 years</div>
-        <div class="acct-pill">${icon('smartphone', 12, '#2A3D66')}<span>On FamilyVault (has an account)</span></div></div>
+        <div class="acct-pill">${icon('smartphone', 12, '#2A3D66')}<span>On AskLocker (has an account)</span></div></div>
       <div class="card">${cardTitle('plus-square', 'Emergency card')}
         <div class="ec-row">${bloodPill('B+')}<span class="muted">2 people to call</span></div>
         <div class="ec-allergy">Allergies: Penicillin</div>
@@ -652,7 +657,7 @@ export function scrambleCards() {
 }
 
 export function textBlocks() {
-  // Every feature scene says why it exists, then how FamilyVault answers it.
+  // Every feature scene says why it exists, then how AskLocker answers it.
   const whyHow = (id, kicker, kIcon, why, how, sub, { plus = false, after = '' } = {}) => `<div class="tblock wh" id="${id}">
       <div class="kicker">${icon(kIcon, 22, 'currentColor', 2.4)}<span>${kicker}</span>${plus ? '<span class="k-plus">★ Family Plus</span>' : ''}</div>
       <div class="wh-why"><div class="wh-tag why">Why</div><div class="why-t">${rich(why)}</div></div>
@@ -684,19 +689,19 @@ export function textBlocks() {
   <div class="q-block on-dark" id="t-question"><div class="big">${words("Now imagine you're the one who can't pick up.")}</div></div>
   <div class="brand" id="brand">
     <div class="logo-tile" id="logo">${logoMark()}</div>
-    <div class="wordmark" id="wordmark">FamilyVault</div>
+    <div class="wordmark" id="wordmark">AskLocker</div>
     <div class="tagline" id="tagline">Every family document. One question away.</div>
   </div>
   ${whyHow('t-gmail', 'Gmail import', 'mail', 'Your policies are buried somewhere in *2,847 emails.*',
-    'FamilyVault finds them for you.', 'It lists the attachments that look like documents. Nothing comes in until you tick it.', { plus: true })}
+    'AskLocker finds them for you.', 'It lists the attachments that look like documents. Nothing comes in until you tick it.', { plus: true })}
   ${whyHow('t-scan', 'Scan', 'camera', 'The originals sit in an almirah, *in another city.*',
-    'Photograph them once.', 'FamilyVault reads the page and pulls out the policy number and expiry date.')}
+    'Photograph them once.', 'AskLocker reads the page and pulls out the policy number and expiry date.')}
   ${whyHow('t-ask', 'Ask', 'message-circle', 'In a panic, *nobody remembers* which file has the number.',
     "Just ask, the way you'd ask a person.", 'The answer comes from your own documents, with the source attached.')}
   ${whyHow('t-voice', 'Voice', 'mic', 'Not every parent types, *or reads English.*',
     'They ask out loud and hear the answer.', 'Speech to text and text to speech, in nine Indian languages and English.', { after: langs })}
   ${whyHow('t-tree', 'Family tree', 'git-branch', 'Dadi and the kids *never sign in.*|And everyone says “Dadi”, not “Kamala~Sharma”.',
-    'Everyone goes in one family tree.', 'With or without an account. Ask by relation, and FamilyVault knows who you mean.')}
+    'Everyone goes in one family tree.', 'With or without an account. Ask by relation, and AskLocker knows who you mean.')}
   ${whyHow('t-emerg', 'Emergency card', 'plus-square', 'The doctor asks: blood~group? Allergies? Medicines?|At 2~AM, *nobody remembers.*',
     'One emergency card for each person.', 'With the policy number too. Anyone in the family can open it, and every number is one tap from the dialler.')}
   ${whyHow('t-alerts', 'Reminders', 'bell', 'Policies lapse quietly.|You find out *the day you need~one.*',
@@ -713,15 +718,15 @@ export function textBlocks() {
     </div>
   </div>
   <div class="tblock on-dark res-block" id="t-res">
-    <div class="kicker">${icon('heart', 22, 'currentColor', 2.4)}<span>The same night, with FamilyVault</span></div>
+    <div class="kicker">${icon('heart', 22, 'currentColor', 2.4)}<span>The same night, with AskLocker</span></div>
     <div class="clock-big"><span class="t" id="res-time">2:14</span><span class="ampm">AM</span></div>
-    <div class="res-lines"><div class="h1" id="res-h1a">${words('Maa asks FamilyVault.')}</div>
+    <div class="res-lines"><div class="h1" id="res-h1a">${words('Maa asks. AskLocker answers.')}</div>
       <div class="h1" id="res-h1b">${words('Sorted in a minute.')}</div></div>
     <div class="sub" id="res-sub">No calls. No passwords. No digging through inboxes.</div>
   </div>
   <div class="brand" id="endcard">
     <div class="logo-tile" id="end-logo">${logoMark()}</div>
-    <div class="wordmark" id="end-word">FamilyVault</div>
+    <div class="wordmark" id="end-word">AskLocker</div>
     <div class="tagline" id="end-tag">Every family document. One question away.</div>
     <div class="cta" id="end-cta"><span>${STORY.cta}</span>${icon('chevron-right', 26, '#fff', 2.6)}</div>
     ${STORY.ctaNote ? `<div class="cta-note" id="end-note">${STORY.ctaNote}</div>` : ''}

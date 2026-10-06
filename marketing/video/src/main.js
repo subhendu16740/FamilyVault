@@ -193,6 +193,11 @@ gsap.set($$('#texts .wi'), { yPercent: 118 });
 gsap.set($$('.wh-how'), { autoAlpha: 0 });
 gsap.set($$('.lang, .langs-note'), { autoAlpha: 0 });
 gsap.set(['#tc1', '#tc2', '#tc3', '#tc4'], { autoAlpha: 0 });
+// The brand reveal and the end card build up piece by piece: nothing in them
+// shows before its own entrance.
+gsap.set($$('#logo, #tagline, #end-logo, #end-tag, #end-cta, #end-note, #end-url'), { autoAlpha: 0 });
+gsap.set(['#wordmark', '#end-word'], { clipPath: 'inset(0% 100% 0% 0%)' });
+gsap.set($$('.brand .lm-bubble'), { scale: 0, transformOrigin: '17% 100%' });
 gsap.set($$('.cap-line'), { autoAlpha: 0 });
 gsap.set($$('.subline'), { autoAlpha: 0 });
 gsap.set($$('.callout, #wave'), { autoAlpha: 0 });
@@ -275,7 +280,7 @@ function showWhy(id, t) {
   tl.fromTo($('.wh-tag', why), { autoAlpha: 0, x: -12 }, { autoAlpha: 1, x: 0, duration: 0.45, ...IR }, t + 0.1);
   tl.fromTo($$('.wi', why), { yPercent: 118 }, { yPercent: 0, duration: 0.9, ease: 'power4.out', stagger: 0.035, ...IR }, t + 0.2);
 }
-// ...then how FamilyVault answers it. The why moves up into its place and
+// ...then how AskLocker answers it. The why moves up into its place and
 // stays, quieter, above the how; in 9:16 the how takes its place instead.
 function showHow(id, t) {
   const b = $(`#${id}`);
@@ -356,6 +361,12 @@ function phoneIn(t) {
 function popCard(sel, t) {
   tl.fromTo(sel, { autoAlpha: 0, scale: 0.82, y: '+=46' }, { autoAlpha: 1, scale: 1, y: '-=46', duration: 0.6, ease: 'back.out(1.5)', ...IR }, t);
   cue(t, 'pop');
+}
+// The logo's speech bubble, the "Ask" in AskLocker, pops out of the locker
+// once the tile has landed.
+function bubblePop(tile, t) {
+  tl.to(`${tile} .lm-bubble`, { scale: 1, duration: 0.5, ease: 'back.out(2.4)' }, t);
+  cue(t, 'pop-soft');
 }
 function sub(id, t0, t1) {
   tl.fromTo(`#${id}`, { autoAlpha: 0, y: 10 }, { autoAlpha: 1, y: 0, duration: 0.3, ...IR }, t0);
@@ -493,7 +504,7 @@ S.scramble = 6.9;
   S.reveal = c0 + 4.75;
 }
 
-// ─── 4. FamilyVault ──────────────────────────────────────────────────────
+// ─── 4. AskLocker ────────────────────────────────────────────────────────
 {
   const t0 = S.reveal;
   cue(t0, 'section', { name: 'reveal' });
@@ -505,6 +516,7 @@ S.scramble = 6.9;
   tl.set('#brand', { autoAlpha: 1 }, t0 + 0.3);
   tl.fromTo('#logo', { scale: 0.4, rotation: -14, autoAlpha: 0 }, { scale: 1, rotation: 0, autoAlpha: 1, duration: 1.0, ease: 'back.out(1.7)', ...IR }, t0 + 0.35);
   cue(t0 + 0.4, 'pop');
+  bubblePop('#logo', t0 + 0.9);
   tl.fromTo('#wordmark', { clipPath: 'inset(0% 100% 0% 0%)', y: 12 }, { clipPath: 'inset(0% 0% 0% 0%)', y: 0, duration: 0.8, ease: 'power3.out', ...IR }, t0 + 0.85);
   fadeIn('#tagline', t0 + 1.5, { from: 16, duration: 0.7 });
   hide('#brand', t0 + (SHORT ? 2.8 : 3.9), { y: -40 });
@@ -915,6 +927,7 @@ if (!SHORT) {
   tl.set('#endcard', { autoAlpha: 1 }, t0 + 0.3);
   tl.fromTo('#end-logo', { scale: 0.4, rotation: -14, autoAlpha: 0 }, { scale: 1, rotation: 0, autoAlpha: 1, duration: 1.0, ease: 'back.out(1.7)', ...IR }, t0 + 0.35);
   cue(t0 + 0.4, 'pop');
+  bubblePop('#end-logo', t0 + 0.9);
   tl.fromTo('#end-word', { clipPath: 'inset(0% 100% 0% 0%)', y: 12 }, { clipPath: 'inset(0% 0% 0% 0%)', y: 0, duration: 0.8, ...IR }, t0 + 0.85);
   fadeIn('#end-tag', t0 + 1.45, { from: 16, duration: 0.7 });
   tl.fromTo('#end-cta', { autoAlpha: 0, scale: 0.9, y: 16 }, { autoAlpha: 1, scale: 1, y: 0, duration: 0.7, ease: 'back.out(1.6)', ...IR }, t0 + 2.1);

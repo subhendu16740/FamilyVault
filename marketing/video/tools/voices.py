@@ -1,4 +1,4 @@
-"""Speaks the film's two voice lines, in Hindi: Maa's question, and FamilyVault
+"""Speaks the film's two voice lines, in Hindi: Maa's question, and AskLocker
 reading its answer back to her.
 
     python tools/voices.py --model model.onnx --voices voices/

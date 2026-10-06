@@ -1,7 +1,7 @@
 {
-  "name": "familyvault-intro-video",
+  "name": "asklocker-intro-video",
   "private": true,
-  "description": "Source for the FamilyVault intro video: an HTML/GSAP composition rendered frame-by-frame to MP4.",
+  "description": "Source for the AskLocker intro video: an HTML/GSAP composition rendered frame-by-frame to MP4.",
   "type": "module",
   "scripts": {
     "preview": "npx --yes serve -l 4173 .",

@@ -4,9 +4,10 @@
 // at time t. Seeking instead of playing makes every frame deterministic: a slow
 // frame can never drop, so the video is identical on any machine.
 //
-//   node tools/render.mjs                   16:9, 1920x1080 -> out/familyvault-intro-16x9.mp4
-//   node tools/render.mjs --portrait        9:16, 1080x1920 -> out/familyvault-intro-9x16.mp4
-//   add --short for the ~55s cut (tag becomes 16x9-short / 9x16-short)
+//   node tools/render.mjs                   16:9, 1920x1080 -> out/video-16x9.mp4
+//   node tools/render.mjs --portrait        9:16, 1080x1920 -> out/video-9x16.mp4
+//   add --short for the ~70s cut (tag becomes 16x9-short / 9x16-short)
+//   tools/mux.sh <tag> then adds sound -> out/asklocker-intro-<tag>.mp4
 //   node tools/render.mjs --stills 3,12.5   PNGs of single frames -> out/stills/
 //   options: --fps 30  --from 0 --to 20 (seconds)  --workers 3  --scale 1
 //

@@ -1,10 +1,10 @@
-# FamilyVault intro film
+# AskLocker intro film
 
 The launch film, as code. `src/intro.html` is a GSAP timeline that recreates the
 app's real screens (same layouts, copy, colours and Feather icons as `src/app/**`,
 sized by `src/constants/design.ts`) around a short story: a 2:14 AM hospital
 admission, a son who can't find his father's policy, and the same night with
-FamilyVault. `tools/render.mjs` seeks the paused timeline frame by frame in
+AskLocker. `tools/render.mjs` seeks the paused timeline frame by frame in
 headless Chromium and pipes PNGs to ffmpeg, so every frame is deterministic.
 `audio/score.py` synthesises the soundtrack from the cue sheet the page emits,
 so sound lands on the exact frame of each tap, and mixes in the two spoken
@@ -15,7 +15,7 @@ Gmail (★ Family Plus), a paper policy scanned, a question typed, the same
 question asked aloud in Hindi, the family tree, Papa's emergency card, a
 reminder arriving on the lock screen, and what keeps the vault private. Every
 one of those scenes opens with a **Why**, the problem it exists for, read first
-and large, and then shows the **How**, FamilyVault's answer, while the phone
+and large, and then shows the **How**, AskLocker's answer, while the phone
 does it. The voice scene names all ten voice languages in their own scripts,
 and you hear it work: Maa asks her question aloud in Hindi, and the app reads
 its answer back to her, policy number spelled out, with English subtitles under
@@ -25,10 +25,10 @@ app's theme colour.
 
 | Output | Length | For |
 |---|---|---|
-| `familyvault-intro-16x9.mp4` | 2:13 | Landing page, YouTube, LinkedIn, pitches |
-| `familyvault-intro-9x16.mp4` | 2:13 | Full-length vertical posts |
-| `familyvault-intro-9x16-short.mp4` | 1:11 | Reels, Shorts, WhatsApp forwards |
-| `familyvault-intro-16x9-short.mp4` | 1:11 | LinkedIn and X feeds |
+| `asklocker-intro-16x9.mp4` | 2:13 | Landing page, YouTube, LinkedIn, pitches |
+| `asklocker-intro-9x16.mp4` | 2:13 | Full-length vertical posts |
+| `asklocker-intro-9x16-short.mp4` | 1:11 | Reels, Shorts, WhatsApp forwards |
+| `asklocker-intro-16x9-short.mp4` | 1:11 | LinkedIn and X feeds |
 | `…-sfx-only.mp4` | same | Posting with a platform's own music: effects and voices, no music |
 
 The short cut keeps the story and one pass through the product: Gmail import,
@@ -54,7 +54,7 @@ node tools/render.mjs                 # 16:9, full   -> out/video-16x9.mp4
 node tools/render.mjs --portrait      # 9:16, full   -> out/video-9x16.mp4
 node tools/render.mjs --portrait --short
 node tools/render.mjs --short
-./tools/mux.sh 16x9                   # adds sound -> out/familyvault-intro-16x9.mp4
+./tools/mux.sh 16x9                   # adds sound -> out/asklocker-intro-16x9.mp4
 ./tools/mux.sh 9x16-short             # tag = orientation, plus -short for the short cut
 ```
 
@@ -165,8 +165,11 @@ details were chosen deliberately:
 
 The Sharma family, Arogya Shield and the policy are fictional, the document
 carries a SPECIMEN watermark, and the phone numbers on the emergency card are
-the app's own placeholder pattern. The logo tile is the app's mark, traced from
-`public/icon-512.png`.
+the app's own placeholder pattern. The logo is the app's icon (`public/icon-512.png`):
+the locker and speech bubble of `assets/expo.icon/Assets/asklocker-mark.svg`,
+placed and coloured as the icon has them, so the two match pixel for pixel. The
+app was called FamilyVault until 6 October 2026; the film says AskLocker
+everywhere a person sees the name, as the app does.
 
 ## Licences
 
