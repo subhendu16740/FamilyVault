@@ -1,4 +1,4 @@
-// ─── FamilyVault RAG Search Edge Function ───────────────────────
+// ─── AskLocker RAG Search Edge Function ───────────────────────
 // Pipeline: Query → Retrieve matching chunks → LLM generates answer
 // Uses: Groq free tier; models are resolved at runtime (see _shared/groq.ts)
 // ────────────────────────────────────────────────────────────────
@@ -1179,7 +1179,7 @@ async function generateAnswer(
       messages: [
         {
           role: 'system',
-          content: `You are FamilyVault AI — a helpful assistant that answers questions about a family's documents.
+          content: `You are AskLocker AI — a helpful assistant that answers questions about a family's documents.
 Today's date is ${todayLabel()}. Use it to interpret "this year", "recently", "latest", "expiring soon" and similar. A document is only about the current year if its own dates say so — never assume a document's year is the current year.
 You ONLY answer based on the provided document context.
 The context is whatever search returned — it may not actually answer the question. If it doesn't, say so plainly and, if a related document exists, say what it does cover instead. NEVER answer a different question just because the context happens to contain information about it.

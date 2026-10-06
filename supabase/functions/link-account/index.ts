@@ -120,7 +120,7 @@ Deno.serve(async (req) => {
       case "no_account":
         return json(404, {
           status: "no_account",
-          error: "No FamilyVault account uses this email yet. Ask them to sign up with it, then link them again.",
+          error: "No AskLocker account uses this email yet. Ask them to sign up with it, then link them again.",
         });
       case "invalid_email":
         return json(400, { status: "invalid_email", error: "That doesn't look like an email address." });

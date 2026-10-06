@@ -112,7 +112,7 @@ export function ShareSheet({ visible, onClose, familyId, documentId, fileName }:
   const shareOut = async () => {
     if (!made) return;
     try {
-      await navigator.share({ title: fileName, text: `${fileName}, from FamilyVault`, url: made.url });
+      await navigator.share({ title: fileName, text: `${fileName}, from AskLocker`, url: made.url });
     } catch {
       // Closed without sharing: nothing to say.
     }

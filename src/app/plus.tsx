@@ -247,7 +247,7 @@ export default function PlusScreen() {
           <Card style={styles.payCard}>
             <Text style={styles.payTitle}>{plan === 'plus' ? 'Add more time' : 'Get Family Plus'}</Text>
             {!checkoutSupported ? (
-              <Text style={styles.payFine}>Paying for Family Plus is on the FamilyVault web app for now.</Text>
+              <Text style={styles.payFine}>Paying for Family Plus is on the AskLocker web app for now.</Text>
             ) : !canPayHere ? (
               <Text style={styles.payFine}>Paying from outside India is coming soon.</Text>
             ) : (

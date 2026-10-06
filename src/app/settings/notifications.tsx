@@ -1,6 +1,6 @@
 // Settings › Notifications — whether you see notifications at all, and
 // whether this device shows them as notifications on the phone or computer
-// (Web Push, migration 034), even when FamilyVault is closed. The reminders
+// (Web Push, migration 034), even when AskLocker is closed. The reminders
 // themselves are made on the server either way, for every member: 90, 30
 // and 7 days before a document expires, and on the day.
 //
@@ -25,8 +25,8 @@ import { color, space } from '../../constants/design';
 const DEVICE_TEXT: Record<Exclude<PushStatus, 'on' | 'off'>, string> = {
   unsupported: 'This browser cannot show notifications. Chrome, Edge, Firefox and Safari can.',
   'needs-home-screen':
-    'On iPhone or iPad, add FamilyVault to your Home Screen first: tap Share, then Add to Home Screen. Open it from there and turn reminders on.',
-  blocked: "Notifications are blocked for FamilyVault in this browser. Allow them in the browser's settings for this site, then come back here.",
+    'On iPhone or iPad, add AskLocker to your Home Screen first: tap Share, then Add to Home Screen. Open it from there and turn reminders on.',
+  blocked: "Notifications are blocked for AskLocker in this browser. Allow them in the browser's settings for this site, then come back here.",
   'not-ready': 'Notifications on devices are not switched on yet. Reminders still appear under the bell.',
 };
 
@@ -103,7 +103,7 @@ export default function NotificationSettingsScreen() {
               <ActivityIndicator color={color.primary} />
             ) : device === 'on' ? (
               <>
-                <Body>On. This device shows FamilyVault's notifications, even when the app is closed.</Body>
+                <Body>On. This device shows AskLocker's notifications, even when the app is closed.</Body>
                 {!notificationsEnabled && <Muted>Notifications are switched off above, so nothing is sent until you switch them back on.</Muted>}
                 <View style={styles.buttons}>
                   <SecondaryButton label="Send a test" icon="send" onPress={test} disabled={busy !== null} />
@@ -112,7 +112,7 @@ export default function NotificationSettingsScreen() {
               </>
             ) : device === 'off' ? (
               <>
-                <Body>Get a notification on this phone or computer when a document is about to expire — even when FamilyVault is closed.</Body>
+                <Body>Get a notification on this phone or computer when a document is about to expire — even when AskLocker is closed.</Body>
                 <PrimaryButton label="Turn on" icon="bell" onPress={turnOn} busy={busy === 'on'} disabled={busy !== null} />
               </>
             ) : (

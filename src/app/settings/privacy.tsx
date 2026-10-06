@@ -21,7 +21,7 @@ export default function PrivacyScreen() {
           </Body>
           <Body>
             Your personal vault is yours alone: nobody else can see it, and nobody can be invited to it. Each time you
-            upload, you choose where the document goes — your personal vault or one of your families — and FamilyVault
+            upload, you choose where the document goes — your personal vault or one of your families — and AskLocker
             never chooses a family for you.
           </Body>
           <Body>
@@ -54,7 +54,7 @@ export default function PrivacyScreen() {
         <Card>
           <CardTitle icon="message-circle">When you ask a question</CardTitle>
           <Body>
-            FamilyVault finds the passages in your documents that best match your question — in all your vaults, or
+            AskLocker finds the passages in your documents that best match your question — in all your vaults, or
             only the one you pick — and sends the question with those passages to an AI service to write the answer.
             Only the matching passages are sent, not your whole vault, and only from vaults you are in.
           </Body>
@@ -64,7 +64,7 @@ export default function PrivacyScreen() {
           <CardTitle icon="file-text">Reading your documents</CardTitle>
           <Body>
             So that you can search them, the text of your documents is read when you add them. Photos are read on
-            your phone or in your browser. PDFs are read on FamilyVault's server, and a scanned PDF may be read by an
+            your phone or in your browser. PDFs are read on AskLocker's server, and a scanned PDF may be read by an
             outside text-reading (OCR) service.
           </Body>
         </Card>
@@ -81,7 +81,7 @@ export default function PrivacyScreen() {
         <Card>
           <CardTitle icon="mail">Import from Gmail</CardTitle>
           <Body>
-            Only you see what FamilyVault finds in your email, and nothing is saved until you choose it. You can
+            Only you see what AskLocker finds in your email, and nothing is saved until you choose it. You can
             disconnect Gmail at any time, which forgets everything it found.
           </Body>
         </Card>

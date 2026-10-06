@@ -32,7 +32,7 @@ function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
               style={styles.searchTabItem}
               activeOpacity={0.85}
               accessibilityRole="button"
-              accessibilityLabel="Ask FamilyVault"
+              accessibilityLabel="Ask"
             >
               <LinearGradient
                 colors={['#2A3D66', '#4A6491']}

@@ -1,7 +1,7 @@
 // ─── add-member: a family admin invites a person who has an account ─
 //
 // Nobody joins a family without saying yes (migration 037). An admin names an
-// email; if a confirmed FamilyVault account signs in with it, that person is
+// email; if a confirmed AskLocker account signs in with it, that person is
 // sent an invitation — a notification, on their devices too — and joins as a
 // viewer only when they accept. Until then the family sees them as Pending
 // approval. If no account uses the email, the admin is told so and nothing is
@@ -104,7 +104,7 @@ Deno.serve(async (req) => {
       case "no_account":
         return json(404, {
           status: "no_account",
-          error: "No FamilyVault account uses this email yet. Ask them to sign up with it, then add them again.",
+          error: "No AskLocker account uses this email yet. Ask them to sign up with it, then add them again.",
         });
       case "invalid_email":
         return json(400, { status: "invalid_email", error: "That doesn't look like an email address." });

@@ -52,7 +52,7 @@ export function vehicleInsurance({ today, runId }) {
   const start = new Date(end.getTime() - 364 * 86_400_000);
   const lines = [
     'SPECIMEN MOTOR INSURANCE CO. - SPECIMEN, NOT A REAL DOCUMENT',
-    `Created by the FamilyVault QA suite (run ${runId}) and deleted again at the end of the run.`,
+    `Created by the AskLocker QA suite (run ${runId}) and deleted again at the end of the run.`,
     'Private Car Package - Schedule and Certificate of Insurance',
     'Policy No: SMV2026990177',
     'Insured: Rohan Verma',

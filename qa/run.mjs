@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// ─── FamilyVault QA ─────────────────────────────────────────────
+// ─── AskLocker QA ─────────────────────────────────────────────
 //
 // Uploads synthetic SPECIMEN documents to the DEV project, asks questions
 // about them, and checks the answers — plus the database, access and upload
@@ -46,7 +46,7 @@ function describePlan(args, selected, group, groups, today) {
     : args.suite === 'full' ? 'all rotation groups'
     : args.suite === 'languages' ? 'the languages tier only' : 'no rotation';
   const est = estimateFor(selected);
-  console.log(`FamilyVault QA — suite "${args.suite}", ${rotation}`);
+  console.log(`AskLocker QA — suite "${args.suite}", ${rotation}`);
   console.log(`Areas: ${args.only ? args.only.join(', ') : 'db, access, upload, ask'}`);
   if (!selected.length) {
     console.log('Questions: none — this run spends no Groq budget.');

@@ -44,7 +44,7 @@ export default function SharedDocumentScreen() {
           <LinearGradient colors={['#2A3D66', '#4A6491']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.logo}>
             <Feather name="lock" size={16} color="#FFFFFF" />
           </LinearGradient>
-          <Text style={styles.brandName}>FamilyVault</Text>
+          <Text style={styles.brandName}>AskLocker</Text>
         </View>
 
         {state === 'loading' ? (
@@ -93,7 +93,7 @@ export default function SharedDocumentScreen() {
 
         <Text style={styles.footer}>
           {typeof state === 'object' ? 'Only this one document is shared, and only until the date above. ' : ''}
-          FamilyVault keeps a family's documents safe and easy to find.
+          AskLocker keeps a family's documents safe and easy to find.
         </Text>
       </ScrollView>
     </SafeAreaView>

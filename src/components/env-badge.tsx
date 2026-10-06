@@ -6,7 +6,7 @@
 //
 // Renders nothing in production. Everywhere else it is deliberately not
 // styled like the app: the palette here is a warning colour that appears
-// nowhere in FamilyVault's own design, so it reads as a marker stuck onto
+// nowhere in AskLocker's own design, so it reads as a marker stuck onto
 // the build rather than part of the product.
 // ────────────────────────────────────────────────────────────────
 

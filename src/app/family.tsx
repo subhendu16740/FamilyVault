@@ -170,7 +170,7 @@ export default function FamilyScreen() {
           setAddError(`${address} has been invited already. They join once they accept.`);
           break;
         case 'no_account':
-          setAddError(`No FamilyVault account uses ${address} yet. Ask them to sign up with this email, then add them again.`);
+          setAddError(`No AskLocker account uses ${address} yet. Ask them to sign up with this email, then add them again.`);
           break;
         case 'invalid_email':
           setAddError("That doesn't look like an email address.");
@@ -514,10 +514,10 @@ export default function FamilyScreen() {
             </View>
 
             <Text style={styles.sheetIntro}>
-              They need a FamilyVault account. Enter the email they sign in with: they get an invitation, and join as a viewer once they accept. Until then they show here as Pending approval.
+              They need a AskLocker account. Enter the email they sign in with: they get an invitation, and join as a viewer once they accept. Until then they show here as Pending approval.
             </Text>
             <Text style={styles.sheetIntro}>
-              Already in the family tree? Open them there and choose Link to their FamilyVault account instead, so they keep their place in the tree, their documents and their emergency card.
+              Already in the family tree? Open them there and choose Link to their AskLocker account instead, so they keep their place in the tree, their documents and their emergency card.
             </Text>
 
             {/* Email */}

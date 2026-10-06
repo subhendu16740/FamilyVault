@@ -41,7 +41,7 @@ function areaRow(results, area, label) {
 
 export function renderMarkdown(results, meta) {
   const out = [];
-  out.push(`## FamilyVault QA — ${meta.suite}`);
+  out.push(`## AskLocker QA — ${meta.suite}`);
   out.push('');
   out.push(`DEV · ${meta.commit || 'local run'} · ${meta.startedAt.slice(0, 16).replace('T', ' ')} UTC · ${meta.rotation}`);
   out.push('');
