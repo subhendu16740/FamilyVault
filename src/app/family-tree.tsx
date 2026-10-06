@@ -12,7 +12,7 @@
 // is drawn, one below the other, in the same order for everyone — nothing
 // hides behind a tab — and the viewer's own card is highlighted wherever it
 // appears. The tree holds people with and without accounts; a green phone on
-// someone's picture says they are on FamilyVault, and a key above the tree
+// someone's picture says they are on AskLocker, and a key above the tree
 // says so in words. Below the drawing the same people are listed plainly, for
 // screen readers and large text.
 
@@ -176,7 +176,7 @@ export default function FamilyTreeScreen() {
                         <View style={styles.rowText}>
                           <Text style={styles.rowName} numberOfLines={1}>{p.name}</Text>
                           <Text style={styles.rowSub} numberOfLines={1}>
-                            {[label, p.userId && p.id !== me?.id ? 'On FamilyVault' : null].filter(Boolean).join(' · ') || 'Family'}
+                            {[label, p.userId && p.id !== me?.id ? 'On AskLocker' : null].filter(Boolean).join(' · ') || 'Family'}
                           </Text>
                         </View>
                         {badge && (

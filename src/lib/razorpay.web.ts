@@ -2,7 +2,7 @@
 //
 // checkout.js is Razorpay's script, loaded the first time someone pays, never
 // before. It opens Razorpay's window over the page — UPI, cards, net banking —
-// and the card or UPI details go to Razorpay, never to FamilyVault. What comes
+// and the card or UPI details go to Razorpay, never to AskLocker. What comes
 // back is the order, the payment and Razorpay's signature on the pair, which
 // the payments function checks before Family Plus is added.
 //
@@ -44,7 +44,7 @@ export async function openCheckout(order: CheckoutOrder): Promise<CheckoutResult
       amount: order.amount,
       currency: order.currency,
       order_id: order.orderId,
-      name: 'FamilyVault',
+      name: 'AskLocker',
       description: order.description,
       prefill: order.prefill,
       theme: { color: '#2A3D66' },

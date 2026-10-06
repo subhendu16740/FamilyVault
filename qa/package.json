@@ -1,7 +1,7 @@
 {
-  "name": "familyvault-qa",
+  "name": "asklocker-qa",
   "private": true,
-  "description": "Automated QA for FamilyVault: uploads synthetic SPECIMEN documents to the DEV project, asks questions about them, and checks the answers. Never touches PROD data.",
+  "description": "Automated QA for AskLocker: uploads synthetic SPECIMEN documents to the DEV project, asks questions about them, and checks the answers. Never touches PROD data.",
   "type": "module",
   "engines": {
     "node": "22.x"

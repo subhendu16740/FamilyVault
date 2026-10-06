@@ -85,7 +85,7 @@ export default function DeleteAccountScreen() {
         <ScrollView contentContainerStyle={screenStyles.body}>
           <Card>
             <CardTitle icon="check-circle">Your account has been deleted</CardTitle>
-            <Body>Your account and everything listed on the last screen are gone. Thank you for using FamilyVault.</Body>
+            <Body>Your account and everything listed on the last screen are gone. Thank you for using AskLocker.</Body>
             {/* Signing out here takes the app back to the sign-in screen. */}
             <PrimaryButton label="Done" onPress={() => { signOutThisDevice().catch(() => undefined); }} />
           </Card>
@@ -117,7 +117,7 @@ export default function DeleteAccountScreen() {
             <Card>
               <CardTitle icon="alert-triangle">This cannot be undone</CardTitle>
               <Body>
-                Your account is deleted straight away and for good. FamilyVault keeps no copy, and there is no
+                Your account is deleted straight away and for good. AskLocker keeps no copy, and there is no
                 waiting period.
               </Body>
               <Muted>

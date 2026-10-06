@@ -1,6 +1,6 @@
 {
-  "name": "FamilyVault",
-  "short_name": "FamilyVault",
+  "name": "AskLocker",
+  "short_name": "AskLocker",
   "description": "Your family's documents, safe and easy to find.",
   "start_url": "/",
   "scope": "/",

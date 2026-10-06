@@ -8,8 +8,8 @@ const { width } = Dimensions.get('window');
 
 const slides = [
   {
-    emoji: '🏛️',
-    title: 'Welcome to FamilyVault',
+    emoji: '🔐',
+    title: 'Welcome to AskLocker',
     subtitle: 'Every document your family needs, in one place.',
   },
   {

@@ -1,4 +1,4 @@
-// ─── FamilyVault Document Ingestion Edge Function ───────────────
+// ─── AskLocker Document Ingestion Edge Function ───────────────
 //
 // The HTTP entry point for ingesting an uploaded document. All it does is
 // check who is calling and hand off: the pipeline itself lives in

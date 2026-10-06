@@ -47,7 +47,7 @@ export default function ProfileScreen() {
       refreshMembers().catch(() => {});
       setStatus({
         kind: 'ok',
-        text: familySees ? 'Saved.' : 'Saved. Your family will see the new name after the next FamilyVault update.',
+        text: familySees ? 'Saved.' : 'Saved. Your family will see the new name after the next AskLocker update.',
       });
     } catch (err: any) {
       setStatus({ kind: 'error', text: err?.message || 'Could not save. Please try again.' });
