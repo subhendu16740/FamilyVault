@@ -26,18 +26,25 @@
 export const FIXTURE_VERSION = 1;
 
 const BANNER =
-  'SPECIMEN — FICTIONAL DOCUMENT CREATED FOR FAMILYVAULT AUTOMATED TESTING — NOT VALID FOR ANY PURPOSE';
+  'SPECIMEN — FICTIONAL DOCUMENT CREATED FOR ASKLOCKER AUTOMATED TESTING — NOT VALID FOR ANY PURPOSE';
 
 /**
  * kinds:
  *   text-pdf    born-digital PDF with a text layer (the common case by email)
  *   scan-pdf    image-only PDF with a small signature-stamp text layer — the
  *               shape that once looked ingested while holding only the stamp
- *   photo       a phone photo of a card (JPG), read by server-side OCR
+ *   photo       a phone photo of a card (JPG), read by server-side OCR — or,
+ *               with `clientOcr`, read the way the WEB app reads a photo:
+ *               Tesseract in the browser, in the person's chosen languages
+ *               plus English, with the text sent along with the upload
  *   locked-pdf  password-protected PDF; must fail visibly, never look indexed
  *
  * facts: strings that must appear in the extracted text (whitespace-insensitive).
  * rows:  groups of strings that must share ONE line — proof a table kept its rows.
+ * canaryWords: text a reader is known to get wrong — the server's PDF reader
+ *        for a PDF (words in an Indian script), browser OCR for a `clientOcr`
+ *        photo. Reported every run, never failing it, and reported as fixed
+ *        the day it reads right (`language` names the language in the report).
  */
 export const documents = [
   {
@@ -132,7 +139,7 @@ export const documents = [
     html: () => page(`
       <h1>MIRA VERMA</h1>
       <p class="sub">Mobile: +91 98220 41937 &nbsp;·&nbsp; Email: mira.verma@example.com &nbsp;·&nbsp; Pune, Maharashtra</p>
-      <p class="note">Fictional person. This résumé exists only to test FamilyVault.</p>
+      <p class="note">Fictional person. This résumé exists only to test AskLocker.</p>
       <h2>Profile</h2>
       <div class="prose"><p>Final-year computer science student who enjoys turning messy data into clear answers. Looking for a graduate role in data engineering or analytics, starting July 2026.</p></div>
       <h2>Education</h2>
@@ -192,6 +199,7 @@ export const documents = [
     kind: 'text-pdf',
     category: 'Property Documents',
     permanent: true,
+    language: 'Hindi',
     facts: ['₹ 14,250', '30/11/2026', 'PMC/BNR/2026/7781'],
     canaryWords: ['आशा वर्मा', 'संपत्ति', 'विभाग', 'महानगरपालिका'],
     html: () => page(`
@@ -229,6 +237,150 @@ export const documents = [
       <p>Warranty: 1 year comprehensive, 5 years on compressor</p>
       <p>Comprehensive warranty valid till: 13/05/2027</p>
       <p>Customer: Rohan Verma</p>`),
+  },
+
+  // ── One household document in each other Indian language the app offers
+  // (Settings › Documents). Browser-made PDFs, like the Hindi notice: every
+  // script loses letters in the server's PDF reader (conjuncts, pre-base vowel
+  // signs, split words), while amounts, dates and account numbers — ASCII
+  // here, as on most real bills — survive. So `facts` are ASCII and the names
+  // are `canaryWords`. The questions ask by name, in the language, as a
+  // family would, to find out what that loss costs at answer time.
+  {
+    file: 'electricity_bill_bengali_specimen_v1.pdf',
+    kind: 'text-pdf',
+    category: 'Utility Bills',
+    permanent: true,
+    language: 'Bengali',
+    facts: ['WB-CN-5521-0937', '₹ 2,845', '15/12/2026'],
+    canaryWords: ['সুমিতা ঘোষ', 'বিদ্যুৎ', 'গ্রাহকের', 'তারিখ'],
+    html: () => page(regional('bn', 'দক্ষিণ নগর বিদ্যুৎ সরবরাহ সংস্থা', [
+      'বিদ্যুৎ বিল (নমুনা)', 'গ্রাহকের নাম: সুমিতা ঘোষ', 'গ্রাহক নম্বর: WB-CN-5521-0937', 'বিলের মাস: নভেম্বর 2026',
+      'ব্যবহৃত ইউনিট: 312', 'মোট দেয় টাকা: ₹ 2,845', 'জমা দেওয়ার শেষ তারিখ: 15/12/2026',
+      'নির্ধারিত তারিখের পরে জমা দিলে বিলম্ব মাশুল প্রযোজ্য।',
+      'এটি একটি কাল্পনিক নমুনা নথি, শুধুমাত্র সফটওয়্যার পরীক্ষার জন্য।'])),
+  },
+  {
+    file: 'water_tax_receipt_tamil_specimen_v1.pdf',
+    kind: 'text-pdf',
+    category: 'Utility Bills',
+    permanent: true,
+    language: 'Tamil',
+    facts: ['TN-WT-88213', '₹ 6,480', '31/01/2027'],
+    canaryWords: ['கார்த்திக் ராஜன்', 'குடிநீர்', 'தொகை', 'தேதி'],
+    html: () => page(regional('ta', 'தென்னகர் நகராட்சி', [
+      'குடிநீர் வரி ரசீது (மாதிரி)', 'பெயர்: கார்த்திக் ராஜன்', 'கணக்கு எண்: TN-WT-88213',
+      'காலம்: அக்டோபர் 2026 – மார்ச் 2027', 'செலுத்த வேண்டிய தொகை: ₹ 6,480', 'கடைசி தேதி: 31/01/2027',
+      'தாமதக் கட்டணம் பொருந்தும்.', 'இது மென்பொருள் சோதனைக்கான கற்பனை மாதிரி ஆவணம்.'])),
+  },
+  {
+    file: 'school_fee_receipt_telugu_specimen_v1.pdf',
+    kind: 'text-pdf',
+    category: 'Other',
+    permanent: true,
+    language: 'Telugu',
+    facts: ['TS-SF-40219', '₹ 18,500', '10/06/2026'],
+    canaryWords: ['శ్రీనివాస్ రెడ్డి', 'రసీదు', 'మొత్తం', 'విద్యార్థి'],
+    html: () => page(regional('te', 'సరస్వతి విద్యా నికేతన్ (కల్పిత పాఠశాల)', [
+      'ఫీజు రసీదు (నమూనా)', 'విద్యార్థి పేరు: శ్రీనివాస్ రెడ్డి', 'తరగతి: 7', 'రసీదు సంఖ్య: TS-SF-40219',
+      'చెల్లించిన మొత్తం: ₹ 18,500', 'చెల్లింపు తేదీ: 10/06/2026',
+      'ఇది సాఫ్ట్‌వేర్ పరీక్ష కోసం కల్పిత నమూనా పత్రం.'])),
+  },
+  {
+    file: 'society_maintenance_bill_marathi_specimen_v1.pdf',
+    kind: 'text-pdf',
+    category: 'Property Documents',
+    permanent: true,
+    language: 'Marathi',
+    facts: ['MH-HS-1142', '₹ 2,750', '10/01/2027'],
+    canaryWords: ['सुनील पाटील', 'देखभाल', 'रक्कम', 'दिनांक'],
+    html: () => page(regional('mr', 'गुलमोहर सहकारी गृहनिर्माण संस्था', [
+      'देखभाल शुल्क बिल (नमुना)', 'सदस्याचे नाव: सुनील पाटील', 'सदनिका क्रमांक: B-204', 'सदस्य क्रमांक: MH-HS-1142',
+      'थकबाकी रक्कम: ₹ 2,750', 'देय दिनांक: 10/01/2027', 'मुदतीनंतर दंड आकारला जाईल.',
+      'हा सॉफ्टवेअर चाचणीसाठी काल्पनिक नमुना दस्तऐवज आहे.'])),
+  },
+  {
+    file: 'gas_booking_receipt_gujarati_specimen_v1.pdf',
+    kind: 'text-pdf',
+    category: 'Utility Bills',
+    permanent: true,
+    language: 'Gujarati',
+    facts: ['GJ-LPG-77310', '₹ 1,103', '05/10/2026'],
+    canaryWords: ['નીતા પટેલ', 'ગ્રાહક', 'રકમ', 'તારીખ'],
+    html: () => page(regional('gu', 'સુરભિ ગેસ એજન્સી', [
+      'ગેસ બુકિંગ રસીદ (નમૂનો)', 'ગ્રાહકનું નામ: નીતા પટેલ', 'ગ્રાહક નંબર: GJ-LPG-77310', 'બુકિંગ તારીખ: 05/10/2026',
+      'ચૂકવેલ રકમ: ₹ 1,103', 'ડિલિવરી સરનામું: અમદાવાદ',
+      'આ સોફ્ટવેર પરીક્ષણ માટેનો કાલ્પનિક નમૂનો દસ્તાવેજ છે.'])),
+  },
+  {
+    file: 'fixed_deposit_receipt_kannada_specimen_v1.pdf',
+    kind: 'text-pdf',
+    category: 'Bank Statements',
+    permanent: true,
+    language: 'Kannada',
+    facts: ['KA-FD-60458', '₹ 75,000', '28/02/2027'],
+    canaryWords: ['ಅನಿಲ್ ಕುಮಾರ್', 'ಠೇವಣಿ', 'ಮೊತ್ತ', 'ದಿನಾಂಕ'],
+    html: () => page(regional('kn', 'ಕಾವೇರಿ ಸಹಕಾರಿ ಬ್ಯಾಂಕ್ (ಕಾಲ್ಪನಿಕ)', [
+      'ಸ್ಥಿರ ಠೇವಣಿ ರಸೀದಿ (ಮಾದರಿ)', 'ಠೇವಣಿದಾರರ ಹೆಸರು: ಅನಿಲ್ ಕುಮಾರ್', 'ಠೇವಣಿ ಸಂಖ್ಯೆ: KA-FD-60458',
+      'ಠೇವಣಿ ಮೊತ್ತ: ₹ 75,000', 'ಅವಧಿ: 12 ತಿಂಗಳು', 'ಪಕ್ವತೆಯ ದಿನಾಂಕ: 28/02/2027',
+      'ಇದು ತಂತ್ರಾಂಶ ಪರೀಕ್ಷೆಗಾಗಿ ಕಾಲ್ಪನಿಕ ಮಾದರಿ ದಾಖಲೆ.'])),
+  },
+  {
+    file: 'insurance_premium_notice_malayalam_specimen_v1.pdf',
+    kind: 'text-pdf',
+    category: 'Life Insurance',
+    permanent: true,
+    language: 'Malayalam',
+    facts: ['KL-LI-30917', '₹ 12,600', '18/03/2027'],
+    canaryWords: ['ലക്ഷ്മി നായർ', 'പ്രീമിയം', 'പോളിസി', 'തീയതി'],
+    html: () => page(regional('ml', 'സുരക്ഷ ലൈഫ് ഇൻഷുറൻസ് (സാങ്കൽപ്പികം)', [
+      'പ്രീമിയം അറിയിപ്പ് (മാതൃക)', 'പോളിസി ഉടമയുടെ പേര്: ലക്ഷ്മി നായർ', 'പോളിസി നമ്പർ: KL-LI-30917',
+      'അടയ്ക്കേണ്ട പ്രീമിയം: ₹ 12,600', 'അവസാന തീയതി: 18/03/2027',
+      'ഇത് സോഫ്റ്റ്‌വെയർ പരിശോധനയ്ക്കുള്ള സാങ്കൽപ്പിക മാതൃകാ രേഖയാണ്.'])),
+  },
+  {
+    file: 'water_bill_punjabi_specimen_v1.pdf',
+    kind: 'text-pdf',
+    category: 'Utility Bills',
+    permanent: true,
+    language: 'Punjabi',
+    facts: ['PB-WS-21564', '₹ 4,375', '12/12/2026'],
+    canaryWords: ['ਗੁਰਪ੍ਰੀਤ ਸਿੰਘ', 'ਪਾਣੀ', 'ਰਕਮ', 'ਮਿਤੀ'],
+    html: () => page(regional('pa', 'ਨਵਾਂ ਸ਼ਹਿਰ ਜਲ ਸਪਲਾਈ ਵਿਭਾਗ', [
+      'ਪਾਣੀ ਦਾ ਬਿੱਲ (ਨਮੂਨਾ)', 'ਖਪਤਕਾਰ ਦਾ ਨਾਮ: ਗੁਰਪ੍ਰੀਤ ਸਿੰਘ', 'ਖਾਤਾ ਨੰਬਰ: PB-WS-21564', 'ਕੁੱਲ ਰਕਮ: ₹ 4,375',
+      'ਆਖਰੀ ਮਿਤੀ: 12/12/2026', 'ਇਹ ਸਾਫਟਵੇਅਰ ਜਾਂਚ ਲਈ ਇੱਕ ਕਾਲਪਨਿਕ ਨਮੂਨਾ ਦਸਤਾਵੇਜ਼ ਹੈ।'])),
+  },
+
+  // ── Photos read in the browser, as the web app reads every photo: the same
+  // kind of bill as the Tamil and Gujarati PDFs above, for someone else, so a
+  // question naming one person must not be answered from the other's bill.
+  // Browser OCR keeps the names the PDF reader breaks; what it gets wrong is
+  // Latin inside a Tamil read — the ₹ comes out as "*" and the account
+  // number "TN-WT-61407" as "1110/1-61407" — while the digits survive.
+  {
+    file: 'water_tax_receipt_tamil_photo_specimen_v1.jpg',
+    kind: 'photo',
+    category: 'Utility Bills',
+    permanent: true,
+    language: 'Tamil',
+    clientOcr: ['tam', 'eng'],
+    ocrFacts: ['5,120', '28/02/2027', 'மீனா சுப்பிரமணியம்'],
+    canaryWords: ['TN-WT-61407', '₹ 5,120'],
+    html: () => photoPage(regional('ta', 'தென்னகர் நகராட்சி', [
+      'குடிநீர் வரி ரசீது (மாதிரி)', 'பெயர்: மீனா சுப்பிரமணியம்', 'கணக்கு எண்: TN-WT-61407',
+      'செலுத்த வேண்டிய தொகை: ₹ 5,120', 'கடைசி தேதி: 28/02/2027', 'இது கற்பனை மாதிரி ஆவணம்.'])),
+  },
+  {
+    file: 'gas_booking_receipt_gujarati_photo_specimen_v1.jpg',
+    kind: 'photo',
+    category: 'Utility Bills',
+    permanent: true,
+    language: 'Gujarati',
+    clientOcr: ['guj', 'eng'],
+    ocrFacts: ['₹ 1,145', '19/10/2026', 'રમેશ શાહ'],
+    html: () => photoPage(regional('gu', 'સુરભિ ગેસ એજન્સી', [
+      'ગેસ બુકિંગ રસીદ (નમૂનો)', 'ગ્રાહકનું નામ: રમેશ શાહ', 'ગ્રાહક નંબર: GJ-LPG-52018',
+      'બુકિંગ તારીખ: 19/10/2026', 'ચૂકવેલ રકમ: ₹ 1,145', 'આ કાલ્પનિક નમૂનો દસ્તાવેજ છે.'])),
   },
 
   {
@@ -289,6 +441,12 @@ function page(...pages) {
 
 function scanPage(body) {
   return `<!doctype html><html><head><meta charset="utf-8"><style>${BASE_CSS}${SCAN_CSS}</style></head><body><section class="scan"><div class="specimen">${BANNER}</div>${body}<div class="wm">SPECIMEN</div></section></body></html>`;
+}
+
+// Labels and names in the language; amounts, dates and account numbers in
+// ASCII digits, as on most real regional bills.
+function regional(lang, title, lines) {
+  return `<h1 lang="${lang}">${title}</h1><div class="lines" lang="${lang}">${lines.map((l) => `<p>${l}</p>`).join('')}</div>`;
 }
 
 function photoPage(body) {
@@ -373,7 +531,9 @@ const BASE_CSS = `
   @page { size: A4; margin: 0; }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: #fff; }
-  body { font-family: 'Noto Sans', 'Noto Sans Devanagari', sans-serif; color: #1a1a1a; font-size: 11pt; line-height: 1.5; }
+  body { font-family: 'Noto Sans', 'Noto Sans Devanagari', 'Noto Sans Bengali', 'Noto Sans Tamil', 'Noto Sans Telugu',
+         'Noto Sans Gujarati', 'Noto Sans Kannada', 'Noto Sans Malayalam', 'Noto Sans Gurmukhi', sans-serif;
+         color: #1a1a1a; font-size: 11pt; line-height: 1.5; }
   .page { width: 210mm; height: 297mm; padding: 16mm 16mm 14mm; page-break-after: always; overflow: hidden; }
   .page:last-child { page-break-after: auto; }
   .specimen { border: 1.5px dashed #b91c1c; color: #b91c1c; font-weight: 700; font-size: 8pt; padding: 4px 8px; margin-bottom: 12px; text-align: center; }

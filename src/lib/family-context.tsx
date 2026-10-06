@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react';
 import { useAuth } from './auth';
 import { fetchUserFamilies, fetchFamilyMembers } from './api';
-import { storageGet, storageSet } from './storage';
+import { storageGet, storageSet, accountKey } from './storage';
 import type { Database, FamilyMemberWithUser, FamilyWithMembership } from './database.types';
 
 type Family = Database['public']['Tables']['families']['Row'];
@@ -31,7 +31,7 @@ const FamilyContext = createContext<FamilyContextType>({
   switchFamily: () => {},
 });
 
-const selectionKey = (userId: string) => `fv:family:${userId}`;
+const selectionKey = accountKey.family;
 
 export function FamilyProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();

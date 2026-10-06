@@ -6,7 +6,7 @@
 //
 // Renders nothing in production. Everywhere else it is deliberately not
 // styled like the app: the palette here is a warning colour that appears
-// nowhere in FamilyVault's own design, so it reads as a marker stuck onto
+// nowhere in AskLocker's own design, so it reads as a marker stuck onto
 // the build rather than part of the product.
 // ────────────────────────────────────────────────────────────────
 
@@ -29,7 +29,7 @@ export function EnvBadge() {
       // Never intercept a touch. This sits above every screen, including the
       // tab bar and the voice button, and must not swallow a press.
       pointerEvents="none"
-      style={[styles.wrap, { top: insets.top + 6 }]}
+      style={[styles.wrap, { top: insets.top }]}
     >
       <View style={[styles.pill, unknown && styles.pillUnknown]}>
         <Text style={[styles.text, unknown && styles.textUnknown]} numberOfLines={1}>
@@ -50,12 +50,19 @@ const styles = StyleSheet.create({
     zIndex: 9999,
     ...(Platform.OS === 'web' ? ({ position: 'fixed' } as object) : null),
   },
+  // A tab hanging from the top edge, not a pill in the middle of the bar:
+  // every screen's title sits in that bar now, and a badge over it hides
+  // the one word that says where you are. The bar is 56 tall with its title
+  // centred, so the top 14px are always free.
   pill: {
     paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 999,
+    paddingTop: 1,
+    paddingBottom: 2,
+    borderBottomLeftRadius: 8,
+    borderBottomRightRadius: 8,
     backgroundColor: '#B45309',
     borderWidth: 1,
+    borderTopWidth: 0,
     borderColor: '#F59E0B',
     opacity: 0.94,
     boxShadow: '0px 1px 4px rgba(0, 0, 0, 0.25)',

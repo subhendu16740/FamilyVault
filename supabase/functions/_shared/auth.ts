@@ -83,7 +83,25 @@ export async function requireFamilyMember(
   return { ok: true, member };
 }
 
-function deny(status: number, message: string): AuthResult {
+export type UserResult =
+  | { ok: true; userId: string }
+  | { ok: false; response: Response };
+
+/**
+ * The signed-in caller, for a request that names no family (a person's own
+ * Gmail connection, say). Same test as requireFamilyMember: the anon key is a
+ * valid project JWT but not a user, and fails here.
+ */
+export async function requireUser(req: Request, supabase: SupabaseClient): Promise<UserResult> {
+  const header = req.headers.get('Authorization') ?? '';
+  const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+  if (!token) return deny(401, 'Sign in required');
+  const { data, error } = await supabase.auth.getUser(token);
+  if (error || !data?.user) return deny(401, 'Sign in required');
+  return { ok: true, userId: data.user.id };
+}
+
+function deny(status: number, message: string): { ok: false; response: Response } {
   return {
     ok: false,
     response: new Response(JSON.stringify({ error: message }), {

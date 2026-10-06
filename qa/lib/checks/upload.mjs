@@ -8,6 +8,8 @@
 //   metadata extraction finds expiry + policy    (what powers expiry alerts)
 //   an expiry alert becomes a notification       (get_user_notifications had
 //                                                 never worked until 023)
+//   ...once, however often Home asks              (034; before it, a fresh
+//                                                 copy every day)
 //
 // Then a password-protected PDF, which must fail VISIBLY. Both are deleted
 // afterwards. Cost: one small embedding call and one OCR.space request.
@@ -83,6 +85,14 @@ export async function runUploadChecks(cfg, { a, vaultA }, results, today) {
       !checkErr && !inboxErr && mine ? 'pass' : 'fail', {
         why: checkErr ? `check_expiry_notifications: ${checkErr.message}` : inboxErr ? `get_user_notifications: ${inboxErr.message}` : mine ? `"${mine.title}"` : `no notification for this document (check created ${created ?? 0})`,
       });
+    // Once per stage (034): opening Home again makes no second reminder.
+    if (mine) {
+      await a.client.rpc('check_expiry_notifications', { p_family_id: vaultA.id });
+      const { data: again } = await a.client.rpc('get_user_notifications', { p_user_id: a.user.id, p_limit: 50, p_offset: 0 });
+      const copies = (again ?? []).filter((n) => n.document_ref === up.docId && n.type === 'expiry').length;
+      results.add('upload', 'vehicle:notification-once', 'Asking again makes no second reminder for it', copies === 1 ? 'pass' : 'fail',
+        { why: `${copies} reminder(s) for this document` });
+    }
     if (mine) await a.client.rpc('mark_notification_read', { p_notification_id: mine.id, p_user_id: a.user.id });
   } finally {
     const err = await deleteDocument(a, vaultA, doc);

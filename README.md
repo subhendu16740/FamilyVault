@@ -1,12 +1,12 @@
-# FamilyVault
+# AskLocker
 
-A secure, AI-powered family document vault built with React Native. FamilyVault helps families organize, store, and instantly retrieve important documents using natural language search.
+A secure, AI-powered family document vault built with React Native. AskLocker helps families organize, store, and instantly retrieve important documents using natural language search.
 
 ## Vision
 
 Every family manages dozens of critical documents — passports, insurance policies, property deeds, medical records, tax filings. These documents are scattered across drawers, folders, email attachments, and phone galleries. When you need one urgently, finding it becomes stressful and time-consuming.
 
-FamilyVault brings all your family's important documents into one secure, shared vault. Upload a document, and the app automatically extracts key details — names, dates, policy numbers, expiry dates. Need something? Just ask: *"Show me Dad's passport"* or *"When does Mom's health insurance expire?"* — and get instant answers powered by AI.
+AskLocker brings all your family's important documents into one secure, shared vault. Upload a document, and the app automatically extracts key details — names, dates, policy numbers, expiry dates. Need something? Just ask: *"Show me Dad's passport"* or *"When does Mom's health insurance expire?"* — and get instant answers powered by AI.
 
 ## Key Features
 
@@ -19,8 +19,13 @@ FamilyVault brings all your family's important documents into one secure, shared
 - **Home Dashboard** — At-a-glance stats (documents, members, categories), recent documents, quick actions
 - **Document Viewer** — View document details with metadata, category, and owner info
 - **Search Interface** — Category-based browsing and keyword search across documents
+- **Saved Chats** — Save chat on Ask keeps a conversation; the clock at the top right lists them to carry on or delete. Only you can see them, and they go if you leave the family
 - **Upload Flow** — Multi-step upload with source selection, metadata tagging, and owner assignment
-- **Profile Drawer** — Slide-out navigation for family management, settings, and sign out
+- **Import from Gmail** ★ (web) — Connect your own Gmail; AskLocker lists the attachments that look like documents, and imports the ones you tick. Only you see what it finds; disconnecting makes it forget
+- **Menu Drawer** — Slides in from the left from the name button on Home: Home, Manage Family, Reminders ★ and Settings, with Sign Out
+- **Reminders** ★ — Every document with an expiry date, soonest first. ★ Family Plus marks what the coming paid plan will add (reminders 90, 30 and 7 days ahead)
+- **Settings** — Profile (name and phone), Security (password, sign out everywhere), Notifications on/off, Storage (each family's use of its free 1 GB, and what you added; more space ★), Privacy, Help & FAQ with feedback, and About (version and release date)
+- **One Top Bar Everywhere** — A back arrow at the top left of every screen, with the title beside it, that works even after a refresh; one compact type and size scale (`src/constants/design.ts`) across the app
 - **23 Document Categories** — Pre-configured categories including Passport, Driving License, Health Insurance, Property Deed, Tax Return, Birth Certificate, and more
 - **In-App Confirmation Dialogs** — Custom modal dialogs for destructive actions
 - **Onboarding Flow** — 3-slide introduction explaining the app's value
@@ -56,7 +61,7 @@ FamilyVault brings all your family's important documents into one secure, shared
 
 ### Three-Layer Database Design
 
-FamilyVault uses a unique three-layer database architecture that provides complete data isolation between families:
+AskLocker uses a unique three-layer database architecture that provides complete data isolation between families:
 
 **Layer 1 — Common Database** (Public PostgreSQL Schema)
 Shared tables for user accounts, family records, memberships, invitations, document categories, notifications, and audit logs. Protected by Row-Level Security (RLS) policies ensuring users only access their own data.
@@ -81,7 +86,7 @@ Each family gets an isolated namespace for document embeddings. Enables semantic
 1. Clone the repository:
    ```bash
    git clone https://github.com/subhendu16740/FamilyVault.git
-   cd FamilyVault
+   cd AskLocker
    ```
 
 2. Install dependencies:

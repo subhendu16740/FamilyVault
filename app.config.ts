@@ -12,25 +12,25 @@ export default ({ config }: ConfigContext): ExpoConfig => {
 
   return {
     ...config,
-    name: "familyvault",
-    slug: "familyvault",
+    name: "AskLocker",
+    slug: "asklocker",
     version: "1.0.0",
     orientation: "portrait",
     icon: "./assets/images/icon.png",
-    scheme: "familyvault",
+    scheme: "asklocker",
     userInterfaceStyle: "automatic",
     ios: {
       icon: "./assets/expo.icon",
     },
     android: {
       adaptiveIcon: {
-        backgroundColor: "#E6F4FE",
+        backgroundColor: "#2A3D66",
         foregroundImage: "./assets/images/android-icon-foreground.png",
         backgroundImage: "./assets/images/android-icon-background.png",
         monochromeImage: "./assets/images/android-icon-monochrome.png",
       },
       predictiveBackGestureEnabled: false,
-      package: "com.anonymous.familyvault",
+      package: "com.asklocker.app",
     },
     web: {
       bundler: "metro",
@@ -41,7 +41,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       [
         "expo-splash-screen",
         {
-          backgroundColor: "#208AEF",
+          backgroundColor: "#2A3D66",
           android: {
             image: "./assets/images/splash-icon.png",
             imageWidth: 76,
@@ -52,6 +52,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     ],
     extra: {
       router: routerExtra,
+      // Settings › About. Stamped when the bundle is built, so for a web
+      // deploy this is the day it was released; Vercel also says which commit.
+      releaseDate: new Date().toISOString(),
+      commit: (process.env.VERCEL_GIT_COMMIT_SHA ?? "").slice(0, 7),
     },
     experiments: {
       typedRoutes: true,

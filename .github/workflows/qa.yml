@@ -7,7 +7,9 @@
 #   after "Deploy Edge Functions" succeeds for dev   smoke    3 questions
 #   nightly at 03:10 IST (21:40 UTC)                 nightly  8–9 questions
 #   a push that changes qa/ (any branch but main)    smoke    3 questions
-#   by hand: Actions → QA → Run workflow             any suite
+#   by hand: Actions → QA → Run workflow             any suite, including
+#                                                    languages (12 questions,
+#                                                    by hand only)
 #
 # WHY IT CANNOT EAT THE FREE GROQ BUDGET
 #
@@ -51,10 +53,10 @@ on:
   workflow_dispatch:
     inputs:
       suite:
-        description: 'smoke = 3 questions · nightly = 8–9 · full = 15 (about half the free Groq day) · no-questions = spends no Groq budget'
+        description: 'smoke = 3 questions · nightly = 8–9 · full = 15 (about half the free Groq day) · languages = 12 in eight Indian languages (about 43%) · no-questions = spends no Groq budget'
         type: choice
         default: smoke
-        options: [smoke, nightly, full, no-questions]
+        options: [smoke, nightly, full, languages, no-questions]
 
 concurrency:
   group: qa-dev

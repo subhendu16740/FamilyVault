@@ -1,4 +1,4 @@
-// ─── FamilyVault: rebuild a family's search index ───────────────
+// ─── AskLocker: rebuild a family's search index ───────────────
 //
 // Re-embeds every chunk with the current model (see _shared/embeddings.ts).
 // Needed once, after the move from the English-only model to the

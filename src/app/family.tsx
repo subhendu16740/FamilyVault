@@ -9,13 +9,29 @@ import { router, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../lib/auth';
 import { useFamily } from '../lib/family-context';
-import { addFamilyMember, leaveFamily, removeFamilyMember, updateMemberRole } from '../lib/api';
+import {
+  addFamilyMember, cancelInvitation, fetchFamilyInvites, fetchPlanLimits, leaveFamily, removeFamilyMember, updateMemberRole,
+  type PendingInvite,
+} from '../lib/api';
+import { useFamilyPlan } from '../lib/family-plan';
+import { DEFAULT_PLAN_LIMITS, type PlanLimits } from '../lib/plans';
+import { ScreenHeader, HeaderButton } from '../components/screen-header';
+import { InvitationCards } from '../components/invitation-cards';
+import { longDate } from '../lib/dates';
+import { color, radius, shadow, size, space, type } from '../constants/design';
 
 const relations = ['Father', 'Mother', 'Spouse', 'Son', 'Daughter', 'Brother', 'Sister', 'Other'];
 
-// Membership has no invitations and no requests (migration 025): an admin
-// adds a person who already has an account, and they are in straight away —
-// and notified. Anyone can leave any family they are in.
+// Nobody joins a family without saying yes (migration 037): an admin invites
+// a person who already has an account, and they join when they accept — until
+// then they show here as Pending approval, and any admin can withdraw it. The
+// invitations waiting for YOU are at the top. Anyone can leave any family
+// they are in.
+//
+// A family has at most its plan's number of members (041: 4), and an
+// invitation waiting for its answer holds a place. The server keeps that
+// limit; this screen shows it, and hides Add once the places are taken. The
+// family tree has no limit: people without an account are not members.
 //
 // Results are shown on the screen, never with Alert.alert: react-native-web's
 // Alert is an empty function, so on the web build it would show nothing.
@@ -30,6 +46,9 @@ export default function FamilyScreen() {
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [pending, setPending] = useState<PendingInvite[]>([]);
+  const [limits, setLimits] = useState<PlanLimits>(DEFAULT_PLAN_LIMITS);
+  const { plan } = useFamilyPlan();
   const [confirmDialog, setConfirmDialog] = useState<{
     title: string; message: string; confirmLabel: string; destructive?: boolean; onConfirm: () => void;
   } | null>(null);
@@ -39,13 +58,24 @@ export default function FamilyScreen() {
   // The last admin cannot leave: nobody would be left to manage the family.
   const canLeave = !!currentFamily && !(isAdmin && adminCount <= 1);
 
-  // Someone may have added this person to a family since the app opened.
+  const loadPending = useCallback(() => {
+    if (!currentFamily) { setPending([]); return; }
+    fetchFamilyInvites(currentFamily.id).then(setPending).catch(() => setPending([]));
+  }, [currentFamily?.id]);
+
+  // Someone may have joined, or answered, since the app opened.
   useFocusEffect(
     useCallback(() => {
       refreshFamilies().catch(() => {});
       refreshMembers().catch(() => {});
-    }, [refreshFamilies, refreshMembers])
+      loadPending();
+      fetchPlanLimits().then(setLimits).catch(() => {});
+    }, [refreshFamilies, refreshMembers, loadPending])
   );
+
+  // Members and waiting invitations together, against the plan's number.
+  const maxMembers = plan === 'plus' ? limits.members.plus : limits.members.free;
+  const full = members.length + pending.length >= maxMembers;
 
   const showConfirm = (title: string, message: string, onConfirm: () => void, destructive = true, confirmLabel = destructive ? 'Remove' : 'Confirm') => {
     setConfirmDialog({ title, message, onConfirm, destructive, confirmLabel });
@@ -75,9 +105,21 @@ export default function FamilyScreen() {
     }, false);
   };
 
+  const handleWithdraw = (invite: PendingInvite) => {
+    const who = invite.personName ? `${invite.personName} (${invite.email})` : invite.email;
+    showConfirm('Withdraw invitation', `Withdraw the invitation to ${who}? They will not be able to join ${familyName} with it.`, async () => {
+      try {
+        await cancelInvitation(invite.id);
+        loadPending();
+      } catch (err: any) {
+        setNotice(err.message || 'Could not withdraw the invitation.');
+      }
+    }, true, 'Withdraw');
+  };
+
   const handleLeave = () => {
     if (!currentFamily || !user) return;
-    showConfirm('Leave Family', `Leave ${familyName} Vault? You will no longer see its documents. An admin can add you again.`, async () => {
+    showConfirm('Leave Family', `Leave ${familyName} Vault? You will no longer see its documents. An admin can invite you again.`, async () => {
       try {
         await leaveFamily(currentFamily.id, user.id);
         await refreshFamilies();
@@ -108,22 +150,34 @@ export default function FamilyScreen() {
         relationship: selectedRelation || undefined,
       });
       switch (outcome.status) {
+        case 'invited':
         case 'added':
-          setNotice(`${outcome.displayName} was added to ${familyName} and can now see its documents.`);
+          setNotice(outcome.status === 'invited'
+            ? `Invitation sent to ${outcome.email}. They join ${familyName} once they accept — until then they show here as Pending approval.`
+            : `${outcome.displayName} was added to ${familyName} and can now see its documents.`);
           setShowAddMember(false);
           setEmail('');
           setSelectedRelation('');
           setAlias('');
           refreshMembers().catch(() => {});
+          loadPending();
           break;
         case 'already_member':
           setAddError(`${outcome.displayName} is already in this family.`);
           break;
+        case 'already_invited':
+          setAddError(`${address} has been invited already. They join once they accept.`);
+          break;
         case 'no_account':
-          setAddError(`No FamilyVault account uses ${address} yet. Ask them to sign up with this email, then add them again.`);
+          setAddError(`No AskLocker account uses ${address} yet. Ask them to sign up with this email, then add them again.`);
           break;
         case 'invalid_email':
           setAddError("That doesn't look like an email address.");
+          break;
+        case 'full':
+          setAddError(outcome.message);
+          refreshMembers().catch(() => {});
+          loadPending();
           break;
         case 'unavailable':
           setAddError(outcome.message);
@@ -139,19 +193,13 @@ export default function FamilyScreen() {
   if (!currentFamily) {
     return (
       <SafeAreaView style={styles.safe} edges={['top']}>
-        <View style={styles.header}>
-          <View style={styles.headerLeft}>
-            <TouchableOpacity onPress={() => router.replace('/home' as any)} style={styles.backBtn}>
-              <Feather name="arrow-left" size={24} color="#4B5563" />
-            </TouchableOpacity>
-            <Text style={styles.title}>Manage Family</Text>
-          </View>
-        </View>
+        <ScreenHeader title="Manage Family" />
+        <InvitationCards style={styles.invites} />
         <View style={styles.noFamilyWrap}>
-          <Feather name="users" size={48} color="#D1D5DB" />
+          <Feather name="users" size={32} color="#D1D5DB" />
           <Text style={styles.noFamilyTitle}>No Family Yet</Text>
           <Text style={styles.noFamilySub}>
-            Create a family to share and manage documents together — or ask your family's admin to add you, using the email you sign in with.
+            Create a family to share and manage documents together — or ask your family's admin to invite you, using the email you sign in with. An invitation shows here, and on Home.
           </Text>
           <TouchableOpacity
             onPress={() => router.push('/setup-family' as any)}
@@ -163,7 +211,7 @@ export default function FamilyScreen() {
               end={{ x: 1, y: 0 }}
               style={styles.createFamilyBtn}
             >
-              <Text style={styles.addBtnText}>Create Family</Text>
+              <Text style={styles.createFamilyText}>Create Family</Text>
             </LinearGradient>
           </TouchableOpacity>
         </View>
@@ -173,35 +221,18 @@ export default function FamilyScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <TouchableOpacity onPress={() => router.replace('/home' as any)} style={styles.backBtn}>
-            <Feather name="arrow-left" size={24} color="#4B5563" />
-          </TouchableOpacity>
-          <View>
-            <Text style={styles.title}>{currentFamily.name}</Text>
-            <Text style={styles.subtitle}>{members.length} member{members.length !== 1 ? 's' : ''}</Text>
-          </View>
-        </View>
-        {isAdmin && (
-          <TouchableOpacity
-            onPress={() => setShowAddMember(true)}
-            activeOpacity={0.85}
-          >
-            <LinearGradient
-              colors={['#2A3D66', '#4A6491']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.addBtn}
-            >
-              <Text style={styles.addBtnText}>+ Add Member</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        )}
-      </View>
+      <ScreenHeader
+        title={currentFamily.name}
+        subtitle={`${members.length} of ${maxMembers} members`}
+        right={isAdmin && !full
+          ? <HeaderButton icon="user-plus" label="Add" onPress={() => setShowAddMember(true)} />
+          : undefined}
+      />
 
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
+        {/* Invitations waiting for you, to this family or another */}
+        <InvitationCards style={styles.invites} />
+
         {notice && (
           <TouchableOpacity style={styles.notice} onPress={() => setNotice(null)} activeOpacity={0.8}>
             <Feather name="info" size={16} color="#2A3D66" />
@@ -209,6 +240,36 @@ export default function FamilyScreen() {
             <Feather name="x" size={16} color="#6B7280" />
           </TouchableOpacity>
         )}
+
+        {/* No room for another member: why, and what makes room. */}
+        {isAdmin && full && (
+          <View style={styles.fullNote}>
+            <Feather name="users" size={16} color="#7A5200" />
+            <Text style={styles.fullNoteText}>
+              {familyName} is full: a family can have {maxMembers} members
+              {pending.length > 0 ? ', and invitations waiting for an answer count too' : ''}. To invite someone else,{' '}
+              {pending.length > 0 ? 'withdraw an invitation or remove a member' : 'remove a member'}. Anyone can still be
+              added to the family tree, without an account.
+            </Text>
+          </View>
+        )}
+
+        {/* The tree holds everyone, accounts or not; this screen is who can sign in. */}
+        <TouchableOpacity
+          style={styles.treeLink}
+          onPress={() => router.push('/family-tree' as any)}
+          activeOpacity={0.8}
+          accessibilityRole="button"
+        >
+          <View style={styles.treeIcon}>
+            <Feather name="git-branch" size={16} color={color.primary} />
+          </View>
+          <View style={styles.memberInfo}>
+            <Text style={styles.treeTitle}>Family tree</Text>
+            <Text style={styles.treeSub}>Everyone in the family, and whose documents are whose</Text>
+          </View>
+          <Feather name="chevron-right" size={16} color="#9CA3AF" />
+        </TouchableOpacity>
 
         {/* Every family this person is in — more than one once an admin adds them elsewhere */}
         {families.length > 1 && (
@@ -224,12 +285,12 @@ export default function FamilyScreen() {
                     style={[styles.familyRow, isCurrent && styles.familyRowCurrent]}
                     activeOpacity={0.8}
                   >
-                    <Feather name="home" size={18} color={isCurrent ? '#FFFFFF' : '#2A3D66'} />
+                    <Feather name="home" size={16} color={isCurrent ? '#FFFFFF' : color.primary} />
                     <View style={styles.memberInfo}>
                       <Text style={[styles.familyRowName, isCurrent && styles.familyRowNameCurrent]}>{f.families.name}</Text>
                       <Text style={[styles.familyRowRole, isCurrent && styles.familyRowRoleCurrent]}>{f.role}</Text>
                     </View>
-                    {isCurrent && <Feather name="check" size={18} color="#FFFFFF" />}
+                    {isCurrent && <Feather name="check" size={16} color="#FFFFFF" />}
                   </TouchableOpacity>
                 );
               })}
@@ -281,17 +342,66 @@ export default function FamilyScreen() {
                           <TouchableOpacity
                             onPress={() => handleMakeAdmin(m.id, name)}
                             style={styles.actionBtn}
+                            hitSlop={4}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Make ${name} an admin`}
                           >
-                            <Feather name="shield" size={14} color="#2A3D66" />
+                            <Feather name="shield" size={16} color={color.primary} />
                           </TouchableOpacity>
                         )}
                         <TouchableOpacity
                           onPress={() => handleRemoveMember(m.id, name)}
                           style={styles.actionBtnDanger}
+                          hitSlop={4}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Remove ${name}`}
                         >
-                          <Feather name="user-minus" size={14} color="#EF4444" />
+                          <Feather name="user-minus" size={16} color="#EF4444" />
                         </TouchableOpacity>
                       </View>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        )}
+
+        {/* Asked, not answered yet (037) */}
+        {pending.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>Pending approval</Text>
+            <View style={styles.memberList}>
+              {pending.map((invite) => {
+                const asker = members.find((m) => m.user_id === invite.invitedBy);
+                const askerName = invite.invitedBy === user?.id ? 'you' : asker ? (asker.alias || asker.users.display_name) : null;
+                return (
+                  <View key={invite.id} style={styles.memberCard}>
+                    <View style={styles.pendingAvatar}>
+                      <Feather name="clock" size={16} color="#B45309" />
+                    </View>
+                    <View style={styles.memberInfo}>
+                      <View style={styles.memberNameRow}>
+                        <Text style={styles.memberName} numberOfLines={1}>{invite.personName || invite.email}</Text>
+                        <View style={styles.pendingBadge}>
+                          <Text style={styles.pendingBadgeText}>Pending approval</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.pendingSub} numberOfLines={2}>
+                        {invite.personName ? `${invite.email} · ` : ''}Invited {longDate(new Date(invite.createdAt))}
+                        {askerName ? ` by ${askerName}` : ''}
+                      </Text>
+                    </View>
+                    {isAdmin && (
+                      <TouchableOpacity
+                        onPress={() => handleWithdraw(invite)}
+                        style={styles.actionBtnDanger}
+                        hitSlop={4}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Withdraw the invitation to ${invite.personName || invite.email}`}
+                      >
+                        <Feather name="x" size={16} color="#EF4444" />
+                      </TouchableOpacity>
                     )}
                   </View>
                 );
@@ -303,7 +413,7 @@ export default function FamilyScreen() {
         {/* Empty state */}
         {members.length === 0 && (
           <View style={styles.emptyState}>
-            <Feather name="users" size={40} color="#D1D5DB" />
+            <Feather name="users" size={32} color="#D1D5DB" />
             <Text style={styles.emptyTitle}>No members yet</Text>
             <Text style={styles.emptySubtitle}>Add your family members to get started</Text>
           </View>
@@ -331,13 +441,18 @@ export default function FamilyScreen() {
               <TouchableOpacity
                 onPress={closeAddMember}
                 style={styles.closeBtn}
+                accessibilityRole="button"
+                accessibilityLabel="Close"
               >
-                <Feather name="x" size={20} color="#4B5563" />
+                <Feather name="x" size={size.icon} color={color.textMuted} />
               </TouchableOpacity>
             </View>
 
             <Text style={styles.sheetIntro}>
-              They need a FamilyVault account. Enter the email they sign in with: they're added straight away as a viewer, and get a notification.
+              They need a AskLocker account. Enter the email they sign in with: they get an invitation, and join as a viewer once they accept. Until then they show here as Pending approval.
+            </Text>
+            <Text style={styles.sheetIntro}>
+              Already in the family tree? Open them there and choose Link to their AskLocker account instead, so they keep their place in the tree, their documents and their emergency card.
             </Text>
 
             {/* Email */}
@@ -412,9 +527,9 @@ export default function FamilyScreen() {
                 style={[styles.addMemberBtn, adding && { opacity: 0.7 }]}
               >
                 {adding ? (
-                  <ActivityIndicator color="#FFFFFF" />
+                  <ActivityIndicator size="small" color="#FFFFFF" />
                 ) : (
-                  <Text style={styles.addMemberBtnText}>Add Member</Text>
+                  <Text style={styles.addMemberBtnText}>Send invitation</Text>
                 )}
               </LinearGradient>
             </TouchableOpacity>
@@ -461,91 +576,86 @@ export default function FamilyScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F8F9FC' },
-  header: {
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 24,
-    paddingTop: 8,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  backBtn: { padding: 4 },
-  title: { fontSize: 22, fontWeight: '700', color: '#2A3D66' },
-  subtitle: { fontSize: 13, color: '#6B7280', marginTop: 2 },
-  addBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 12,
-    minHeight: 44,
-    justifyContent: 'center',
-  },
-  addBtnText: { color: '#FFFFFF', fontSize: 13, fontWeight: '500' },
+  safe: { flex: 1, backgroundColor: color.background },
   scroll: { flex: 1 },
-  section: { paddingHorizontal: 24, paddingTop: 24 },
-  sectionLabel: { fontSize: 14, fontWeight: '600', color: '#6B7280', marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 },
+  section: { paddingHorizontal: space.lg, paddingTop: space.lg },
+  sectionLabel: { ...type.overline, marginBottom: space.sm, marginLeft: space.xs },
   emptyState: {
     alignItems: 'center',
-    paddingVertical: 60,
-    gap: 8,
+    paddingVertical: 48,
+    paddingHorizontal: space.xl,
+    gap: space.sm,
   },
-  emptyTitle: { fontSize: 16, fontWeight: '600', color: '#6B7280' },
-  emptySubtitle: { fontSize: 13, color: '#9CA3AF' },
-  memberList: { gap: 12 },
+  emptyTitle: { ...type.heading, color: color.textMuted },
+  emptySubtitle: { ...type.caption, textAlign: 'center' },
+  memberList: { gap: space.sm },
   memberCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 16,
+    backgroundColor: color.surface,
+    borderRadius: radius.control,
+    paddingVertical: 10,
+    paddingHorizontal: space.lg,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
-    minHeight: 80,
-    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.06)',
-    elevation: 3,
+    gap: space.md,
+    minHeight: size.row,
+    ...shadow.card,
   },
   memberAvatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  memberInitial: { fontSize: 22, fontWeight: '700', color: '#FFFFFF' },
-  memberInfo: { flex: 1 },
-  memberNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  memberName: { fontSize: 15, fontWeight: '600', color: '#1F2937' },
+  memberInitial: { fontSize: 16, fontWeight: '600', color: '#FFFFFF' },
+  memberInfo: { flex: 1, minWidth: 0 },
+  memberNameRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
+  memberName: type.label,
   youBadge: {
-    backgroundColor: '#EFF6FF',
-    borderRadius: 999,
+    backgroundColor: color.tint,
+    borderRadius: radius.pill,
     paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingVertical: 1,
   },
-  youBadgeText: { fontSize: 10, fontWeight: '600', color: '#2A3D66' },
-  memberRelation: { fontSize: 13, color: '#9CA3AF', marginTop: 2, textTransform: 'capitalize' },
+  youBadgeText: { fontSize: 12, lineHeight: 16, fontWeight: '600', color: color.primary },
+  memberRelation: { ...type.caption, textTransform: 'capitalize' },
   adminBadge: {
     backgroundColor: '#EDE9FE',
-    borderRadius: 999,
+    borderRadius: radius.pill,
     paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingVertical: 1,
   },
-  adminBadgeText: { fontSize: 10, fontWeight: '600', color: '#7C3AED' },
-  actionRow: { flexDirection: 'row', gap: 6 },
+  adminBadgeText: { fontSize: 12, lineHeight: 16, fontWeight: '600', color: '#7C3AED' },
+  actionRow: { flexDirection: 'row', gap: space.sm },
+  invites: { paddingHorizontal: space.lg, paddingTop: space.lg },
+  pendingAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FEF3C7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pendingBadge: {
+    backgroundColor: '#FEF3C7',
+    borderRadius: radius.pill,
+    paddingHorizontal: 8,
+    paddingVertical: 1,
+  },
+  pendingBadgeText: { fontSize: 12, lineHeight: 16, fontWeight: '600', color: '#B45309' },
+  pendingSub: type.caption,
   actionBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#EFF6FF',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: color.tint,
     alignItems: 'center',
     justifyContent: 'center',
   },
   actionBtnDanger: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: '#FEF2F2',
     alignItems: 'center',
     justifyContent: 'center',
@@ -554,46 +664,60 @@ const styles = StyleSheet.create({
   notice: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    marginHorizontal: 24,
-    marginTop: 16,
-    padding: 14,
-    borderRadius: 14,
-    backgroundColor: '#EFF6FF',
+    gap: space.sm,
+    marginHorizontal: space.lg,
+    marginTop: space.lg,
+    paddingVertical: 10,
+    paddingHorizontal: space.md,
+    borderRadius: 10,
+    backgroundColor: color.tint,
   },
-  noticeText: { flex: 1, fontSize: 13, color: '#2A3D66', lineHeight: 18 },
+  noticeText: { flex: 1, fontSize: 14, lineHeight: 20, color: color.primary },
+  fullNote: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: space.sm,
+    marginHorizontal: space.lg,
+    marginTop: space.lg,
+    paddingVertical: 10,
+    paddingHorizontal: space.md,
+    borderRadius: 10,
+    borderWidth: 1,
+    backgroundColor: '#FFF7E6',
+    borderColor: '#F5D9A0',
+  },
+  fullNoteText: { flex: 1, fontSize: 14, lineHeight: 20, color: '#7A5200' },
   // Family switcher
   familyRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    minHeight: 56,
-    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.06)',
-    elevation: 2,
+    gap: space.md,
+    backgroundColor: color.surface,
+    borderRadius: radius.control,
+    paddingHorizontal: space.lg,
+    paddingVertical: 10,
+    minHeight: size.row,
+    ...shadow.card,
   },
-  familyRowCurrent: { backgroundColor: '#2A3D66' },
-  familyRowName: { fontSize: 15, fontWeight: '600', color: '#1F2937' },
+  familyRowCurrent: { backgroundColor: color.primary },
+  familyRowName: type.label,
   familyRowNameCurrent: { color: '#FFFFFF' },
-  familyRowRole: { fontSize: 12, color: '#9CA3AF', marginTop: 2, textTransform: 'capitalize' },
-  familyRowRoleCurrent: { color: 'rgba(255,255,255,0.75)' },
+  familyRowRole: { ...type.caption, textTransform: 'capitalize' },
+  familyRowRoleCurrent: { color: 'rgba(255,255,255,0.8)' },
   leaveBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    marginHorizontal: 24,
-    marginTop: 32,
-    paddingVertical: 14,
-    borderRadius: 14,
+    gap: space.sm,
+    marginHorizontal: space.lg,
+    marginTop: space.xl,
+    borderRadius: radius.control,
     borderWidth: 1,
     borderColor: '#FECACA',
-    minHeight: 48,
+    backgroundColor: '#FEF2F2',
+    minHeight: size.control,
   },
-  leaveBtnText: { fontSize: 14, fontWeight: '600', color: '#EF4444' },
+  leaveBtnText: { ...type.button, color: color.danger },
   // Modal
   modalOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -604,137 +728,154 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
+    backgroundColor: color.surface,
+    borderTopLeftRadius: radius.card,
+    borderTopRightRadius: radius.card,
+    paddingHorizontal: space.lg,
+    paddingTop: space.sm,
     maxHeight: '85%',
     boxShadow: '0px -4px 16px rgba(0, 0, 0, 0.15)',
     elevation: 20,
   },
   sheetHandle: {
-    width: 48,
+    width: 36,
     height: 4,
-    backgroundColor: '#D1D5DB',
+    backgroundColor: color.inputBorder,
     borderRadius: 2,
     alignSelf: 'center',
-    marginBottom: 16,
+    marginBottom: space.xs,
   },
   sheetHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 24,
+    marginRight: -10,
   },
-  sheetTitle: { fontSize: 19, fontWeight: '700', color: '#2A3D66' },
-  sheetIntro: { fontSize: 13, color: '#6B7280', lineHeight: 19, marginTop: -12, marginBottom: 20 },
+  sheetTitle: type.title,
+  sheetIntro: { ...type.caption, marginBottom: space.lg },
   closeBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#F3F4F6',
+    width: size.control,
+    height: size.control,
+    borderRadius: size.control / 2,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  field: { marginBottom: 16 },
-  fieldLabel: { fontSize: 14, fontWeight: '600', color: '#374151', marginBottom: 8 },
+  field: { marginBottom: space.lg },
+  fieldLabel: { ...type.caption, fontWeight: '500', color: color.textBody, marginBottom: 6 },
   fieldLabelOptional: { fontWeight: '400', color: '#9CA3AF' },
   fieldInput: {
-    backgroundColor: '#F8F9FC',
+    backgroundColor: color.surface,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 15,
-    color: '#1F2937',
-    minHeight: 56,
+    borderColor: color.inputBorder,
+    borderRadius: 10,
+    paddingHorizontal: space.md,
+    fontSize: type.body.fontSize,
+    color: color.text,
+    minHeight: size.control,
     outlineStyle: 'none',
   } as any,
-  fieldHint: { fontSize: 11, color: '#9CA3AF', marginTop: 6 },
-  addError: { fontSize: 13, color: '#DC2626', lineHeight: 18, marginBottom: 8 },
+  fieldHint: { ...type.caption, marginTop: 6 },
+  addError: { fontSize: 14, lineHeight: 20, color: color.danger, marginBottom: space.sm },
   relationGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: space.sm,
   },
   relationChip: {
     width: '47%',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 14,
-    backgroundColor: '#F8F9FC',
+    paddingHorizontal: space.md,
+    borderRadius: 10,
+    backgroundColor: color.surface,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: color.inputBorder,
     alignItems: 'center',
-    minHeight: 48,
+    minHeight: 40,
     justifyContent: 'center',
   },
-  relationChipSelected: { backgroundColor: '#2A3D66', borderColor: '#2A3D66' },
-  relationChipText: { fontSize: 14, fontWeight: '500', color: '#374151' },
+  relationChipSelected: { backgroundColor: color.primary, borderColor: color.primary },
+  relationChipText: { fontSize: 14, lineHeight: 20, fontWeight: '500', color: color.textBody },
   relationChipTextSelected: { color: '#FFFFFF' },
   addMemberBtn: {
-    borderRadius: 14,
+    borderRadius: radius.control,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 56,
-    marginTop: 8,
-    marginBottom: 24,
+    minHeight: size.control,
+    marginTop: space.xs,
+    marginBottom: space.xl,
   },
-  addMemberBtnText: { color: '#FFFFFF', fontSize: 17, fontWeight: '600' },
+  addMemberBtnText: { ...type.button, color: '#FFFFFF' },
   noFamilyWrap: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 32,
-    gap: 12,
+    paddingHorizontal: space.xl,
+    gap: space.sm,
   },
-  noFamilyTitle: { fontSize: 20, fontWeight: '700', color: '#374151' },
-  noFamilySub: { fontSize: 14, color: '#9CA3AF', textAlign: 'center', lineHeight: 20, maxWidth: 280 },
+  noFamilyTitle: { ...type.heading, color: color.textBody },
+  noFamilySub: { ...type.caption, textAlign: 'center', maxWidth: 300 },
   createFamilyBtn: {
-    borderRadius: 14,
-    paddingHorizontal: 28,
-    paddingVertical: 14,
-    marginTop: 8,
+    borderRadius: radius.control,
+    paddingHorizontal: space.xl,
+    minHeight: size.control,
+    justifyContent: 'center',
+    marginTop: space.sm,
   },
+  createFamilyText: { ...type.button, color: '#FFFFFF' },
   // Confirmation dialog
   dialogOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 32,
+    padding: space.xl,
   },
   dialogBox: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 24,
+    backgroundColor: color.surface,
+    borderRadius: radius.card,
+    padding: space.lg + 4,
     width: '100%',
-    maxWidth: 380,
+    maxWidth: 360,
     boxShadow: '0px 8px 24px rgba(0, 0, 0, 0.15)',
     elevation: 10,
   },
-  dialogTitle: { fontSize: 18, fontWeight: '700', color: '#1F2937', marginBottom: 8 },
-  dialogMessage: { fontSize: 14, color: '#6B7280', lineHeight: 20, marginBottom: 24 },
-  dialogActions: { flexDirection: 'row', gap: 12 },
+  dialogTitle: { ...type.title, color: color.text, marginBottom: space.sm },
+  dialogMessage: { ...type.body, color: color.textMuted, marginBottom: space.xl },
+  dialogActions: { flexDirection: 'row', gap: space.md },
   dialogCancelBtn: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
-    backgroundColor: '#F3F4F6',
+    minHeight: size.control,
+    justifyContent: 'center',
+    borderRadius: radius.control,
+    backgroundColor: color.divider,
     alignItems: 'center',
   },
-  dialogCancelText: { fontSize: 15, fontWeight: '600', color: '#4B5563' },
+  dialogCancelText: { ...type.button, color: '#4B5563' },
   dialogConfirmBtn: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
-    backgroundColor: '#2A3D66',
+    minHeight: size.control,
+    justifyContent: 'center',
+    borderRadius: radius.control,
+    backgroundColor: color.primary,
     alignItems: 'center',
   },
   dialogConfirmBtnDestructive: {
     backgroundColor: '#EF4444',
   },
-  dialogConfirmText: { fontSize: 15, fontWeight: '600', color: '#FFFFFF' },
+  dialogConfirmText: { ...type.button, color: '#FFFFFF' },
   dialogConfirmTextDestructive: { color: '#FFFFFF' },
+  treeLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    marginHorizontal: space.lg,
+    marginTop: space.lg,
+    padding: space.md,
+    minHeight: size.row,
+    borderRadius: radius.card,
+    backgroundColor: color.surface,
+    ...shadow.card,
+  },
+  treeIcon: { width: size.iconBox, height: size.iconBox, borderRadius: 8, backgroundColor: color.tint, alignItems: 'center', justifyContent: 'center' },
+  treeTitle: type.label,
+  treeSub: type.caption,
 });

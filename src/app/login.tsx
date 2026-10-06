@@ -2,13 +2,14 @@ import { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, ScrollView, KeyboardAvoidingView, Platform,
-  Alert, ActivityIndicator,
+  Alert, ActivityIndicator, Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../lib/auth';
+import { color, radius, size, space, type } from '../constants/design';
 
 export default function LoginScreen() {
   const { signIn, signUp, signInWithGoogle } = useAuth();
@@ -68,15 +69,15 @@ export default function LoginScreen() {
               end={{ x: 1, y: 1 }}
               style={styles.logoBox}
             >
-              <Text style={styles.logoEmoji}>🏛️</Text>
+              <Image source={require('@/assets/images/logo-mark.png')} style={styles.logoMark} accessibilityIgnoresInvertColors />
             </LinearGradient>
-            <Text style={styles.logoTitle}>FamilyVault</Text>
+            <Text style={styles.logoTitle}>AskLocker</Text>
           </View>
 
           {/* Display Name (sign up only) */}
           {isSignUp && (
             <View style={styles.inputWrapper}>
-              <Feather name="user" size={20} color="#9CA3AF" style={styles.inputIcon} />
+              <Feather name="user" size={18} color="#9CA3AF" style={styles.inputIcon} />
               <TextInput
                 placeholder="Full Name"
                 placeholderTextColor="#9CA3AF"
@@ -90,7 +91,7 @@ export default function LoginScreen() {
 
           {/* Email */}
           <View style={styles.inputWrapper}>
-            <Feather name="mail" size={20} color="#9CA3AF" style={styles.inputIcon} />
+            <Feather name="mail" size={18} color="#9CA3AF" style={styles.inputIcon} />
             <TextInput
               placeholder="Email"
               placeholderTextColor="#9CA3AF"
@@ -104,7 +105,7 @@ export default function LoginScreen() {
 
           {/* Password */}
           <View style={styles.inputWrapper}>
-            <Feather name="lock" size={20} color="#9CA3AF" style={styles.inputIcon} />
+            <Feather name="lock" size={18} color="#9CA3AF" style={styles.inputIcon} />
             <TextInput
               placeholder="Password"
               placeholderTextColor="#9CA3AF"
@@ -117,7 +118,7 @@ export default function LoginScreen() {
               onPress={() => setShowPassword(!showPassword)}
               style={styles.inputTrailing}
             >
-              <Feather name={showPassword ? 'eye-off' : 'eye'} size={20} color="#9CA3AF" />
+              <Feather name={showPassword ? 'eye-off' : 'eye'} size={18} color="#9CA3AF" />
             </TouchableOpacity>
           </View>
 
@@ -183,7 +184,7 @@ export default function LoginScreen() {
                   end={{ x: 1, y: 1 }}
                   style={styles.biometricIcon}
                 >
-                  <Feather name="aperture" size={24} color="#FFFFFF" />
+                  <Feather name="aperture" size={20} color="#FFFFFF" />
                 </LinearGradient>
                 <View style={styles.biometricInfo}>
                   <Text style={styles.biometricTitle}>Biometric Login</Text>
@@ -214,108 +215,109 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F8F9FC' },
+  safe: { flex: 1, backgroundColor: color.background },
   flex: { flex: 1 },
   container: {
     flexGrow: 1,
-    paddingHorizontal: 24,
-    paddingTop: 48,
-    paddingBottom: 24,
+    paddingHorizontal: space.lg,
+    paddingTop: 40,
+    paddingBottom: space.xl,
     maxWidth: 390,
     alignSelf: 'center',
     width: '100%',
   },
   logoSection: {
     alignItems: 'center',
-    marginBottom: 48,
+    marginBottom: 40,
   },
   logoBox: {
-    width: 80,
-    height: 80,
-    borderRadius: 20,
+    width: 64,
+    height: 64,
+    borderRadius: radius.card,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
-    boxShadow: '0px 4px 8px rgba(0, 0, 0, 0.2)',
-    elevation: 6,
+    marginBottom: space.md,
+    boxShadow: '0px 2px 8px rgba(42, 61, 102, 0.25)',
+    elevation: 4,
   },
-  logoEmoji: { fontSize: 36 },
-  logoTitle: { fontSize: 22, fontWeight: '700', color: '#2A3D66' },
+  logoMark: { width: 44, height: 44 },
+  logoTitle: { fontSize: 20, lineHeight: 26, fontWeight: '600', color: color.primary },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
+    backgroundColor: color.surface,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    marginBottom: 12,
-    minHeight: 56,
-    paddingHorizontal: 16,
+    borderColor: color.inputBorder,
+    marginBottom: space.md,
+    minHeight: size.control,
+    paddingHorizontal: space.md,
   },
-  inputIcon: { marginRight: 8 },
+  inputIcon: { marginRight: space.sm },
   input: {
     flex: 1,
-    fontSize: 16,
-    color: '#1F2937',
-    paddingVertical: 4,
+    fontSize: type.body.fontSize,
+    color: color.text,
+    paddingVertical: space.xs,
     outlineStyle: 'none',
   } as any,
-  inputWithTrailing: { paddingRight: 8 },
+  inputWithTrailing: { paddingRight: space.sm },
   inputTrailing: {
-    padding: 8,
-    marginRight: -8,
+    padding: 10,
+    marginRight: -10,
   },
   signInBtn: {
-    borderRadius: 14,
+    borderRadius: radius.control,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 56,
-    marginBottom: 24,
+    minHeight: size.control,
+    marginTop: space.xs,
+    marginBottom: space.xl,
   },
   btnDisabled: { opacity: 0.7 },
-  signInText: { color: '#FFFFFF', fontSize: 17, fontWeight: '600' },
+  signInText: { ...type.button, color: '#FFFFFF' },
   divider: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
-    gap: 12,
+    marginBottom: space.lg,
+    gap: space.md,
   },
-  dividerLine: { flex: 1, height: 1, backgroundColor: '#D1D5DB' },
-  dividerText: { fontSize: 13, color: '#6B7280' },
+  dividerLine: { flex: 1, height: 1, backgroundColor: color.border },
+  dividerText: type.caption,
   socialBtn: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: color.surface,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 14,
+    borderColor: color.inputBorder,
+    borderRadius: radius.control,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 56,
-    marginBottom: 16,
+    minHeight: size.control,
+    marginBottom: space.lg,
   },
-  socialBtnText: { fontSize: 15, fontWeight: '500', color: '#374151' },
+  socialBtnText: { ...type.button, fontWeight: '500', color: color.textBody },
   biometricCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 20,
+    backgroundColor: color.surface,
+    borderRadius: radius.card,
+    padding: space.lg,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: color.border,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
-    marginBottom: 16,
+    gap: space.md,
+    marginBottom: space.lg,
   },
   biometricIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
   biometricInfo: { flex: 1 },
-  biometricTitle: { fontSize: 15, fontWeight: '600', color: '#1F2937' },
-  biometricSubtitle: { fontSize: 13, color: '#6B7280', marginTop: 2 },
-  biometricEnable: { fontSize: 15, fontWeight: '500', color: '#2A3D66' },
+  biometricTitle: type.label,
+  biometricSubtitle: type.caption,
+  biometricEnable: { ...type.button, color: color.primary },
   spacer: { flex: 1 },
-  createAccountBtn: { alignItems: 'center', paddingVertical: 16 },
-  createAccountText: { fontSize: 15, fontWeight: '500', color: '#2A3D66' },
+  createAccountBtn: { alignItems: 'center', justifyContent: 'center', minHeight: size.control, marginVertical: space.sm },
+  createAccountText: { ...type.button, fontWeight: '500', color: color.primary },
 });
