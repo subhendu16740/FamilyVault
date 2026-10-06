@@ -17,6 +17,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { useAuth } from '../lib/auth';
 import { useFamily } from '../lib/family-context';
+import { isPersonalVault, vaultName } from '../lib/vaults';
 import { useDrawer } from '../lib/drawer-context';
 import { useFamilyPlan, type PlusFeature } from '../lib/family-plan';
 import { appVersion } from '../lib/app-info';
@@ -70,7 +71,10 @@ export default function ProfileDrawer() {
   const email = user?.email || '';
   const initial = displayName.charAt(0).toUpperCase();
   const role = membership?.role ? membership.role.charAt(0).toUpperCase() + membership.role.slice(1) : '';
-  const familyLine = [currentFamily?.name, role].filter(Boolean).join(' · ');
+  // The open vault, and who sees it (046): "Personal vault · only you", or the family and your role.
+  const familyLine = isPersonalVault(currentFamily)
+    ? `${vaultName(currentFamily)} · only you`
+    : [currentFamily?.name, role].filter(Boolean).join(' · ');
 
   const handleNavigate = async (item: MenuItem) => {
     closeDrawer();

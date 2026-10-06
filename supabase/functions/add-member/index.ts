@@ -19,6 +19,7 @@
 //   400 { status: 'invalid_email' }    403 caller is not an admin
 //   409 { status: 'family_full' }      members and waiting invitations are at
 //                                      the plan's limit (041), with the reason
+//   409 { status: 'personal_vault' }   a personal vault is for its owner alone (046)
 //   503 { status: 'needs_migration' }  037 is not applied to this project
 // ────────────────────────────────────────────────────────────────
 
@@ -83,6 +84,10 @@ Deno.serve(async (req) => {
       // it is and what makes room.
       if (error.hint === "family_full") {
         return json(409, { status: "family_full", error: error.message });
+      }
+      // A personal vault is for its owner alone (046), in the database's words.
+      if (error.hint === "personal_vault") {
+        return json(409, { status: "personal_vault", error: error.message });
       }
       console.error("[add-member] invite_family_member failed:", error.code, error.message);
       return json(500, { error: "Could not add this member. Please try again." });

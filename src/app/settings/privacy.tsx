@@ -20,6 +20,11 @@ export default function PrivacyScreen() {
             family can open them — apart from a single document someone in the family shares by link (below).
           </Body>
           <Body>
+            Your personal vault is yours alone: nobody else can see it, and nobody can be invited to it. Each time you
+            upload, you choose where the document goes — your personal vault or one of your families — and FamilyVault
+            never chooses a family for you.
+          </Body>
+          <Body>
             Nobody can join a family by themselves, and nobody is added without saying yes: an admin invites each
             person, by the email they sign in with, and they join only if they accept. Until then the family sees only
             that email, as Pending approval. Viewers can look at documents but cannot delete other people's.
@@ -49,9 +54,9 @@ export default function PrivacyScreen() {
         <Card>
           <CardTitle icon="message-circle">When you ask a question</CardTitle>
           <Body>
-            FamilyVault finds the passages in your family's documents that best match your question, and sends the
-            question with those passages to an AI service to write the answer. Only the matching passages are sent,
-            not your whole vault.
+            FamilyVault finds the passages in your documents that best match your question — in all your vaults, or
+            only the one you pick — and sends the question with those passages to an AI service to write the answer.
+            Only the matching passages are sent, not your whole vault, and only from vaults you are in.
           </Body>
         </Card>
 

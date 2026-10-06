@@ -23,6 +23,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../lib/auth';
 import { useFamily } from '../lib/family-context';
+import { vaultName } from '../lib/vaults';
 import {
   fetchFamilyTree, fetchExpiringDocuments, isMissingMigration,
   type FamilyTree, type ExpiringDocument,
@@ -88,7 +89,7 @@ export default function FamilyTreeScreen() {
     <SafeAreaView style={screenStyles.safe} edges={['top']}>
       <ScreenHeader
         title="Family tree"
-        subtitle={currentFamily?.name}
+        subtitle={currentFamily ? vaultName(currentFamily) : undefined}
         fallback="/family"
         right={isAdmin && tree && !problem ? <HeaderButton icon="user-plus" label="Add" onPress={() => setSheet({ mode: 'add' })} /> : undefined}
       />

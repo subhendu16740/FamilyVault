@@ -18,7 +18,7 @@ export default function SetupFamilyScreen() {
   // First sign-in has nowhere to go back to — the app sends people here
   // until they have a vault. Someone who already has one came from Manage
   // Family to make another, and needs a way out.
-  const { families, refreshFamilies } = useFamily();
+  const { families, refreshFamilies, switchFamily } = useFamily();
   const [familyName, setFamilyName] = useState('');
   const [description, setDescription] = useState('');
   const [loading, setLoading] = useState(false);
@@ -32,8 +32,10 @@ export default function SetupFamilyScreen() {
 
     setLoading(true);
     try {
-      await createNewFamily(user.id, familyName.trim(), description.trim() || undefined);
+      const familyId = await createNewFamily(user.id, familyName.trim(), description.trim() || undefined);
       await refreshFamilies();
+      // Their own new family, so it opens: making it is their own choice.
+      switchFamily(familyId);
       router.replace('/home' as any);
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to create family.');
@@ -63,7 +65,7 @@ export default function SetupFamilyScreen() {
           </LinearGradient>
           <Text style={styles.title}>Create Your Family Vault</Text>
           <Text style={styles.subtitle}>
-            Set up a secure space for your family's documents. You can add members after creation.
+            A vault you share: everyone you invite sees its documents. Your personal vault stays yours alone.
           </Text>
         </View>
 

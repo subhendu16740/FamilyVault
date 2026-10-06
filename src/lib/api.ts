@@ -72,6 +72,20 @@ export async function createNewFamily(
   return data as string;
 }
 
+/**
+ * The signed-in person's personal vault (046): a family of one, for them
+ * alone, made the first time it is asked for. Null where 046 is not applied:
+ * the app then works as before, with families only.
+ */
+export async function ensurePersonalVault(): Promise<string | null> {
+  const { data, error } = await supabase.rpc('ensure_personal_vault');
+  if (error) {
+    if (error.code === 'PGRST202' || error.code === '42883' || /could not find the function/i.test(error.message)) return null;
+    throw error;
+  }
+  return (data as string | null) ?? null;
+}
+
 // ─── Family Members ──────────────────────────────────────────────
 
 export async function fetchFamilyMembers(familyId: string): Promise<FamilyMemberWithUser[]> {
@@ -173,7 +187,8 @@ function resolveAliases(
 
 export interface RagSearchResult {
   answer: string;
-  sources: { id: string; file_name: string; file_type: string; category_name: string | null }[];
+  /** `family_id`: the vault each is in (046), so the app opens it there. Older servers send none. */
+  sources: { id: string; file_name: string; file_type: string; category_name: string | null; family_id?: string; family_name?: string }[];
   /** BCP-47 tag the answer was written in — the client picks the matching voice. */
   answer_language?: string;
   /** true when `answer` did not come from the model (rate limit, outage). */
@@ -202,6 +217,12 @@ export interface RagSearchResult {
     translate_error?: string;
     /** The family's chunk vectors are still being rebuilt: keyword-only for now. */
     index_rebuilding?: boolean;
+    /** Which vaults' indexes are being rebuilt, when there are any (046). */
+    rebuilding_family_ids?: string[];
+    /** Asked across several vaults (046): each vault, and what it gave. */
+    vaults?: { family_id: string; name: string; retrieved_docs: string[]; index_rebuilding?: boolean }[];
+    /** Vaults past the server's limit, not searched. */
+    vaults_skipped?: string[];
     /** False means the question was searched by keywords alone. */
     embedded?: boolean;
     /** Why embedding failed, when it did. */
@@ -285,6 +306,12 @@ export interface RagSearchOptions {
   language?: string;
   /** The answer will be read aloud: ask for short plain sentences, no markdown. */
   voice?: boolean;
+  /**
+   * Which vaults to search (046): 'all' of the asker's — their personal vault
+   * and every family — or these. Omitted, `familyId` alone. `familyId` is
+   * always sent too, so a server without 046 still searches that one vault.
+   */
+  vaults?: 'all' | string[];
 }
 
 export async function ragSearch(
@@ -298,6 +325,7 @@ export async function ragSearch(
       family_id: familyId,
       query,
       history,
+      ...(options.vaults === 'all' ? { scope: 'all' } : options.vaults?.length ? { family_ids: options.vaults } : {}),
       ...(options.language ? { language: options.language } : {}),
       ...(options.voice ? { voice: true } : {}),
     },
@@ -416,6 +444,8 @@ export async function addFamilyMember(
       return { status: 'invalid_email' };
     case 'family_full':
       return { status: 'full', message: body.error ?? 'This family has no room for another member.' };
+    case 'personal_vault':
+      return { status: 'unavailable', message: body.error ?? 'Nobody can be invited to a personal vault.' };
     case 'needs_migration':
       return { status: 'unavailable', message: body.error ?? 'Adding members is not available yet.' };
   }
@@ -478,6 +508,7 @@ export async function linkPersonToAccount(familyId: string, personId: string, em
     case 'already_invited':
     case 'no_person':
     case 'family_full':
+    case 'personal_vault':
       return { status: 'refused', message: body.error ?? 'This person could not be linked.' };
   }
   // The gateway's own 404: this project does not have link-account yet.
@@ -1572,7 +1603,11 @@ function chatForStorage(messages: SavedChatMessage[]): SavedChatMessage[] {
       role: m.role,
       text: m.text.slice(0, SAVED_CHAT_MAX_TEXT),
       ...(m.sources?.length
-        ? { sources: m.sources.slice(0, 10).map(({ id, file_name, file_type, category_name }) => ({ id, file_name, file_type, category_name })) }
+        ? {
+            sources: m.sources.slice(0, 10).map(({ id, file_name, file_type, category_name, family_id, family_name }) => ({
+              id, file_name, file_type, category_name, ...(family_id ? { family_id, family_name } : {}),
+            })),
+          }
         : {}),
     }));
 }

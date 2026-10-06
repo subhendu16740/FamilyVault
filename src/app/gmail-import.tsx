@@ -23,6 +23,7 @@ import { Redirect, router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../lib/auth';
 import { useFamily } from '../lib/family-context';
+import { vaultName } from '../lib/vaults';
 import {
   fetchCategories, gmailDisconnect, gmailFinishConnect, gmailImportItem, gmailListItems, gmailScanBatch,
   gmailStartConnect, gmailStatus, GmailApiError, type GmailImportResult, type GmailItem, type GmailStatus,
@@ -602,7 +603,7 @@ export default function GmailImportScreen() {
               )}
             </LinearGradient>
           </TouchableOpacity>
-          {!!currentFamily && <Text style={styles.footerHint}>Into {currentFamily.name}</Text>}
+          {!!currentFamily && <Text style={styles.footerHint}>Into {vaultName(currentFamily)}</Text>}
         </View>
       )}
 

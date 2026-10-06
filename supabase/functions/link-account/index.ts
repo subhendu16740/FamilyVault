@@ -29,6 +29,7 @@
 //   409 { status: 'tree_rule' }        the join would break a rule of the tree
 //                                      (two parents at most, nobody their own ancestor)
 //   409 { status: 'family_full' }      no room for another member (041), with the reason
+//   409 { status: 'personal_vault' }   a personal vault is for its owner alone (046)
 //   403 caller is not an admin         503 { status: 'needs_migration' } 037 is not applied
 // ────────────────────────────────────────────────────────────────
 
@@ -89,6 +90,10 @@ Deno.serve(async (req) => {
       // The family has no room for them (041), in the database's own words.
       if (error.hint === "family_full") {
         return json(409, { status: "family_full", error: error.message });
+      }
+      // A personal vault is for its owner alone (046), in the database's words.
+      if (error.hint === "personal_vault") {
+        return json(409, { status: "personal_vault", error: error.message });
       }
       // The tree's own rules, in the words the database uses for them:
       // "Someone can have at most two parents in the tree." and the like.

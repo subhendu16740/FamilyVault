@@ -48,9 +48,14 @@ function formatBytes(bytes: number | null): string {
 }
 
 export default function DocumentViewerScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
-  const { currentFamily } = useFamily();
-  const owners = useDocumentOwners();
+  const { id, family } = useLocalSearchParams<{ id: string; family?: string }>();
+  const { currentFamily: openFamily, families } = useFamily();
+  // The vault the document is in (046): the one the link names, when this
+  // person is in it — Ask finds documents in all of their vaults, and Upload
+  // can save into any of them — and otherwise the open one. Opened in its own
+  // vault, without switching: the open vault, and a chat on Ask, stay as they are.
+  const currentFamily = (family ? families.find((f) => f.family_id === family)?.families : undefined) ?? openFamily;
+  const owners = useDocumentOwners(currentFamily?.id ?? null);
   const [doc, setDoc] = useState<FamilyDocumentDetailRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);

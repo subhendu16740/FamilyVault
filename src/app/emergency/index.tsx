@@ -12,6 +12,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../lib/auth';
 import { useFamily } from '../../lib/family-context';
+import { vaultName } from '../../lib/vaults';
 import { fetchFamilyTree, fetchEmergencyCards, isMissingMigration, type FamilyTree } from '../../lib/api';
 import type { EmergencyCard } from '../../lib/emergency';
 import { buildGraph, relationTo, relationLabel } from '../../../supabase/functions/_shared/kinship';
@@ -62,7 +63,7 @@ export default function EmergencyCardsScreen() {
 
   return (
     <SafeAreaView style={screenStyles.safe} edges={['top']}>
-      <ScreenHeader title="Emergency cards" subtitle={currentFamily?.name} fallback="/home" />
+      <ScreenHeader title="Emergency cards" subtitle={currentFamily ? vaultName(currentFamily) : undefined} fallback="/home" />
       <ScrollView contentContainerStyle={screenStyles.body} showsVerticalScrollIndicator={false}>
         {tree === null || cards === null ? (
           <View style={styles.center}><ActivityIndicator color={color.primary} /></View>
