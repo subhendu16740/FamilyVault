@@ -21,3 +21,7 @@ export function listen(_lang: string, h: ListenHandlers): void {
 export function stopListening(): void {
   // nothing to stop
 }
+
+export function cancelListening(): void {
+  // nothing to cancel
+}

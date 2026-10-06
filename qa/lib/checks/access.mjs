@@ -272,6 +272,15 @@ const treeJudge = (expect, needsPerson) => (outcome) => {
   return judge(expect, outcome);
 };
 
+// Nicknames ship with migration 045, on top of 031's tree: skipped until it
+// is applied (the function, or the column, is missing).
+const nicknameJudge = (expect) => (outcome) => {
+  if (outcome.missing) return ['skipped', 'migration 031 is not applied to DEV yet'];
+  if (outcome.noTarget) return ['skipped', "no person in account A's tree to aim at (see its control)"];
+  if (['PGRST202', 'PGRST204', '42703'].includes(String(outcome.error?.code))) return ['skipped', 'migration 045 is not applied to DEV yet'];
+  return judge(expect, outcome);
+};
+
 // Emergency cards ship with migration 032, on top of 031's tree: skipped
 // until it is applied, the same way.
 const emergencyJudge = (expect, needsCard) => (outcome) => {
@@ -413,6 +422,24 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     if (!personA) return { noTarget: true };
     return run();
   };
+
+  // ── A nickname for that person (045), set by account A and read back — the
+  // control for the nickname probes below.
+  const nicknameA = `QA ${cfg.runId}`.slice(0, 40);
+  let nicknameSet = false;
+  if (personA) {
+    const { error } = await a.client.rpc('set_family_person_nickname', { p_person_id: personA, p_nickname: nicknameA });
+    if (String(error?.code) === 'PGRST202') {
+      results.add('access', 'control:nickname', "Control — account A gives someone in its tree a nickname and reads it back", 'skipped', { why: 'migration 045 is not applied to DEV yet' });
+    } else if (error) {
+      results.add('access', 'control:nickname', "Control — account A gives someone in its tree a nickname and reads it back", 'fail', { why: error.message });
+    } else {
+      const { data: back } = await a.client.from('family_people').select('nickname').eq('id', personA).single();
+      nicknameSet = back?.nickname === nicknameA;
+      results.add('access', 'control:nickname', "Control — account A gives someone in its tree a nickname and reads it back", nicknameSet ? 'pass' : 'fail',
+        nicknameSet ? {} : { why: `read back ${JSON.stringify(back?.nickname)}` });
+    }
+  }
 
   // ── An emergency card on that person for the card probes to aim at (032).
   const cardBody = { blood_group: 'B+', allergies: `QA SPECIMEN ${cfg.runId}` };
@@ -671,7 +698,7 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     ['B', "download A's passport file", 'refused', () => b.client.storage.from('documents').download(passport.storage_path)],
     // A PDF, because the bucket only accepts document types: a text file is
     // stopped by the MIME whitelist before the folder policy is ever tested.
-    ['B', "write a file into QA Vault A's folder", 'refused', () => b.client.storage.from('documents').upload(intrusionPath, Buffer.from('%PDF-1.4\n% FamilyVault QA probe\n'), { contentType: 'application/pdf' })],
+    ['B', "write a file into QA Vault A's folder", 'refused', () => b.client.storage.from('documents').upload(intrusionPath, Buffer.from('%PDF-1.4\n% AskLocker QA probe\n'), { contentType: 'application/pdf' })],
     ['B', "read QA Vault A's family row", 'refused-or-empty', () => b.client.from('families').select('id').eq('id', A.family)],
     ['B', "read QA Vault A's member list", 'refused-or-empty', () => b.client.from('family_members').select('id').eq('family_id', A.family)],
     ['B', "read A's rows in the notifications table", 'refused-or-empty', () => b.client.from('notifications').select('id').eq('user_id', A.user)],
@@ -781,6 +808,10 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     ['B', "connect people in A's tree", treeJudge('refused', true), onPersonA(() => b.client.rpc('link_family_people', { p_family_id: A.family, p_person: personA, p_relation: 'sibling', p_relative: randomUUID() }))],
     ['B', "take a person out of A's tree", treeJudge('refused', true), onPersonA(() => b.client.rpc('remove_family_person', { p_person_id: personA }))],
     ['B', "list the documents marked as A's people (server-only)", treeJudge('refused'), rpc(b, 'rag_documents_for_people', { p_schema: A.ns, p_people: [randomUUID()] })],
+    // Nicknames (045): an admin's, or the person's own, to give.
+    ['anon', "give someone in A's tree a nickname", nicknameJudge('refused'), onPersonA(() => anon.client.rpc('set_family_person_nickname', { p_person_id: personA, p_nickname: 'QA intrusion' }))],
+    ['B', "give someone in A's tree a nickname", nicknameJudge('refused'), onPersonA(() => b.client.rpc('set_family_person_nickname', { p_person_id: personA, p_nickname: 'QA intrusion' }))],
+    ['B', "write a nickname into A's tree directly", nicknameJudge('refused'), onPersonA(() => b.client.from('family_people').update({ nickname: 'QA intrusion' }).eq('id', personA))],
     // Emergency cards (032): the family's members read them; only an admin,
     // or the person themselves, changes one, and nobody writes the table.
     ['anon', "read QA Vault A's emergency cards", emergencyJudge('refused-or-empty'), onCards(() => anon.client.from('family_emergency_cards').select('person_id').eq('family_id', A.family))],
@@ -987,8 +1018,9 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
   }
 
   if (personA) {   // taking the person out takes their card with it
-    const { data: personStill } = await a.client.from('family_people').select('display_name').eq('id', personA);
-    const intact = personStill?.length === 1 && personStill[0].display_name === personName;
+    const { data: personStill } = await a.client.from('family_people').select(nicknameSet ? 'display_name, nickname' : 'display_name').eq('id', personA);
+    const intact = personStill?.length === 1 && personStill[0].display_name === personName
+      && (!nicknameSet || personStill[0].nickname === nicknameA);
     results.add('access', 'control:tree-intact', "Control — the person in account A's tree survived every probe", intact ? 'pass' : 'fail',
       intact ? {} : { why: personStill?.length ? 'their name was CHANGED' : 'they are GONE' });
     const { error: rmErr } = await a.client.rpc('remove_family_person', { p_person_id: personA });

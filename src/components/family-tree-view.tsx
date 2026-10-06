@@ -20,7 +20,7 @@ export interface TreeViewProps {
   meId: string | null;
   labelFor: (id: string) => string | null;
   badgeFor?: (id: string) => PersonBadge | null;
-  /** Whether this person has a FamilyVault account: their card carries the phone badge. */
+  /** Whether this person has a AskLocker account: their card carries the phone badge. */
   onAppFor?: (id: string) => boolean;
   onPressPerson: (person: KinPerson) => void;
   /** Where the viewer's own card sits, measured within `measureIn`, so the screen can scroll to it. */
@@ -38,12 +38,12 @@ export function initials(name: string): string {
   return (first + last).toUpperCase();
 }
 
-/** The green phone on an avatar: this person has a FamilyVault account. */
+/** The green phone on an avatar: this person has a AskLocker account. */
 export const ON_APP_COLOR = '#16A34A';
 
 /**
  * A person's initials in a circle; coral for the viewer. `onApp` adds the
- * green phone badge for someone with a FamilyVault account — the tree also
+ * green phone badge for someone with a AskLocker account — the tree also
  * holds people without one. Too small to read on the tiny avatars in chips,
  * so it is drawn from 28px up.
  */
@@ -75,18 +75,20 @@ export function Avatar({ name, me, size = 36, onApp = false }: { name: string; m
 /** One line that explains the badge, shown above the tree. */
 export function OnAppKey() {
   return (
-    <View style={styles.key} accessible accessibilityLabel="A green phone on someone's picture means they are on FamilyVault, with their own account.">
+    <View style={styles.key} accessible accessibilityLabel="A green phone on someone's picture means they are on AskLocker, with their own account.">
       <View style={[styles.onApp, styles.keyBadge]}>
         <Feather name="smartphone" size={9} color="#FFFFFF" />
       </View>
-      <Text style={styles.keyText}>On FamilyVault (has an account)</Text>
+      <Text style={styles.keyText}>On AskLocker (has an account)</Text>
     </View>
   );
 }
 
 function PersonCard({ person, props }: { person: KinPerson; props: TreeViewProps }) {
   const me = person.id === props.meId;
-  const label = me ? 'You' : props.labelFor(person.id);
+  // The relation from where the viewer stands, and the family's own nickname (045).
+  const label = [me ? 'You' : props.labelFor(person.id), person.nickname ? `"${person.nickname}"` : null]
+    .filter(Boolean).join(' · ') || null;
   const badge = props.badgeFor?.(person.id) ?? null;
   const onApp = props.onAppFor?.(person.id) ?? false;
   const ref = useRef<View>(null);
@@ -103,7 +105,7 @@ function PersonCard({ person, props }: { person: KinPerson; props: TreeViewProps
       onPress={() => props.onPressPerson(person)}
       activeOpacity={0.75}
       accessibilityRole="button"
-      accessibilityLabel={[person.name, label, onApp ? 'on FamilyVault' : null, badge?.text].filter(Boolean).join(', ')}
+      accessibilityLabel={[person.name, label, onApp ? 'on AskLocker' : null, badge?.text].filter(Boolean).join(', ')}
     >
       <Avatar name={person.name} me={me} onApp={onApp} />
       <Text style={styles.name} numberOfLines={2}>{person.name}</Text>

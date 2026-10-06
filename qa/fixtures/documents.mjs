@@ -26,7 +26,7 @@
 export const FIXTURE_VERSION = 1;
 
 const BANNER =
-  'SPECIMEN — FICTIONAL DOCUMENT CREATED FOR FAMILYVAULT AUTOMATED TESTING — NOT VALID FOR ANY PURPOSE';
+  'SPECIMEN — FICTIONAL DOCUMENT CREATED FOR ASKLOCKER AUTOMATED TESTING — NOT VALID FOR ANY PURPOSE';
 
 /**
  * kinds:
@@ -139,7 +139,7 @@ export const documents = [
     html: () => page(`
       <h1>MIRA VERMA</h1>
       <p class="sub">Mobile: +91 98220 41937 &nbsp;·&nbsp; Email: mira.verma@example.com &nbsp;·&nbsp; Pune, Maharashtra</p>
-      <p class="note">Fictional person. This résumé exists only to test FamilyVault.</p>
+      <p class="note">Fictional person. This résumé exists only to test AskLocker.</p>
       <h2>Profile</h2>
       <div class="prose"><p>Final-year computer science student who enjoys turning messy data into clear answers. Looking for a graduate role in data engineering or analytics, starting July 2026.</p></div>
       <h2>Education</h2>

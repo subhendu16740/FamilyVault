@@ -1,4 +1,4 @@
-// FamilyVault's service worker. It does two things only: show a reminder
+// AskLocker's service worker. It does two things only: show a reminder
 // that arrives by Web Push (migration 034, the `push` Edge Function), and
 // open the app when one is tapped. It caches nothing and never sees the
 // app's own requests, so it cannot serve a stale app after a deploy.
@@ -17,7 +17,7 @@ self.addEventListener('push', (event) => {
     message = { body: event.data ? event.data.text() : '' };
   }
   event.waitUntil(
-    self.registration.showNotification(message.title || 'FamilyVault', {
+    self.registration.showNotification(message.title || 'AskLocker', {
       body: message.body || '',
       icon: '/icon-192.png',
       badge: '/badge-96.png',

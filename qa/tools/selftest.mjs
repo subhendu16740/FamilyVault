@@ -400,7 +400,12 @@ const kin = (() => {
   ];
   return buildGraph(people, links);
 })();
-const said = (me, other) => relationLabel(relationTo(kin, me, other));
+// The relation and its Hindi term, both still worked out: the term is what Ask
+// understands ("Nani's pension"). The screens show only the English (045).
+const said = (me, other) => {
+  const rel = relationTo(kin, me, other);
+  return rel ? `${rel.en}${rel.hi ? ` (${rel.hi})` : ''}` : null;
+};
 
 await test('kinship: parents, grandparents, aunts and uncles on each side', () => {
   const expected = {
@@ -459,6 +464,30 @@ await test('kinship: relations named in a question become names, with no model c
   assert.deepEqual(relativesNamedIn(plain, 'k', "my mother's passport").map((r) => r.name), ['Pat Rao']);
 });
 
+await test('kinship: the family\'s nickname names its person, on screen and in a question (045)', () => {
+  const g = buildGraph([
+    { id: 'me', name: 'Aarav Verma', gender: 'male' },
+    { id: 'dad', name: 'Rohan Verma', gender: 'male' },
+    { id: 'mom', name: 'Asha Verma', gender: 'female', nickname: 'Mummy Ji' },
+    { id: 'sis', name: 'Priya Singh', gender: 'female', nickname: 'Pinky' },
+    { id: 'friend', name: 'Ravi Kumar', gender: 'male', nickname: 'Bablu' },
+    { id: 'short', name: 'Om Das', gender: 'male', nickname: 'Om' },
+  ], [
+    { from: 'dad', to: 'me', kind: 'parent' }, { from: 'mom', to: 'me', kind: 'parent' },
+    { from: 'dad', to: 'sis', kind: 'parent' }, { from: 'mom', to: 'sis', kind: 'parent' },
+    { from: 'dad', to: 'mom', kind: 'spouse' },
+  ]);
+  const named = (...texts) => relativesNamedIn(g, 'me', ...texts).map((r) => `${r.term}=${r.name}:${r.label}`).sort();
+  assert.deepEqual(named("When does Pinky's passport expire?"), ['pinky=Priya Singh:Sister']);
+  assert.deepEqual(named('Bablu ka PAN'), ['bablu=Ravi Kumar:family member'], 'named by nickname, with no relation to the asker');
+  assert.deepEqual(named("Mummy Ji's Aadhaar"), ['mummy ji=Asha Verma:Mother'], 'a nickname of two words, longest first');
+  assert.deepEqual(named('Om Shanti Om'), [], 'a nickname of two letters names nobody');
+  assert.equal(relationLabel(relationTo(g, 'me', 'sis')), 'Sister', 'the screen shows the relation, and the nickname beside it');
+  const prompt = relativesForPrompt(g, 'me');
+  assert.ok(prompt.some((l) => l.startsWith('Priya Singh (called "Pinky"): your sister')), prompt.join(' | '));
+  assert.ok(prompt.includes('Ravi Kumar (called "Bablu")'), prompt.join(' | '));
+});
+
 await test('kinship: the tree starts from each pair of ancestors, the viewer\'s own first', () => {
   const forest = buildForest(kin, 'aarav');
   assert.deepEqual(forest.branches.map((b) => b.title), ['Ramesh & Kamala', 'Suresh & Meena']);
@@ -489,7 +518,8 @@ await test('kinship: a sister added before Papa is drawn beside her brother, und
   assert.deepEqual(forest.branches.map((b) => b.title), ['K C Das Mohapatra'], 'one branch, named in full: "K" says nothing');
   assert.deepEqual(forest.branches[0].roots[0].children.map((c) => c.person.name).sort(), ['Shatabdi', 'Subhendu']);
   assert.deepEqual(forest.loose, []);
-  assert.equal(relationLabel(relationTo(g, 'me', 'sis')), 'Sister (Behen)');
+  assert.equal(relationTo(g, 'me', 'sis').hi, 'Behen');
+  assert.equal(relationLabel(relationTo(g, 'me', 'sis')), 'Sister', 'the screens show the English relation alone');
   // Adding Maa now reaches her too, with the Papa she was missing.
   assert.deepEqual(siblingsSharingParents(g, 'me'), [{ id: 'sis', missing: ['papa'] }]);
   // A half-brother with a different mother recorded is left alone.

@@ -13,7 +13,7 @@
 //
 //   - only the account that pressed "Connect" can finish, and only once,
 //     within ten minutes (the state row is claimed by a conditional update);
-//   - Google's answer only ever lands on an allow-listed FamilyVault origin
+//   - Google's answer only ever lands on an allow-listed AskLocker origin
 //     (GMAIL_RETURN_ORIGINS), never on a page someone else controls;
 //   - PKCE: the verifier never leaves the database, so a code seen in
 //     transit is worth nothing on its own.
@@ -115,7 +115,7 @@ async function start(userId: string, returnOrigin: unknown): Promise<Response> {
     return json(400, {
       status: 'origin_not_allowed',
       origin: typeof returnOrigin === 'string' ? returnOrigin : null,
-      error: 'Gmail can only return to a FamilyVault address listed in the GMAIL_RETURN_ORIGINS secret.',
+      error: 'Gmail can only return to a AskLocker address listed in the GMAIL_RETURN_ORIGINS secret.',
     });
   }
 
@@ -169,7 +169,7 @@ async function finish(userId: string, state: unknown, code: unknown): Promise<Re
     await revokeToken(grant.refreshToken ?? grant.accessToken);
     return json(400, {
       status: 'scope_denied',
-      error: 'FamilyVault needs permission to read your email to find documents. Connect again and leave that box ticked.',
+      error: 'AskLocker needs permission to read your email to find documents. Connect again and leave that box ticked.',
     });
   }
   if (!grant.refreshToken || !grant.email) {

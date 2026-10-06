@@ -1,4 +1,4 @@
-# FamilyVault — Project Context
+# AskLocker — Project Context
 
 A family document vault: upload documents, OCR them, and ask questions in
 natural language ("when does Mom's passport expire?") answered by RAG over
@@ -6,6 +6,24 @@ the extracted text.
 
 Expo / React Native app (SDK 55) with expo-router. Backend is Supabase
 (PostgreSQL + Auth + Storage + Deno Edge Functions).
+
+**The app is called AskLocker** (asklocker.com; the .in and .app were free
+too when it was named, 6 October 2026). It was FamilyVault until then, and
+three things keep the old name on purpose: the GitHub repository and this
+checkout's directory (renaming a repository is a separate step on GitHub,
+which redirects the old address), the comments in migrations already applied
+to both projects (an applied migration is never edited), and the `fv:`
+prefix on the device's storage keys in `src/lib/storage.ts` (changing it
+would sign everyone out and forget their settings). Everything a person
+sees says AskLocker: the app name, slug and scheme in `app.config.ts`, the
+Android package `com.asklocker.app`, the web manifest and service worker,
+the login and share pages, Help, About, the notifications and emails the
+functions send, Razorpay's checkout and the QA suite's reports. The icon
+is a locker with a speech bubble — drawn once as SVG and rendered to every
+size in `assets/images/` (`icon.png`, the adaptive icon's three layers,
+`splash-icon.png`, `favicon.png`, `logo-mark.png` for the login box),
+`public/` (`icon-192.png`, `icon-512.png`, `badge-96.png`) and
+`assets/expo.icon/` (iOS).
 
 ---
 
@@ -64,7 +82,9 @@ Four things will mislead you if you assume otherwise:
    saved chats in a family's storage, and a trigger refuses a chat that
    does not fit; 044's payments, `plan_payments`, are the server's alone —
    no client reads or writes them, and only `apply_plan_payment`, service
-   role only, turns a payment into Family Plus).
+   role only, turns a payment into Family Plus; 045's nicknames are read
+   with the tree and written only through `set_family_person_nickname`, by
+   an admin or the person themselves).
    **A new writable
    column needs its own `GRANT` in a migration.** Nobody joins a family
    without saying yes: only an admin asks a person in, through the
@@ -114,9 +134,9 @@ errors**) and `npm run build` are the local gates.
 at 03:10 IST, and on pushes that change `qa/`. It uploads synthetic SPECIMEN
 documents to its own vault (QA Vault A, account A), asks questions about
 them, and checks the answers on facts and sources, never wording. It also
-runs the 023 sweep and the 024 DEV/PROD fingerprint, 146 access probes (a
+runs the 023 sweep and the 024 DEV/PROD fingerprint, 149 access probes (a
 logged-out visitor and a second account must be refused everywhere, Gmail
-import's endpoints, the family tree, emergency cards, linking,
+import's endpoints, the family tree and its nicknames, emergency cards, linking,
 notification devices, share links, invitations and plans included; a share
 link must open without an account, and stop once it is turned off; nobody
 can give a family Plus, raise a limit, read another family's storage, end
@@ -128,7 +148,7 @@ the membership model (the second account is invited, not added: it sees
 nothing of the vault until it says yes, the admin cannot say yes for it, a
 no removes the invitation and a yes makes it a viewer, who must not be able
 to escalate or share an admin's document, becomes a person in the family
-tree, writes only its own emergency card, must be able to leave, and is
+tree, writes only its own emergency card and nickname, must be able to leave, and is
 linked to an entry in the tree both ways: merged at once while a member,
 invited back as it after leaving),
 a question asked by relation ("my mother's passport"), and the full upload → ingest →
@@ -382,9 +402,10 @@ production.
 There is no `eas.json`, no `expo-updates`, and no EAS project ID. Native
 distribution is not wired up. Before a first EAS build:
 
-- `app.config.ts` sets `android.package: "com.anonymous.familyvault"` — the
-  `create-expo-app` default. Android package names are permanent once
-  published to Play; rename first.
+- `app.config.ts` sets `android.package: "com.asklocker.app"` (it was the
+  `create-expo-app` default, `com.anonymous.familyvault`, until the app
+  was named). Android package names are permanent once published to Play,
+  so it was set before the first build.
 - There is no `ios.bundleIdentifier` at all; an iOS build needs one.
 
 `/ios` and `/android` are gitignored, so the project uses continuous native
@@ -491,7 +512,7 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `speech-text.ts` | `toSpeech()`: strips markdown and spells out ID numbers before they are read aloud — and a number named as one ("train number 16782", "PNR: 4512", "PIN 751001", "नंबर 16782") digit by digit, from its digits; the screen keeps the digits |
 | `voice-languages.ts` | The language picker list and the few phrases the app itself says, per language |
 | `storage.ts` | Key-value cache: localStorage on web, AsyncStorage on native |
-| `database.types.ts` | Generated Supabase types, current to 044 (030 changed nothing in them). Regenerate after every migration and re-append the hand-written block at the bottom (see the typecheck note) |
+| `database.types.ts` | Generated Supabase types, current to 045 (030 changed nothing in them). Regenerate after every migration and re-append the hand-written block at the bottom (see the typecheck note) |
 
 ---
 
@@ -795,7 +816,7 @@ so storage policies live only in `019`.
 - **Someone already in the family tree is linked, not invited by email**
   (033). Inviting by email gives a person added by name a second entry
   beside the one with their links, documents and card, so their page has
-  **Link to their FamilyVault account** for admins: `link-account` →
+  **Link to their AskLocker account** for admins: `link-account` →
   `invite_family_person_account()`, service role only. See
   [Family tree](#family-tree--people-not-accounts-031).
 - **At most 4 members a family, on every plan** (041; `plan_limits.max_members`,
@@ -835,10 +856,27 @@ so storage policies live only in `019`.
 - **Everyone in the family, with or without an account.** `family_people`
   holds the people and `family_links` how they are related — parent, spouse
   or sibling, never a label. What someone is called depends on who is
-  looking ("Your grandmother (Nani)"), so labels are computed by
+  looking ("Your grandmother"), so labels are computed by
   `supabase/functions/_shared/kinship.ts`, which the app, rag-search and the
   QA self-test all import: one set of rules, Hindi terms included (Dada/Dadi
   and Nana/Nani by side, Tau/Chacha by age, Bua, Mama, Mausi, Bhabhi…).
+  **The Hindi terms are for understanding questions only** ("Nani's
+  pension"): the screens show the English relation (`relationLabel()`:
+  "Mother", "Sister") and, beside it, the nickname the family gave the person
+  (045) — never a Hindi word made up for them, since a family that says
+  "Mummy" should not be told it says "Maa".
+- **A nickname is the family's own name for someone** (045):
+  `family_people.nickname`, at most 40 characters, one per person and the
+  same for everyone in the family — "Pinky", "Bablu", or "Maa" if that is
+  what the family says. An admin, or the person themselves, sets it in the
+  person sheet (`set_family_person_nickname()`, the caller from
+  `auth.uid()`, 031's rule; blank clears it). The tree, a person's page,
+  Emergency cards and the "whose document" picker show `Sister · "Pinky"`.
+  Ask understands it like a relation (`relativesNamedIn()`: whole words,
+  three letters or more, so "Om" names nobody), and `relativesForPrompt()`
+  tells the model who is called what. Before 045 the app and rag-search
+  read the tree without the column (naming it would fail the whole select)
+  and the sheet does not ask for one.
 - **A member is a person under their MEMBER id.** A trigger on
   `family_members` creates the person with the membership, and 031 backfilled
   everyone already a member, so every document already marked as a member's
@@ -848,8 +886,9 @@ so storage policies live only in `019`.
   the person: the family keeps its tree as it keeps its documents.
 - **Members read it; admins change it; you may edit yourself.** Clients have
   SELECT (RLS through `get_my_family_ids()`) and nothing else. Writes go
-  through `add_family_person`, `link_family_people`, `update_family_person`
-  and `remove_family_person`, which take the caller from `auth.uid()`. The
+  through `add_family_person`, `link_family_people`, `update_family_person`,
+  `set_family_person_nickname` (045) and `remove_family_person`, which take
+  the caller from `auth.uid()`. The
   helpers they share (`tree_*`) are revoked from every client role.
   `update_family_person` spells out `v_user IS NOT NULL AND v_user = v_me`:
   a bare `v_user = v_me` is NULL for a person without an account, and `IF NOT
@@ -869,7 +908,7 @@ so storage policies live only in `019`.
   brother or sister, under that sibling's parents — so a sister added before
   Papa is never left in a branch of her own. Branch titles use the full name
   when the first word is only an initial ("K C Das Mohapatra", not "K").
-- **Who is on FamilyVault shows.** A person with an account (`user_id`) gets
+- **Who is on AskLocker shows.** A person with an account (`user_id`) gets
   a green phone badge on their avatar — in the tree, its lists, their page and
   Emergency cards (`<Avatar onApp />`, drawn from 28px up) — and a key above
   the tree says what it means. Everyone else is simply family: the tree is
@@ -897,7 +936,7 @@ so storage policies live only in `019`.
   and "mama" is a mother in English but a mother's brother in Hindi — the
   tree says which.
 - **An entry without an account is linked to one when they sign up** (033):
-  their page's **Link to their FamilyVault account**, admins only, by the
+  their page's **Link to their AskLocker account**, admins only, by the
   email they sign in with, through `link-account` →
   `link_family_person_account()` (service role only; it takes the admin's
   user id; since 037 through `invite_family_person_account()`). Not yet a
@@ -907,7 +946,7 @@ so storage policies live only in `019`.
   shows Pending approval. Already a member (added in Manage Family, so in
   the tree twice), the two become one at once — nothing new opens up to
   them: the member's person keeps its id and takes the entry's name
-  (the one the family uses), a gender or birth date it lacks, the entry's
+  (the one the family uses), a gender, birth date or nickname (045) it lacks, the entry's
   links — re-made through `tree_add_parent`/`tree_add_pair`, so a third
   parent or a cycle refuses the whole join with that rule's message —, the
   documents marked as the entry, and its card unless the member has one; the
@@ -1184,7 +1223,7 @@ so storage policies live only in `019`.
   constant time), asks Razorpay that the payment is for that order and
   amount and captured (capturing it if only authorised), and calls
   `apply_plan_payment()`. The key secret never leaves the server; card and
-  UPI details never reach FamilyVault at all.
+  UPI details never reach AskLocker at all.
 - **Razorpay's webhook reports every payment too** (`razorpay-webhook`;
   events payment.captured and order.paid), so a family whose browser closed
   after paying still gets its Plus. Razorpay sends no session, so it is
@@ -1356,7 +1395,7 @@ All of them handle CORS preflight explicitly.
 
 ### Gmail import — your own mailbox, your tick (026)
 
-A person connects their OWN Gmail; FamilyVault lists the attachments that
+A person connects their OWN Gmail; AskLocker lists the attachments that
 look like documents; they tick what to keep; each ticked file goes through
 the normal ingestion. Nothing is imported without a tick, and no model reads
 anyone's email: Gmail's own search makes the first cut (`SCAN_QUERY`) and
@@ -1394,7 +1433,7 @@ rules sort the rest (`_shared/gmail-rules.ts`).
   PDF/JPEG/PNG (`sniffType`), and skips a file whose SHA-256 was already
   imported into that family.
 - **Web only, and "Testing" on Google's side.** The phone app would need an
-  auth session and a `familyvault://` redirect, unverifiable without a
+  auth session and a `asklocker://` redirect, unverifiable without a
   native build. While the Google Cloud project is in Testing, only its listed
   test users (at most 100, ever) can connect, and Google expires their
   refresh tokens after 7 days — `expired` in the app, "Reconnect" resumes
@@ -1640,7 +1679,7 @@ rule again once pinned chunks are mixed in.
   same values: primary `#2A3D66`, secondary `#4A6491`, accent `#D4807B`,
   background `#F8F9FC`, dark bg `#0D1117`, dark card `#161B22`.
   `src/constants/theme.ts` is the untouched `create-expo-app` scaffold
-  (generic `Colors`/`Fonts`/`Spacing`) and the FamilyVault screens do **not**
+  (generic `Colors`/`Fonts`/`Spacing`) and the AskLocker screens do **not**
   read from it — don't assume editing it changes anything.
 - **Shadows: use `boxShadow`, never `shadow*`.** RN 0.84 / SDK 55 deprecate
   `shadowColor`/`shadowOffset`/`shadowOpacity`/`shadowRadius` on web and warn
@@ -1695,7 +1734,11 @@ rule again once pinned chunks are mixed in.
 - **Voice mode** (Settings › Accessibility) is built for elderly users: one
   big control, one state at a time, everything spoken is also shown. Keep the
   four mic states (idle / listening / thinking / speaking) and never add a
-  step that needs a second tap to get an answer. Strings the app itself says
+  step that needs a second tap to get an answer. While it listens, the same
+  button is **✕ Cancel**, for words said by mistake: `cancelListening()`
+  aborts the recogniser and throws away what was heard — nothing is asked,
+  no voice chat is used, and the box says "Cancelled. Nothing was asked."
+  The question still goes by itself when the person stops speaking. Strings the app itself says
   live in `voice-languages.ts` with English and Hindi; other languages fall
   back to English. *Voice* (beside Voice language) chooses who reads the
   answers from this device's own voices for the language, by ear — a tap

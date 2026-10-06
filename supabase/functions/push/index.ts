@@ -27,7 +27,7 @@ import { requireUser } from "../_shared/auth.ts";
 import { generateVapidKeys, sendWebPush, type PushMessage, type PushOutcome, type VapidKeys } from "../_shared/webpush.ts";
 
 // Who push services may contact about this server (RFC 8292's "sub").
-const CONTACT = Deno.env.get("PUSH_CONTACT") || "https://github.com/subhendu16740/FamilyVault";
+const CONTACT = Deno.env.get("PUSH_CONTACT") || "https://asklocker.com";
 const BATCH = 100;          // notifications per send; the next run takes the rest
 const QUIET_FROM = 22;      // India time: nothing is sent from 10 at night…
 const QUIET_UNTIL = 8;      // …until 8 in the morning (run_reminders() keeps the same hours)
@@ -182,7 +182,7 @@ async function test(supabase: SupabaseClient, req: Request, userId: string): Pro
 
   const outcomes = await inBatches(devices, (d) => sendWebPush(d, {
     title: "Reminders are on",
-    body: "This device will hear from FamilyVault when a document is about to expire.",
+    body: "This device will hear from AskLocker when a document is about to expire.",
     url: "/settings/notifications",
     tag: "fv-test",
   }, keys, { ttlSeconds: 600 }));

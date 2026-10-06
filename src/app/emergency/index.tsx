@@ -36,7 +36,7 @@ export default function EmergencyCardsScreen() {
       .then((t) => { if (!cancelled) setTree(t); })
       .catch((err) => {
         if (cancelled) return;
-        setTree({ people: [], links: [] });
+        setTree({ people: [], links: [], nicknames: false });
         setProblem(isMissingMigration(err) ? 'The family tree is not switched on yet.' : err?.message ?? 'Could not load the family.');
       });
     fetchEmergencyCards(currentFamily.id)
@@ -91,7 +91,8 @@ export default function EmergencyCardsScreen() {
                     <View style={styles.rowText}>
                       <Text style={styles.rowName} numberOfLines={1}>{p.name}</Text>
                       <Text style={styles.rowSub} numberOfLines={1}>
-                        {[relation, card ? (card.allergies ? 'Has allergies' : null) : 'No card yet'].filter(Boolean).join(' · ') || 'Family'}
+                        {[relation, p.nickname ? `"${p.nickname}"` : null, card ? (card.allergies ? 'Has allergies' : null) : 'No card yet']
+                          .filter(Boolean).join(' · ') || 'Family'}
                       </Text>
                     </View>
                     {card && <BloodPill group={card.bloodGroup} />}

@@ -1,6 +1,6 @@
 // ─── Import from Gmail ───────────────────────────────────────────
 //
-// Connect your own Gmail → FamilyVault lists the attachments that look like
+// Connect your own Gmail → AskLocker lists the attachments that look like
 // documents → tick the ones to keep → each is imported like an upload.
 // Nothing is imported without a tick, and only the person whose mailbox it
 // is sees what was found.
@@ -10,7 +10,7 @@
 // an authenticated call and the address bar is cleaned at once.
 //
 // Web only for now: the phone app would need an auth session and a deep
-// link (familyvault://), which needs a native build to verify.
+// link (asklocker://), which needs a native build to verify.
 // ────────────────────────────────────────────────────────────────
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -194,7 +194,7 @@ export default function GmailImportScreen() {
 
   const connect = async () => {
     if (Platform.OS !== 'web') {
-      setNotice({ tone: 'info', text: 'Open FamilyVault in a web browser to connect Gmail. The phone app cannot do it yet.' });
+      setNotice({ tone: 'info', text: 'Open AskLocker in a web browser to connect Gmail. The phone app cannot do it yet.' });
       return;
     }
     setConnecting(true);
@@ -207,7 +207,7 @@ export default function GmailImportScreen() {
       if (err instanceof GmailApiError && err.status === 'origin_not_allowed') {
         setNotice({
           tone: 'error',
-          text: `Gmail can't return to this address (${err.origin ?? window.location.origin}) yet. Add it to the GMAIL_RETURN_ORIGINS secret in Supabase, or open FamilyVault from an address that is listed there.`,
+          text: `Gmail can't return to this address (${err.origin ?? window.location.origin}) yet. Add it to the GMAIL_RETURN_ORIGINS secret in Supabase, or open AskLocker from an address that is listed there.`,
         });
       } else if (err instanceof GmailApiError && ['not_configured', 'needs_migration', 'unavailable'].includes(err.status)) {
         setUnavailable(err.message);
@@ -455,15 +455,15 @@ export default function GmailImportScreen() {
             <Text style={styles.cardTitle}>{status?.expired ? 'Gmail access has expired' : 'Find documents in your email'}</Text>
             <Text style={styles.cardText}>
               {status?.expired
-                ? `Google stopped FamilyVault's access to ${status.email}. Connect again to carry on where you left off.`
-                : 'FamilyVault looks through your Gmail for attachments that look like documents (policies, statements, tickets, certificates) and shows you a list. Nothing is imported until you choose it.'}
+                ? `Google stopped AskLocker's access to ${status.email}. Connect again to carry on where you left off.`
+                : 'AskLocker looks through your Gmail for attachments that look like documents (policies, statements, tickets, certificates) and shows you a list. Nothing is imported until you choose it.'}
             </Text>
             {!status?.expired && (
               <View style={styles.promises}>
                 {[
                   'Looks only at emails with a PDF or photo attached',
                   'Only you see what it finds, not your family',
-                  'Disconnect any time: FamilyVault forgets what it found',
+                  'Disconnect any time: AskLocker forgets what it found',
                 ].map((line) => (
                   <View key={line} style={styles.promiseRow}>
                     <Feather name="check" size={14} color="#16A34A" />
@@ -486,7 +486,7 @@ export default function GmailImportScreen() {
               </LinearGradient>
             </TouchableOpacity>
             <Text style={styles.fineprint}>
-              Google may warn that this app isn't verified yet. That is expected while FamilyVault's Gmail access is in testing.
+              Google may warn that this app isn't verified yet. That is expected while AskLocker's Gmail access is in testing.
             </Text>
           </View>
         ) : (
@@ -635,7 +635,7 @@ export default function GmailImportScreen() {
           <View style={styles.dialog}>
             <Text style={styles.dialogTitle}>Disconnect Gmail?</Text>
             <Text style={styles.dialogMsg}>
-              FamilyVault will lose access to {status?.email} and forget the list it found. Documents you already imported stay in your vault.
+              AskLocker will lose access to {status?.email} and forget the list it found. Documents you already imported stay in your vault.
             </Text>
             <View style={styles.dialogBtns}>
               <TouchableOpacity style={styles.dialogBtnOutline} onPress={() => setConfirmDisconnect(false)}>

@@ -2,7 +2,7 @@
 // their close family, the documents marked as theirs and when those run out.
 //
 // Anyone in the family can look. An admin can edit, add a relative, link
-// someone added by name to their FamilyVault account (033) — which invites
+// someone added by name to their AskLocker account (033) — which invites
 // them, Pending approval until they accept (037) — or take them out of the
 // tree; people can edit their own details. Confirmation is on screen, never
 // Alert.alert, which does nothing on the web.
@@ -67,7 +67,7 @@ export default function PersonScreen() {
       .then((t) => { if (!cancelled) setTree(t); })
       .catch((err) => {
         if (cancelled) return;
-        setTree({ people: [], links: [] });
+        setTree({ people: [], links: [], nicknames: false });
         setProblem(isMissingMigration(err) ? 'The family tree is not switched on yet.' : err?.message ?? 'Could not load this person.');
       });
     fetchPersonDocuments(currentFamily.id, id)
@@ -147,7 +147,7 @@ export default function PersonScreen() {
           setLinkOpen(false);
           setNotice(outcome.status === 'invited'
             ? `Invitation sent to ${outcome.email}. ${first(person.name)} joins this family as this person once they accept — until then: Pending approval.`
-            : `${first(person.name)} is on FamilyVault now, in this family as a viewer, and got a notification.`);
+            : `${first(person.name)} is on AskLocker now, in this family as a viewer, and got a notification.`);
           scroll.current?.scrollTo({ y: 0, animated: true });   // the news is at the top; the button was at the bottom
           load();
           break;
@@ -156,7 +156,7 @@ export default function PersonScreen() {
           router.replace({ pathname: '/person/[id]', params: { id: outcome.memberId, joined: '1' } } as any);
           break;
         case 'no_account':
-          setLinkError(`No FamilyVault account uses ${address} yet. Ask ${first(person.name)} to sign up with this email, then link again.`);
+          setLinkError(`No AskLocker account uses ${address} yet. Ask ${first(person.name)} to sign up with this email, then link again.`);
           break;
         case 'invalid_email':
           setLinkError("That doesn't look like an email address.");
@@ -209,6 +209,7 @@ export default function PersonScreen() {
             <Card style={styles.hero}>
               <Avatar name={person.name} me={isMe} size={56} onApp={!!person.userId} />
               <Text style={styles.name}>{person.name}</Text>
+              {!!person.nickname && <Text style={styles.nickname}>"{person.nickname}"</Text>}
               {isMe && <Text style={styles.relation}>You</Text>}
               {!!relation && <Text style={styles.relation}>Your {relation.charAt(0).toLowerCase() + relation.slice(1)}</Text>}
               {!!person.birthDate && (
@@ -217,7 +218,7 @@ export default function PersonScreen() {
               {!!person.userId && (
                 <View style={styles.accountPill}>
                   <Feather name="smartphone" size={12} color={color.primary} />
-                  <Text style={styles.accountText}>{isMe ? 'You are on FamilyVault' : 'On FamilyVault (has an account)'}</Text>
+                  <Text style={styles.accountText}>{isMe ? 'You are on AskLocker' : 'On AskLocker (has an account)'}</Text>
                 </View>
               )}
               {!person.userId && !!invite && (
@@ -359,7 +360,7 @@ export default function PersonScreen() {
                   onPress={() => setSheet({ mode: 'connect', personId: person.id })}
                 />
                 {!person.userId && !invite && (
-                  <SecondaryButton label="Link to their FamilyVault account" icon="smartphone" onPress={openLink} />
+                  <SecondaryButton label="Link to their AskLocker account" icon="smartphone" onPress={openLink} />
                 )}
                 {!person.userId && !!invite && (
                   <SecondaryButton label="Withdraw the invitation" icon="x-circle" onPress={withdraw} disabled={withdrawing} />
@@ -392,7 +393,7 @@ export default function PersonScreen() {
             <Pressable style={styles.dialog} onPress={() => {}}>
               <Text style={styles.dialogTitle}>Link {person ? first(person.name) : 'them'} to their account</Text>
               <Text style={styles.dialogText}>
-                If {person ? first(person.name) : 'they'} has signed up for FamilyVault, enter the email they sign in with. They
+                If {person ? first(person.name) : 'they'} has signed up for AskLocker, enter the email they sign in with. They
                 get an invitation, and once they accept they join this family as a viewer and keep everything here: their
                 place in the tree, their documents and their emergency card.
               </Text>
@@ -451,6 +452,7 @@ const styles = StyleSheet.create({
   hero: { alignItems: 'center', gap: space.sm },
   name: { ...type.heading, fontSize: 17, textAlign: 'center' },
   relation: { ...type.body, color: color.primary, fontWeight: '500', textAlign: 'center' },
+  nickname: { ...type.body, color: color.textBody, textAlign: 'center' },
   accountPill: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     backgroundColor: color.tint, borderRadius: radius.pill, paddingHorizontal: space.md, paddingVertical: space.xs,

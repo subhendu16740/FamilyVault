@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <g fill="none" stroke="#FFFFFF" stroke-width="52" stroke-linecap="round" stroke-linejoin="round">
+    <!-- locker body -->
+    <rect x="300" y="236" width="330" height="588" rx="54"/>
+    <!-- vent slits -->
+    <line x1="382" y1="340" x2="548" y2="340"/>
+    <line x1="382" y1="412" x2="548" y2="412"/>
+    <!-- handle -->
+    <line x1="568" y1="560" x2="568" y2="650"/>
+  </g>
+  <!-- keyhole -->
+  <circle cx="465" cy="640" r="30" fill="#FFFFFF"/>
+  <!-- speech bubble, overlapping the locker's top-right corner -->
+  <g>
+    <path d="M708 150 h118 a86 86 0 0 1 86 86 v96 a86 86 0 0 1 -86 86 h-82 l-74 64 v-64 a86 86 0 0 1 -48 -78 v-104 a86 86 0 0 1 86 -86 z"
+          fill="#FFFFFF" stroke="none" stroke-width="0" stroke-linejoin="round"/>
+    <text x="760" y="334" font-family="Helvetica, Arial, sans-serif" font-weight="700" font-size="200" text-anchor="middle" fill="#2A3D66">?</text>
+  </g></svg>

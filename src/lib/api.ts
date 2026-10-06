@@ -1749,7 +1749,7 @@ export async function signOutThisDevice(): Promise<void> {
 
 // ─── Family tree (031) ───────────────────────────────────────────
 //
-// Everyone in a family, with or without a FamilyVault account: a grandparent
+// Everyone in a family, with or without a AskLocker account: a grandparent
 // who will never sign in, a child too young to. public.family_people holds
 // the people and public.family_links how they are related (parent, spouse,
 // sibling) — never a label: "Mother" depends on who is looking, and is
@@ -1761,6 +1761,10 @@ export async function signOutThisDevice(): Promise<void> {
 // check the caller is an admin (or, for their own details, that person).
 // Before 031 every call fails with a missing table or function: callers
 // check isMissingMigration() and say the tree is not switched on yet.
+//
+// A person may have a nickname (045): the family's own name for them, the
+// same for everyone, shown beside their relation and understood by Ask.
+// Before 045 the column is not there, and the tree is read without it.
 
 export interface FamilyPerson extends KinPerson {
   /** The account this person signs in with, if any. */
@@ -1770,6 +1774,8 @@ export interface FamilyPerson extends KinPerson {
 export interface FamilyTree {
   people: FamilyPerson[];
   links: KinLink[];
+  /** Whether this project keeps nicknames (045); before it, the form does not ask for one. */
+  nicknames: boolean;
 }
 
 export type RelativeKind = 'parent' | 'child' | 'spouse' | 'sibling';
@@ -1782,21 +1788,31 @@ export interface PersonDetails {
 }
 
 export async function fetchFamilyTree(familyId: string): Promise<FamilyTree> {
-  const [people, links] = await Promise.all([
-    supabase.from('family_people').select('id, display_name, gender, birth_date, user_id').eq('family_id', familyId).order('created_at'),
+  const [withNicknames, links] = await Promise.all([
+    supabase.from('family_people').select('id, display_name, gender, birth_date, user_id, nickname').eq('family_id', familyId).order('created_at'),
     supabase.from('family_links').select('from_person, to_person, kind').eq('family_id', familyId),
   ]);
+  // Before 045 there is no nickname column, and naming it fails the whole
+  // select: read the tree without it rather than not at all.
+  const nicknames = !(withNicknames.error && (withNicknames.error.code === '42703' || /nickname/.test(withNicknames.error.message)));
+  const people = nicknames
+    ? withNicknames
+    : await supabase.from('family_people').select('id, display_name, gender, birth_date, user_id').eq('family_id', familyId).order('created_at');
   if (people.error) throw people.error;
   if (links.error) throw links.error;
   return {
-    people: (people.data ?? []).map((p) => ({
+    people: ((people.data ?? []) as Array<{
+      id: string; display_name: string; gender: string | null; birth_date: string | null; user_id: string | null; nickname?: string | null;
+    }>).map((p) => ({
       id: p.id,
       name: p.display_name,
       gender: p.gender === 'female' || p.gender === 'male' ? p.gender : null,
       birthDate: p.birth_date ?? null,
       userId: p.user_id ?? null,
+      nickname: p.nickname ?? null,
     })),
     links: (links.data ?? []).map((l) => ({ from: l.from_person, to: l.to_person, kind: l.kind as KinLink['kind'] })),
+    nicknames,
   };
 }
 
@@ -1855,6 +1871,18 @@ export async function updateFamilyPerson(personId: string, details: PersonDetail
     p_birth_date: details.birthDate ?? undefined,
   });
   if (error) throw error;
+}
+
+/**
+ * The family's nickname for someone ("Pinky"), or none (blank). An admin, or
+ * the person themselves; the database checks (045).
+ */
+export async function setFamilyPersonNickname(personId: string, nickname: string): Promise<void> {
+  const { error } = await supabase.rpc('set_family_person_nickname', { p_person_id: personId, p_nickname: nickname.trim() });
+  if (error) {
+    if (String(error.code) === 'PGRST202') throw new Error('Nicknames are not switched on yet.');
+    throw error;
+  }
 }
 
 /**

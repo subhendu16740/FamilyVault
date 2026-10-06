@@ -1,5 +1,5 @@
 // Reminders — every document in the family with an expiry date, soonest
-// first. FamilyVault reminds every member 90, 30 and 7 days before and on the
+// first. AskLocker reminds every member 90, 30 and 7 days before and on the
 // day (migration 034): under the bell, and as a notification on any device
 // where they turned reminders on — every family, Free or Plus. This page, the
 // list, is part of Family Plus (★ in the menu): a free family is sent to the
@@ -44,7 +44,7 @@ export default function RemindersScreen() {
         <View style={styles.plusCard}>
           <Text style={styles.plusCardTag}>★ Family Plus</Text>
           <Text style={styles.plusCardText}>
-            FamilyVault reminds the whole family 90, 30 and 7 days before a passport, licence or policy expires, and on the day.
+            AskLocker reminds the whole family 90, 30 and 7 days before a passport, licence or policy expires, and on the day.
           </Text>
           <Text style={styles.plusCardNote}>
             Reminders appear under the bell on Home{Platform.OS === 'web' ? ', and as notifications on any phone or computer where you turn them on' : ''}, for every family.

@@ -2,7 +2,7 @@
 //
 // Screens that use this look like one app instead of several. The numbers
 // follow the platforms' own guidance, sized down to match the rest of
-// FamilyVault (content text is 13–15px everywhere else):
+// AskLocker (content text is 13–15px everywhere else):
 //
 //   • Top bar 56 tall, a 24px back arrow in a 44px touch area at the left,
 //     the title beside it — Material 3's top app bar on a phone, and Apple's

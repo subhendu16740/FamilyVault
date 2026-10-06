@@ -155,7 +155,7 @@ export default function ProfileDrawer() {
               <Feather name="log-out" size={16} color={color.danger} />
               <Text style={styles.signOutText}>Sign Out</Text>
             </TouchableOpacity>
-            <Text style={styles.version}>FamilyVault {appVersion}</Text>
+            <Text style={styles.version}>AskLocker {appVersion}</Text>
           </View>
         </Animated.View>
       </View>

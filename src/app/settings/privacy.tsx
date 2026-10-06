@@ -49,7 +49,7 @@ export default function PrivacyScreen() {
         <Card>
           <CardTitle icon="message-circle">When you ask a question</CardTitle>
           <Body>
-            FamilyVault finds the passages in your family's documents that best match your question, and sends the
+            AskLocker finds the passages in your family's documents that best match your question, and sends the
             question with those passages to an AI service to write the answer. Only the matching passages are sent,
             not your whole vault.
           </Body>
@@ -59,7 +59,7 @@ export default function PrivacyScreen() {
           <CardTitle icon="file-text">Reading your documents</CardTitle>
           <Body>
             So that you can search them, the text of your documents is read when you add them. Photos are read on
-            your phone or in your browser. PDFs are read on FamilyVault's server, and a scanned PDF may be read by an
+            your phone or in your browser. PDFs are read on AskLocker's server, and a scanned PDF may be read by an
             outside text-reading (OCR) service.
           </Body>
         </Card>
@@ -76,7 +76,7 @@ export default function PrivacyScreen() {
         <Card>
           <CardTitle icon="mail">Import from Gmail</CardTitle>
           <Body>
-            Only you see what FamilyVault finds in your email, and nothing is saved until you choose it. You can
+            Only you see what AskLocker finds in your email, and nothing is saved until you choose it. You can
             disconnect Gmail at any time, which forgets everything it found.
           </Body>
         </Card>
