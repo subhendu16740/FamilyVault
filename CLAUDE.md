@@ -111,7 +111,7 @@ npm run web                    # dev server, web  (expo start --web)
 npm start                      # dev server, pick platform interactively
 npm run android                # native Android (needs emulator/device)
 
-npm run build                  # static web export -> dist/
+npm run build                  # static web export -> dist/ (always with a cleared bundler cache: see Deployment)
 npm run typecheck              # tsc --noEmit
 ```
 
@@ -379,9 +379,17 @@ Web build is hosted on **Vercel** as a static SPA. Config lives in
 | | |
 |---|---|
 | Install | `npm ci` |
-| Build | `npx expo export --platform web` |
+| Build | `npx expo export --platform web --clear` |
 | Output | `dist` |
 | Node | 22.x |
+
+**Every build clears the bundler cache (`--clear`), on purpose.** Expo writes
+each `EXPO_PUBLIC_*` value into the code when Metro transforms a file, and
+Metro keeps transformed files in its cache (`/tmp/metro-cache`) — keyed on the
+file, not on the value. A build after changing a value could therefore ship
+the old one: measured here, a build made with no Google settings still
+carried the client id of the build before it. `vercel.json` and
+`npm run build` both pass `--clear`; do the same for any build by hand.
 
 **The SPA rewrite in `vercel.json` is mandatory.** expo-router's web output
 defaults to `single`, so the export emits exactly one `index.html` and no
@@ -433,6 +441,17 @@ copies, so DEV needs its own secrets and its own `documents` storage bucket.
   (`google-button.ts` is a stand-in) — it is the redirect sign-in, as before.
   The Supabase Google provider must list the same client id (Authentication
   › Providers › Google › Client IDs), or Supabase refuses the token.
+- **The list is read however it was typed** (`parseOrigins()`): commas,
+  spaces, `;` or new lines between the addresses, quotes around them, with
+  or without `https://` (`http://` for localhost) or a path — each becomes
+  an origin as Google compares them. Quotes around the client id are
+  dropped too.
+- **The login page says which sign-in it uses, and why**, once in the
+  browser's console: `[Google sign-in] Google's own button, for
+  https://asklocker.com`, or the redirect and the reason — no client id in
+  this build (set it for that Vercel environment, then redeploy), or this
+  address missing from the list, with the list the build has
+  (`googleButtonReason()`).
 - **The redirect still needs its wildcard.** It sends
   `redirectTo: window.location.origin`, and every preview gets a fresh
   subdomain, so Supabase → Authentication → URL Configuration must contain

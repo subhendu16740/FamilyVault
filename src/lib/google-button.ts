@@ -9,4 +9,8 @@ export function googleButtonAvailable(): boolean {
   return false;
 }
 
+export function googleButtonReason(): string {
+  return 'the redirect sign-in: the phone app signs in with Google through the browser';
+}
+
 export async function renderGoogleButton(_container: unknown, _opts: GoogleButtonOptions): Promise<void> {}

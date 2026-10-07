@@ -23,15 +23,49 @@ import type { GoogleButtonOptions } from './google-button-types';
 export type { GoogleButtonOptions } from './google-button-types';
 
 const SCRIPT = 'https://accounts.google.com/gsi/client';
-const CLIENT_ID = (process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID ?? '').trim();
-const ORIGINS = (process.env.EXPO_PUBLIC_GOOGLE_WEB_ORIGINS ?? '')
-  .split(',')
-  .map((o: string) => o.trim().replace(/\/+$/, '').toLowerCase())
-  .filter(Boolean);
+
+/** A value as typed into a dashboard, without the quotes people paste around it. */
+function unquote(value: string): string {
+  return value.trim().replace(/^['"]+|['"]+$/g, '').trim();
+}
+
+/**
+ * Every address in the setting, however it was typed: commas, spaces, `;` or
+ * new lines between them, quotes around them, with or without `https://`
+ * (`http://` for localhost) or a path. Each becomes an origin, as Google
+ * compares them: `https://asklocker.com`.
+ */
+export function parseOrigins(raw: string): string[] {
+  return raw
+    .split(/[\s,;]+/)
+    .map(unquote)
+    .filter(Boolean)
+    .map((o) => (/^[a-z][a-z0-9+.-]*:\/\//i.test(o) ? o : `${/^(localhost|127\.0\.0\.1)(:|$)/i.test(o) ? 'http' : 'https'}://${o}`))
+    .map((o) => { try { return new URL(o).origin.toLowerCase(); } catch { return ''; } })
+    .filter((o) => !!o && o !== 'null');
+}
+
+const CLIENT_ID = unquote(process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID ?? '');
+const ORIGINS = parseOrigins(process.env.EXPO_PUBLIC_GOOGLE_WEB_ORIGINS ?? '');
 
 export function googleButtonAvailable(): boolean {
   if (!CLIENT_ID || typeof window === 'undefined') return false;
   return ORIGINS.includes(window.location.origin.toLowerCase());
+}
+
+/**
+ * Which sign-in this page uses, and why — for the browser's console, so a
+ * setting that did not reach the build, or an address missing from it, can
+ * be seen on the live site without a debugger.
+ */
+export function googleButtonReason(): string {
+  if (typeof window === 'undefined') return 'the redirect sign-in: no browser window';
+  const here = window.location.origin.toLowerCase();
+  if (!CLIENT_ID) return 'the redirect sign-in: this build has no EXPO_PUBLIC_GOOGLE_CLIENT_ID (set it in Vercel for this environment, then redeploy)';
+  if (!ORIGINS.includes(here)) {
+    return `the redirect sign-in: ${here} is not in EXPO_PUBLIC_GOOGLE_WEB_ORIGINS (this build has: ${ORIGINS.join(', ') || 'nothing'})`;
+  }
+  return `Google's own button, for ${here} (client …${CLIENT_ID.split('.')[0].slice(-6)})`;
 }
 
 let loading: Promise<void> | null = null;
