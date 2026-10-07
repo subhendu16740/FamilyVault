@@ -8,6 +8,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as WebBrowser from 'expo-web-browser';
+import { useAuth } from '../../lib/auth';
 import { useFamily } from '../../lib/family-context';
 import { useDocumentOwners } from '../../lib/family-people';
 import {
@@ -22,6 +23,7 @@ import { color, radius, shadow, size, space, type } from '../../constants/design
 
 // Share makes a link that expires (036) for the web app's /s page, which
 // only the web app knows the address of: not offered in the phone app yet.
+// Delete is shown only to the person who added the document (047).
 const actions = [
   ...(Platform.OS === 'web' ? [{ icon: 'share-2', label: 'Share', bg: '#EFF6FF', color: '#2563EB' }] as const : []),
   { icon: 'download', label: 'Download', bg: '#F0FDF4', color: '#16A34A' },
@@ -56,6 +58,7 @@ export default function DocumentViewerScreen() {
   // vault, without switching: the open vault, and a chat on Ask, stay as they are.
   const currentFamily = (family ? families.find((f) => f.family_id === family)?.families : undefined) ?? openFamily;
   const owners = useDocumentOwners(currentFamily?.id ?? null);
+  const { user } = useAuth();
   const [doc, setDoc] = useState<FamilyDocumentDetailRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -216,6 +219,10 @@ export default function DocumentViewerScreen() {
     );
   }
 
+  // Only the person who added a document can delete it, admins included
+  // (047); the server refuses anyone else, so nobody else is offered it.
+  const addedByMe = !!user && doc.uploaded_by === user.id;
+
   const infoRows = [
     { label: 'Uploaded', value: formatDate(doc.created_at) },
     { label: 'File size', value: formatBytes(doc.file_size_bytes) },
@@ -350,7 +357,7 @@ export default function DocumentViewerScreen() {
 
       {/* Sticky Action Bar */}
       <View style={styles.actionBar}>
-        {actions.map((action, idx) => (
+        {actions.filter((action) => action.label !== 'Delete' || addedByMe).map((action, idx) => (
           <TouchableOpacity
             key={idx}
             style={styles.actionItem}

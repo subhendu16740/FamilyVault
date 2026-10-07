@@ -93,7 +93,7 @@ export default function SharedDocumentScreen() {
 
         <Text style={styles.footer}>
           {typeof state === 'object' ? 'Only this one document is shared, and only until the date above. ' : ''}
-          AskLocker keeps a family's documents safe and easy to find.
+          AskLocker keeps a family's documents in one place, easy to find.
         </Text>
       </ScrollView>
     </SafeAreaView>

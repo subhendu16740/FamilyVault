@@ -1184,8 +1184,8 @@ export async function signOutEverywhere(): Promise<void> {
   if (error) throw error;
 }
 
-/** Every document in a family, a page at a time. */
-async function fetchAllDocuments(familyId: string): Promise<FamilyDocumentRow[]> {
+/** Every document in a family, newest first, a page at a time (also All documents' list). */
+export async function fetchAllDocuments(familyId: string): Promise<FamilyDocumentRow[]> {
   const PAGE = 200;
   const all: FamilyDocumentRow[] = [];
   for (let offset = 0; offset < PAGE * 50; offset += PAGE) {

@@ -29,7 +29,7 @@ export default function AboutScreen() {
             <Feather name="shield" size={26} color="#FFFFFF" />
           </LinearGradient>
           <Text style={styles.name}>AskLocker</Text>
-          <Text style={styles.tagline}>Your family's important papers, safe and easy to find.</Text>
+          <Text style={styles.tagline}>Your family's important papers, easy to find.</Text>
         </Card>
 
         <Card style={styles.table}>

@@ -85,7 +85,7 @@ export default function FamilyScreen() {
   const familyName = currentFamily?.name || 'Family';
 
   const handleRemoveMember = (memberId: string, name: string) => {
-    showConfirm('Remove Member', `Remove ${name} from ${familyName} Vault?`, async () => {
+    showConfirm('Remove Member', `Remove ${name} from ${familyName} Vault? The documents they added stay in the vault, and nobody else can delete them.`, async () => {
       try {
         await removeFamilyMember(memberId);
         refreshMembers().catch(() => {});
@@ -120,7 +120,7 @@ export default function FamilyScreen() {
 
   const handleLeave = () => {
     if (!currentFamily || !user) return;
-    showConfirm('Leave Family', `Leave ${familyName} Vault? You will no longer see its documents. An admin can invite you again.`, async () => {
+    showConfirm('Leave Family', `Leave ${familyName} Vault? You will no longer see its documents. Documents you added stay, and nobody else can delete them, so delete any you want gone first. An admin can invite you again.`, async () => {
       try {
         await leaveFamily(currentFamily.id, user.id);
         await refreshFamilies();
@@ -275,7 +275,7 @@ export default function FamilyScreen() {
   if (isPersonalVault(currentFamily)) {
     return (
       <SafeAreaView style={styles.safe} edges={['top']}>
-        <ScreenHeader title="Personal vault" subtitle="Only you can see it" />
+        <ScreenHeader title="Personal vault" subtitle="Just for you" />
         <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
           <InvitationCards style={styles.invites} />
           {notice && (
@@ -290,9 +290,9 @@ export default function FamilyScreen() {
               <Feather name="lock" size={16} color={color.primary} />
             </View>
             <View style={styles.memberInfo}>
-              <Text style={styles.treeTitle}>Your documents, for you alone</Text>
+              <Text style={styles.treeTitle}>Your documents, just for you</Text>
               <Text style={styles.personalText}>
-                Nobody else can see your personal vault, and nobody can be invited to it. To keep documents with your
+                Nobody else using AskLocker can open your personal vault, and nobody can be invited to it. To keep documents with your
                 family, create a family and invite them, or accept an invitation from one. Each time you upload, you
                 choose where the document goes, and Ask searches all your vaults at once.
               </Text>

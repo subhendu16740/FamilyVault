@@ -1,6 +1,8 @@
 // Settings › Privacy — who can see what, and where a document's text goes.
-// Every sentence here has to stay true of the code: check it when changing
-// sharing, search, OCR, notifications or Gmail import.
+// Every sentence here has to stay true of the code, and of the people who run
+// AskLocker: documents are not end-to-end encrypted, so nothing here may
+// promise that nobody but the family can see them. Check it when changing
+// sharing, search, OCR, embeddings, voice, notifications or Gmail import.
 
 import { ScrollView } from 'react-native';
 import { router } from 'expo-router';
@@ -14,20 +16,31 @@ export default function PrivacyScreen() {
       <ScreenHeader title="Privacy" fallback="/settings" />
       <ScrollView contentContainerStyle={screenStyles.body}>
         <Card>
-          <CardTitle icon="lock">Only your family sees your documents</CardTitle>
+          <CardTitle icon="users">Who can see your documents in AskLocker</CardTitle>
           <Body>
-            Each family's documents are kept in their own private space. Only people who have been added to that
-            family can open them — apart from a single document someone in the family shares by link (below).
+            A family's documents open only for the people in that family — apart from a single document someone in
+            the family shares by link (below).
           </Body>
           <Body>
-            Your personal vault is yours alone: nobody else can see it, and nobody can be invited to it. Each time you
-            upload, you choose where the document goes — your personal vault or one of your families — and AskLocker
-            never chooses a family for you.
+            Your personal vault is just for you: nobody else using AskLocker can open it, and nobody can be invited
+            to it. Each time you upload, you choose where the document goes — your personal vault or one of your
+            families.
           </Body>
           <Body>
             Nobody can join a family by themselves, and nobody is added without saying yes: an admin invites each
             person, by the email they sign in with, and they join only if they accept. Until then the family sees only
-            that email, as Pending approval. Viewers can look at documents but cannot delete other people's.
+            that email, as Pending approval. Only the person who added a document can delete it — not even an admin can
+            delete someone else's.
+          </Body>
+        </Card>
+
+        <Card>
+          <CardTitle icon="eye">What AskLocker itself can see</CardTitle>
+          <Body>
+            Your documents travel over encrypted (https) connections and are stored on encrypted disks by our storage
+            provider, Supabase. They are not end-to-end encrypted: AskLocker's servers read their text so that you can
+            search them and ask about them, and the people who run AskLocker can technically open stored documents
+            and their text.
           </Body>
         </Card>
 
@@ -47,7 +60,24 @@ export default function PrivacyScreen() {
           <Body>
             Everyone in your family can see each person's emergency card, so whoever is there in an emergency can
             help. Only a family admin, or the person themselves, can change one. When someone leaves the family or
-            deletes their account, their card is deleted.
+            deletes their account, their card is deleted. Ask does not read emergency cards, so they are not sent to
+            the AI service.
+          </Body>
+        </Card>
+
+        <Card>
+          <CardTitle icon="file-text">Reading your documents</CardTitle>
+          <Body>
+            So that you can search them, AskLocker reads the text of each document when you add it, and keeps that
+            text with the document.
+          </Body>
+          <Body>
+            Photos you upload are read on your phone or in your browser. PDFs are read on AskLocker's server; a
+            scanned PDF, and photos brought in from Gmail, may be read by an outside text-reading service, OCR.space.
+          </Body>
+          <Body>
+            To make the text searchable, passages of it, and the questions you ask, are sent to HuggingFace, an
+            outside service that turns text into search data.
           </Body>
         </Card>
 
@@ -55,17 +85,13 @@ export default function PrivacyScreen() {
           <CardTitle icon="message-circle">When you ask a question</CardTitle>
           <Body>
             AskLocker finds the passages in your documents that best match your question — in all your vaults, or
-            only the one you pick — and sends the question with those passages to an AI service to write the answer.
-            Only the matching passages are sent, not your whole vault, and only from vaults you are in.
+            only the one you pick — and sends your question, the chat so far and those passages to an outside AI
+            service, Groq, to write the answer. Only the matching passages are sent, not your whole vault, and only
+            from vaults you are in.
           </Body>
-        </Card>
-
-        <Card>
-          <CardTitle icon="file-text">Reading your documents</CardTitle>
           <Body>
-            So that you can search them, the text of your documents is read when you add them. Photos are read on
-            your phone or in your browser. PDFs are read on AskLocker's server, and a scanned PDF may be read by an
-            outside text-reading (OCR) service.
+            If you ask by voice, your browser or phone turns your speech into text with its own speech service (in
+            Chrome, Google's).
           </Body>
         </Card>
 
@@ -81,8 +107,10 @@ export default function PrivacyScreen() {
         <Card>
           <CardTitle icon="mail">Import from Gmail</CardTitle>
           <Body>
-            Only you see what AskLocker finds in your email, and nothing is saved until you choose it. You can
-            disconnect Gmail at any time, which forgets everything it found.
+            What AskLocker finds in your email is shown to you, not your family. To list it, AskLocker keeps the
+            sender, subject, date, file name and size of each attachment it finds, but not the emails themselves, and
+            saves no file until you choose it. You can disconnect Gmail at any time, which forgets everything it
+            found; documents you imported stay in your vault.
           </Body>
         </Card>
 
@@ -90,7 +118,13 @@ export default function PrivacyScreen() {
           <CardTitle icon="user-x">Leaving or deleting</CardTitle>
           <Body>
             You can leave any family from Manage Family, or delete your account from Settings › Security. Deleting is
-            immediate and nothing is kept.
+            immediate: it removes your account, your saved chats, your personal vault and any family nobody else looks
+            after, and the screen shows exactly what goes before you confirm. Documents you added to a family that
+            carries on stay with that family, and nobody else can delete them, so delete any you want gone first.
+          </Body>
+          <Body>
+            Short-term copies in our providers' backups and logs expire on their own. What was already sent to the
+            outside services above is kept under their own policies.
           </Body>
           <SecondaryButton label="Manage Family" icon="users" onPress={() => router.push('/family' as any)} />
           <SecondaryButton label="Delete account" icon="user-x" onPress={() => router.push('/settings/delete-account' as any)} />

@@ -24,7 +24,7 @@ function AuthGate() {
     if (seg === 's') return;
     // A route missing here sends a signed-in person to /home — which, for
     // gmail-import, would throw away the code Google just sent back.
-    const inProtectedRoute = seg === '(tabs)' || seg === 'document' || seg === 'family' || seg === 'settings' || seg === 'setup-family' || seg === 'notifications' || seg === 'gmail-import' || seg === 'reminders' || seg === 'saved-chats' || seg === 'family-tree' || seg === 'person' || seg === 'emergency' || seg === 'plus';
+    const inProtectedRoute = seg === '(tabs)' || seg === 'document' || seg === 'family' || seg === 'settings' || seg === 'setup-family' || seg === 'notifications' || seg === 'gmail-import' || seg === 'reminders' || seg === 'saved-chats' || seg === 'family-tree' || seg === 'person' || seg === 'emergency' || seg === 'plus' || seg === 'documents';
 
     if (!session && inProtectedRoute) {
       router.replace('/login' as any);
@@ -85,6 +85,7 @@ export default function RootLayout() {
           <Stack.Screen name="family" />
           <Stack.Screen name="settings" />
           <Stack.Screen name="document/[id]" />
+          <Stack.Screen name="documents" />
           <Stack.Screen name="notifications" />
           <Stack.Screen name="gmail-import" />
           <Stack.Screen name="reminders" />

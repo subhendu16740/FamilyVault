@@ -32,7 +32,7 @@ export default function LoginScreen() {
             <Image source={require('@/assets/images/logo-mark.png')} style={styles.logoMark} accessibilityIgnoresInvertColors />
           </LinearGradient>
           <Text style={styles.logoTitle} accessibilityRole="header">AskLocker</Text>
-          <Text style={styles.tagline}>Your family's documents, safe in one place.</Text>
+          <Text style={styles.tagline}>Your family's documents, all in one place.</Text>
         </View>
 
         <FingerprintSignIn onSignedIn={() => router.replace('/home' as any)} />

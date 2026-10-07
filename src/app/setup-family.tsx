@@ -127,9 +127,9 @@ export default function SetupFamilyScreen() {
         <View style={styles.infoCard}>
           <Feather name="lock" size={16} color={color.primary} style={styles.infoIcon} />
           <View style={styles.infoTextWrap}>
-            <Text style={styles.infoTitle}>Private & Isolated</Text>
+            <Text style={styles.infoTitle}>Just for your family</Text>
             <Text style={styles.infoSub}>
-              Your family gets a completely isolated storage space. Documents are only visible to family members.
+              Your family gets its own space. In AskLocker, only the people in your family can open its documents.
             </Text>
           </View>
         </View>

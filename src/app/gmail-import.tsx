@@ -463,7 +463,7 @@ export default function GmailImportScreen() {
               <View style={styles.promises}>
                 {[
                   'Looks only at emails with a PDF or photo attached',
-                  'Only you see what it finds, not your family',
+                  'What it finds is shown to you, not your family',
                   'Disconnect any time: AskLocker forgets what it found',
                 ].map((line) => (
                   <View key={line} style={styles.promiseRow}>
