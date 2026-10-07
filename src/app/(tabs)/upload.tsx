@@ -25,7 +25,7 @@ import {
 } from '../../lib/file-types';
 import type { Database } from '../../lib/database.types';
 import { ScreenHeader, PlusTag } from '../../components/screen-header';
-import { VaultChoices, type VaultChoice } from '../../components/vault-sheet';
+import { VaultDropdown, type VaultChoice } from '../../components/vault-sheet';
 import { isPersonalVault, splitVaults, vaultName, vaultSubtitle } from '../../lib/vaults';
 import { color, radius, shadow, size, space, type } from '../../constants/design';
 
@@ -398,11 +398,16 @@ export default function UploadScreen() {
               <Text style={styles.changeFileBtnText}>Choose different file</Text>
             </TouchableOpacity>
 
-            {/* Where it goes (046): asked whenever there is more than one vault */}
+            {/* Where it goes (046): asked, in a dropdown, whenever there is more than one vault */}
             {askWhere && (
               <>
                 <Text style={styles.sectionTitle}>Where should this go?</Text>
-                <VaultChoices choices={vaultChoices} selected={target?.family_id ?? null} onSelect={setDestination} />
+                <VaultDropdown
+                  label="Where should this go?"
+                  choices={vaultChoices}
+                  selected={target?.family_id ?? null}
+                  onSelect={setDestination}
+                />
                 <Text style={styles.whereHint}>
                   {!targetFamily
                     ? `${personal ? 'Your personal vault is only for you. ' : ''}Everyone in a family sees what is saved there.`

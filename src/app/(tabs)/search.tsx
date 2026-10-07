@@ -26,7 +26,7 @@ import {
 import { toSpeech } from '../../lib/speech-text';
 import { ScreenHeader, HeaderIconButton, HeaderActions } from '../../components/screen-header';
 import { VaultPill, VaultSheet, type VaultChoice } from '../../components/vault-sheet';
-import { color, space, type } from '../../constants/design';
+import { color, size, space, type } from '../../constants/design';
 
 type DocumentCategory = Database['public']['Tables']['document_categories']['Row'];
 
@@ -1027,7 +1027,9 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#E5E7EB',
     paddingHorizontal: space.lg,
-    paddingVertical: 10,
+    paddingTop: 10,
+    // The tab bar's round Ask button rises into this space; the box stays clear of it.
+    paddingBottom: 10 + size.ask - size.tabBar,
   },
   inputBox: {
     flexDirection: 'row',
