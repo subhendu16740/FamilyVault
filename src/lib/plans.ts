@@ -20,10 +20,11 @@
 // counts it (family_storage_status()). Before 038 the app adds up the
 // documents' file sizes instead and shows the free limit, unenforced.
 //
-// The Supabase project behind the app is on Supabase's Free plan, which holds
-// 1 GB of files in total, for every vault together: about five full families,
-// or ten full personal vaults, at the free limits. Past that, and before
-// anyone is given Family Plus's 10 GB, PROD needs Supabase Pro (100 GB included).
+// The Supabase organisation behind the app is on Supabase's Free plan, which
+// holds 1 GB of files for the whole organisation — every vault, and DEV's test
+// files too: about five full families, or ten full personal vaults, at the free
+// limits. Past that, and before anyone is given Family Plus's 10 GB, PROD needs
+// Supabase Pro (100 GB included). CLAUDE.md, "The Supabase plan", has the rest.
 // ────────────────────────────────────────────────────────────────
 
 import {

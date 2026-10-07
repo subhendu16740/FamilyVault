@@ -775,6 +775,43 @@ File blobs live in a Supabase Storage bucket named `documents`. **The bucket is
 not created by any migration** — it was made by hand in the dashboard and must
 be created manually in any new project.
 
+### The Supabase plan — Free, one organisation, DEV and PROD together
+
+Both projects are in one Supabase organisation, on the Free plan, and **most
+of what the Free plan allows is counted per organisation, not per project**:
+DEV's test files and QA traffic use the same allowance as PROD's families
+(Supabase's billing docs, checked 7 October 2026):
+
+| | Free plan | Counted |
+|---|---|---|
+| Files (Storage) | 1 GB | per organisation: DEV and PROD together |
+| Database | 500 MB | per project; past it the database turns read-only |
+| Egress (data sent out) | 5 GB a month | per organisation |
+| Edge Function calls | 500,000 a month | per organisation |
+| Monthly active users | 50,000 | per organisation |
+
+- **Going over is not a bill, it is a stop.** Supabase emails, allows a grace
+  period, then may restrict every project in the organisation: paused,
+  read-only, or 402 on every request. 048's limits keep each vault in bounds,
+  but nothing keeps all the vaults together under 1 GB: at 048's free limits
+  that is about five full families or ten full personal vaults, less what DEV
+  keeps (64 MB, 141 files, on 7 October 2026). The database is not the first
+  wall: DEV was at 35 MB.
+- **Two free projects per person, in any organisations.** Moving DEV to an
+  organisation of its own (DEV's Project Settings › General › Transfer
+  project; no GitHub integration or log drain may be connected) gives PROD
+  the whole 1 GB and 5 GB, still free. A transfer keeps the project's address
+  and keys, so nothing in the app, Vercel or the workflows changes.
+- **A free project with too little use over 7 days is paused**, after a
+  warning email a week before; Resume project in the dashboard brings it
+  back, within 90 days.
+- **Free has no backup to restore**, and Storage files are in no backup on
+  any plan. Supabase advises a regular `db dump`, kept off-site — never in
+  this public repository.
+- **Pro is $25 a month for the organisation**: 100 GB of files, 8 GB of
+  database per project, 250 GB egress, daily backups kept 7 days, never
+  paused.
+
 ### The migration gap — closed, and checked properly this time
 
 `.gitignore` previously contained `supabase/migrations/*.sql`, so everything
@@ -875,9 +912,11 @@ so storage policies live only in `019`.
   [Plans and storage limits](#plans-and-storage-limits--every-plan-has-a-limit-038-039).
   Before 038 it adds up `file_size_bytes` from `get_family_documents` and
   shows the free limit, unenforced. Mind the platform underneath: the
-  Supabase organisation is on the **Free plan, which holds 1 GB of files per
-  project in total**, all vaults together — about five full families or ten
-  full personal vaults at 048's free limits. PROD needs Pro (100 GB
+  Supabase organisation is on the **Free plan, which holds 1 GB of files for
+  the whole organisation** — every vault, and DEV's test files too — about
+  five full families or ten full personal vaults at 048's free limits (see
+  [The Supabase plan](#the-supabase-plan--free-one-organisation-dev-and-prod-together)).
+  PROD needs Pro (100 GB
   included, then about $0.02/GB a month) past that, and before anyone is
   given Plus's 10 GB. **Reminders** reads each document's
   details for its `expiry_date` — one call per document, fine for a family's
@@ -1558,7 +1597,7 @@ so storage policies live only in `019`.
 
 - **Free is 200 MB for a family and 100 MB for a personal vault**; Family
   Plus is 10 GB for either. Before 048 Free was 1 GB for every vault, which
-  Supabase's Free plan (1 GB per project, all vaults together) could not
+  Supabase's Free plan (1 GB for the whole organisation, DEV included) could not
   hold past the first full one. `plan_limits.personal_storage_bytes` is a
   personal vault's own number on a plan (NULL: the family number), and
   `vault_storage_bytes(family, plan)` is the one place a vault's limit is
