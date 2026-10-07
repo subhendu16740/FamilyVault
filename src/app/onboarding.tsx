@@ -15,7 +15,7 @@ const slides = [
   {
     emoji: '📁',
     title: 'One Vault. Every Document.',
-    subtitle: 'Passports, insurance, tax records, medical documents — all in one secure place.',
+    subtitle: 'Passports, insurance, tax records, medical documents — all in one place.',
   },
   {
     emoji: '🔍',

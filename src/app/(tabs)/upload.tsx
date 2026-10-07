@@ -412,7 +412,7 @@ export default function UploadScreen() {
                   {!targetFamily
                     ? `${personal ? 'Your personal vault is only for you. ' : ''}Everyone in a family sees what is saved there.`
                     : isPersonalVault(targetFamily)
-                      ? 'Only you will see it.'
+                      ? 'Just for you: nobody else using AskLocker will see it.'
                       : `Everyone in ${targetFamily.name} will see it.`}
                 </Text>
               </>

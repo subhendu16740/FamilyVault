@@ -125,7 +125,8 @@ export default function SavedChatsScreen() {
 
             {!problem && (
               <Text style={styles.footnote}>
-                Only you can see your saved chats. They are deleted if you leave
+                Your saved chats are just for you: nobody in the family sees them, admins included. They are
+                deleted if you leave
                 {currentFamily ? ` ${vaultName(currentFamily)}` : ' this family'}.
               </Text>
             )}

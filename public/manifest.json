@@ -1,7 +1,7 @@
 {
   "name": "AskLocker",
   "short_name": "AskLocker",
-  "description": "Your family's documents, safe and easy to find.",
+  "description": "Your family's documents, easy to find.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

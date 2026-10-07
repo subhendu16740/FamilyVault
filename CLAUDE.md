@@ -919,7 +919,11 @@ so storage policies live only in `019`.
   account-deletion policy, which also wants a web link — the web app's
   `/settings/delete-account` is that page). Settings › Security › Delete
   account shows, family by family, what goes and what stays, and asks for
-  DELETE to be typed. There is no waiting period and no copy kept.
+  DELETE to be typed. There is no waiting period and the app keeps no
+  copy. Short-lived copies in Supabase's backups and logs expire on their
+  own, and what went to HuggingFace, Groq or OCR.space is under their
+  policies, so the screens never say "nothing is kept" (see
+  [Conventions](#conventions)).
 - **A family goes with the account when nobody would be left to manage it**:
   the person is its last admin, or its last member. It goes whole — rows,
   schema, index state, files — and its other members lose it; the screen
@@ -1968,6 +1972,25 @@ rule again once pinned chunks are mixed in.
 - **A row or button that opens nothing is not shown.** Settings once listed
   six rows with an arrow that went nowhere, and the document viewer had a
   menu button with no menu. Add the control when its screen exists.
+- **Never promise more privacy than AskLocker gives.** Documents are not
+  end-to-end encrypted:
+  - Anyone with the Supabase dashboard or the service role key — the people
+    who run AskLocker — can open every file and read every document's text.
+  - The servers read that text to search it.
+  - Parts of it go to outside services: HuggingFace (every passage, and
+    every question, for search), Groq (the passages an answer is written
+    from, and the chat) and OCR.space (scanned PDFs, photos imported from
+    Gmail).
+
+  So no screen, notification, README or store listing says "secure",
+  "safe", "private and isolated", "100% private", "only you can see it" or
+  "nothing is kept". Say what the app does instead: "in AskLocker, only your
+  family can open…", "nobody else using AskLocker can open it", "just for
+  you". Settings › Privacy says all of this plainly and names the outside
+  services. It must stay true of the code and of the people who run
+  AskLocker, so change it with any change to sharing, search, OCR,
+  embeddings, voice or Gmail import. The app made such claims until
+  7 October 2026.
 - **★ Family Plus marks what only Plus families get** (`<PlusTag />`):
   10 GB instead of 1 GB, voice chats with no limit (on Free, each person
   has 10), the Reminders page (in the drawer) and Import from
