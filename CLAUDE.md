@@ -810,7 +810,9 @@ DEV's test files and QA traffic use the same allowance as PROD's families
   this public repository.
 - **Pro is $25 a month for the organisation**: 100 GB of files, 8 GB of
   database per project, 250 GB egress, daily backups kept 7 days, never
-  paused.
+  paused. Each project also pays for its own server, about $10 a month, of
+  which Pro includes $10: $25 with PROD alone in the organisation, about $35
+  with DEV in it too.
 
 ### The migration gap — closed, and checked properly this time
 
