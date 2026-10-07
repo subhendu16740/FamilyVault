@@ -510,6 +510,16 @@ copies, so DEV needs its own secrets and its own `documents` storage bucket.
   Unlocking has the device sign a random challenge with that key and checks
   the user-verified flag in its answer. Offered only where
   `isUserVerifyingPlatformAuthenticatorAvailable()` says yes.
+- **Never simply missing.** On the web, Settings › Security always shows the
+  card: the switch where the device can check a person, otherwise why not
+  and what to do (`lockSupport()` → `lockUnavailableText()`): `no-webauthn`,
+  usually a page open inside another app (WhatsApp, Gmail…) instead of
+  Chrome or Safari; `no-device-check`, no screen lock, fingerprint, Windows
+  Hello or Touch ID; `insecure`, not https. The browser's console says the
+  same once (`[Fingerprint lock] …`). Home offers it once after signing in,
+  on a device that can (`lock-offer.tsx`: Turn on / Not now, "Not now" kept
+  per account on the device in `accountKey.lockOffer`). Its first version
+  hid the card where the device could not, and the lock looked absent.
 - **It locks the screen, not the data.** It keeps out someone who picks up
   an unlocked phone or a computer left open. The sign-in itself stays in
   the browser's storage, so developer tools get past it; nothing on the

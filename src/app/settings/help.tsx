@@ -44,7 +44,7 @@ function faq(payments: PaymentsStatus | null): { q: string; a: string }[] {
     },
     {
       q: 'Can I lock AskLocker with my fingerprint or face?',
-      a: `Yes, on the web app. Open Settings › Security and turn on Fingerprint or face lock, on each phone or computer you use. AskLocker then asks for your fingerprint or face (or the device's PIN) when it opens, and after ${lockAfterText} away. Your fingerprint and face never leave your device. If it ever does not work, choose Use Google instead on the lock screen and sign in again with Google.`,
+      a: `Yes, on the web app, on each phone or computer you use: Home offers it after you sign in, and Settings › Security › Fingerprint or face lock turns it on or off. AskLocker then asks for your fingerprint or face (or the device's PIN) when it opens, and after ${lockAfterText} away. Your fingerprint and face never leave your device. If it is not offered, Settings › Security says why — usually the phone has no screen lock, or AskLocker is open inside another app instead of in Chrome or Safari. If it ever does not work, choose Use Google instead on the lock screen and sign in again with Google.`,
     },
     {
       q: 'Who can see my documents?',

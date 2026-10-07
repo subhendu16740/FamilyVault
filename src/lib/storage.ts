@@ -57,6 +57,7 @@ export const accountKey = {
   prefs: (userId: string) => `fv:prefs:${userId}`,   // voice, languages, notifications
   askIn: (userId: string) => `fv:ask-in:${userId}`,  // where Ask searches: all vaults, or one (046)
   appLock: (userId: string) => `fv:app-lock:${userId}`, // the fingerprint or face lock's key id (app-lock.tsx)
+  lockOffer: (userId: string) => `fv:lock-offer:${userId}`, // "Not now" to Home's offer of the lock (lock-offer.tsx)
 };
 
 export async function forgetAccount(userId: string): Promise<void> {

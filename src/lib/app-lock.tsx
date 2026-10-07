@@ -12,16 +12,39 @@
 // itself is app-lock-screen.tsx.
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import { useAuth } from './auth';
 import { accountKey, storageGet, storageRemove, storageSet } from './storage';
-import { createLockKey, forgetLockKey, lockSupported, takeFreshSignIn, unlockWithKey } from './app-lock-device';
+import { createLockKey, forgetLockKey, lockSupport, takeFreshSignIn, unlockWithKey } from './app-lock-device';
+import type { LockSupport } from './app-lock-types';
 
 /** How long AskLocker may be out of sight before it locks again. */
 export const LOCK_AFTER_MS = 5 * 60 * 1000;
 
 /** "5 minutes", for the screens that explain the lock. */
 export const lockAfterText = `${LOCK_AFTER_MS / 60_000} minutes`;
+
+/**
+ * Why the lock is not offered here, in words a person can act on — shown in
+ * Settings › Security instead of the switch, so the lock is never simply
+ * missing without a reason.
+ */
+export function lockUnavailableText(support: LockSupport): string {
+  switch (support) {
+    case 'no-webauthn':
+      return 'This browser cannot check a fingerprint or face. Open AskLocker in Chrome, Safari or Edge itself — not inside another app such as WhatsApp or Gmail — and look here again.';
+    case 'no-device-check':
+      return 'This phone or computer has nothing the browser can check you with: no screen lock, fingerprint or face. On a phone, set a screen lock and add your fingerprint in the phone\'s settings; on a computer, set up Windows Hello or Touch ID. Then look here again.';
+    case 'insecure':
+      return 'The fingerprint or face lock works only on a secure (https) address.';
+    case 'phone-app':
+      return 'The fingerprint or face lock is on the web app for now; the phone app gets it with its first release.';
+    default:
+      return '';
+  }
+}
+
+let supportTold = false;
 
 interface LockKey {
   /** The device's key, as it named it (base64url). */
@@ -33,6 +56,8 @@ interface LockKey {
 interface AppLockState {
   /** This device can check a fingerprint or face here; null until known. */
   supported: boolean | null;
+  /** And if not, why (lockUnavailableText); null until known. */
+  support: LockSupport | null;
   /** This account has the lock on, on this device. */
   enabled: boolean;
   /** The lock screen is up. */
@@ -48,6 +73,7 @@ interface AppLockState {
 
 const AppLockContext = createContext<AppLockState>({
   supported: null,
+  support: null,
   enabled: false,
   locked: false,
   deciding: false,
@@ -70,7 +96,7 @@ async function readKey(userId: string): Promise<LockKey | null> {
 export function AppLockProvider({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
   const userId = user?.id ?? null;
-  const [supported, setSupported] = useState<boolean | null>(null);
+  const [support, setSupport] = useState<LockSupport | null>(null);
   const [key, setKey] = useState<LockKey | null>(null);
   const [keyFor, setKeyFor] = useState<string | null>(null);
   const [locked, setLocked] = useState(false);
@@ -80,8 +106,18 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
   const awaySince = useRef<number | null>(null);
 
   useEffect(() => {
-    lockSupported().then(setSupported, () => setSupported(false));
+    lockSupport().then(setSupport, () => setSupport('no-device-check'));
   }, []);
+
+  // Says in the browser's console whether this device can use the lock, and
+  // why not — once a page load, like the Google sign-in's line.
+  useEffect(() => {
+    if (!support || supportTold || Platform.OS !== 'web') return;
+    supportTold = true;
+    console.info('[Fingerprint lock]', support === 'ok'
+      ? 'this device can check a fingerprint, face or PIN: Settings › Security can turn the lock on'
+      : `not offered here (${support}): ${lockUnavailableText(support)}`);
+  }, [support]);
 
   useEffect(() => {
     if (loading) return;
@@ -158,7 +194,9 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
   const deciding = !loading && !!userId && keyFor !== userId && opening.current;
 
   return (
-    <AppLockContext.Provider value={{ supported, enabled: !!key, locked: locked && !!userId, deciding, turnOn, turnOff, unlock }}>
+    <AppLockContext.Provider
+      value={{ supported: support === null ? null : support === 'ok', support, enabled: !!key, locked: locked && !!userId, deciding, turnOn, turnOff, unlock }}
+    >
       {children}
     </AppLockContext.Provider>
   );
