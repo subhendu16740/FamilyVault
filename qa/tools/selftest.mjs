@@ -661,13 +661,14 @@ await test('every suite stays inside its Groq budget', () => {
   assert.equal(seen.size, groups, 'consecutive days cover every rotation group');
 });
 
-await test('plans: every limit is finite, and a full vault says why and what to do (038–042)', () => {
+await test('plans: every limit is finite, and a full vault says why and what to do (038–048)', () => {
   const GB = 1024 ** 3, MB = 1024 ** 2;
-  // What 039–041 leave in plan_limits: one row per plan, Plus ten times
-  // Free, 30 days after Plus ends before anything above Free goes, 4 members
-  // on every plan, and 10 voice chats for each person on Free (043).
+  // What 039–048 leave in plan_limits: one row per plan; Free 200 MB for a
+  // family and 100 MB for a personal vault (048), Plus 10 GB for either;
+  // 30 days after Plus ends before anything above Free goes, 4 members on
+  // every plan, and 10 voice chats for each person on Free (043).
   assert.deepEqual(DEFAULT_PLAN_LIMITS, {
-    free: GB, plus: 10 * GB, graceDays: 30,
+    free: 200 * MB, freePersonal: 100 * MB, plus: 10 * GB, graceDays: 30,
     members: { free: 4, plus: 4 },
     voiceAnswers: { free: 10, plus: null },
   });
@@ -697,6 +698,8 @@ await test('plans: every limit is finite, and a full vault says why and what to 
   assert.equal(formatBytes(2048), '2 KB');
   assert.equal(formatBytes(1.25 * MB), '1.3 MB');
   assert.equal(formatBytes(250 * MB), '250 MB');
+  assert.equal(formatBytes(DEFAULT_PLAN_LIMITS.free), '200 MB');
+  assert.equal(formatBytes(DEFAULT_PLAN_LIMITS.freePersonal), '100 MB');
   assert.equal(formatBytes(GB), '1 GB');
   assert.equal(formatBytes(1.5 * GB), '1.5 GB');
   const free = { plan: 'free', limitBytes: GB, usedBytes: GB - 2 * MB };
@@ -728,6 +731,14 @@ await test('plans: every limit is finite, and a full vault says why and what to 
   if (!PLUS_FOR_SALE) assert.match(chatFree, /Family Plus, coming soon: .*Until then, delete documents you no longer need\.$/);
   assert.equal(chatStorageFullMessage({ plan: 'plus', limitBytes: 10 * GB, usedBytes: 10 * GB }, { price: plusPrice('usd') }),
     'There is no room to save this chat: your family has used 10 GB of its 10 GB. Delete documents or saved chats you no longer need to make room.');
+  // A personal vault (048) is "your personal vault", never "your family".
+  const mine = { plan: 'free', limitBytes: 100 * MB, usedBytes: 99 * MB, personal: true };
+  assert.match(storageFullMessage(mine, 3 * MB), /^This file is 3 MB, and your personal vault has 1 MB left of 100 MB on the free plan\./);
+  assert.match(storageFullMessage({ ...mine, usedBytes: 100 * MB }), /^Your personal vault is full: 100 MB used of 100 MB on the free plan\./);
+  assert.match(chatStorageFullMessage({ ...mine, usedBytes: 100 * MB }), /^There is no room to save this chat: your personal vault has used 100 MB of its 100 MB\./);
+  for (const text of [storageFullMessage(mine, 3 * MB), storageFullMessage({ ...mine, usedBytes: 100 * MB }), chatStorageFullMessage(mine)]) {
+    assert.doesNotMatch(text, /your family/i, 'a personal vault is not called a family');
+  }
 });
 
 await test('razorpay: the server sets the price, and only Razorpay\'s signature makes a payment count (044)', async () => {

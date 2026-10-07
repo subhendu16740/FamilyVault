@@ -1,9 +1,10 @@
 // Reminders — every document in the family with an expiry date, soonest
 // first. AskLocker reminds every member 90, 30 and 7 days before and on the
 // day (migration 034): under the bell, and as a notification on any device
-// where they turned reminders on — every family, Free or Plus. This page, the
-// list, is part of Family Plus (★ in the menu): a free family is sent to the
-// Family Plus page instead, here too in case it arrives by a link or a refresh.
+// where they turned reminders on. Both the reminders (since 048) and this
+// page, the list, are part of Family Plus (★ in the menu): a free family is
+// sent to the Family Plus page instead, here too in case it arrives by a link
+// or a refresh.
 
 import { useCallback, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Platform } from 'react-native';
@@ -48,7 +49,7 @@ export default function RemindersScreen() {
             AskLocker reminds the whole family 90, 30 and 7 days before a passport, licence or policy expires, and on the day.
           </Text>
           <Text style={styles.plusCardNote}>
-            Reminders appear under the bell on Home{Platform.OS === 'web' ? ', and as notifications on any phone or computer where you turn them on' : ''}, for every family.
+            Reminders appear under the bell on Home{Platform.OS === 'web' ? ', and as notifications on any phone or computer where you turn them on' : ''}, while your family has Family Plus.
             This page, with every expiry date in one list, is part of Family Plus.
           </Text>
           {Platform.OS === 'web' && (

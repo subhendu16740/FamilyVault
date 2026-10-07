@@ -10,6 +10,10 @@
 //                                                 never worked until 023)
 //   ...once, however often Home asks              (034; before it, a fresh
 //                                                 copy every day)
+//   ...only on Family Plus                        (048: QA Vault A is on Free,
+//                                                 so none is made there; the
+//                                                 Plus path is the migration's
+//                                                 local test)
 //
 // Then a password-protected PDF, which must fail VISIBLY. Both are deleted
 // afterwards. Cost: one small embedding call and one OCR.space request.
@@ -77,14 +81,29 @@ export async function runUploadChecks(cfg, { a, vaultA }, results, today) {
       });
     }
 
-    // An expiry inside 90 days must become a notification for every member.
+    // An expiry inside 90 days becomes a notification for every member — on
+    // Family Plus (048); a vault on Free gets none. Before 048 every vault got
+    // one. family_storage_status() says the plan, and its `personal` field
+    // (048's) whether DEV has the migration.
+    const { data: rooms } = await a.client.rpc('family_storage_status', { p_family_id: vaultA.id });
+    const room = rooms?.[0] ?? null;
+    const remindersArePlus = !!room && 'personal' in room;
+    const expectReminder = !remindersArePlus || room.plan === 'plus';
     const { data: created, error: checkErr } = await a.client.rpc('check_expiry_notifications', { p_family_id: vaultA.id });
     const { data: inbox, error: inboxErr } = await a.client.rpc('get_user_notifications', { p_user_id: a.user.id, p_limit: 50, p_offset: 0 });
     const mine = (inbox ?? []).find((n) => n.document_ref === up.docId && n.type === 'expiry');
-    results.add('upload', 'vehicle:notification', 'Its expiry alert became a notification (check_expiry_notifications → get_user_notifications)',
-      !checkErr && !inboxErr && mine ? 'pass' : 'fail', {
-        why: checkErr ? `check_expiry_notifications: ${checkErr.message}` : inboxErr ? `get_user_notifications: ${inboxErr.message}` : mine ? `"${mine.title}"` : `no notification for this document (check created ${created ?? 0})`,
-      });
+    const failure = checkErr ? `check_expiry_notifications: ${checkErr.message}` : inboxErr ? `get_user_notifications: ${inboxErr.message}` : null;
+    if (expectReminder) {
+      results.add('upload', 'vehicle:notification', 'Its expiry alert became a notification (check_expiry_notifications → get_user_notifications)',
+        !failure && mine ? 'pass' : 'fail', {
+          why: failure ?? (mine ? `"${mine.title}"` : `no notification for this document (check created ${created ?? 0})`),
+        });
+    } else {
+      results.add('upload', 'vehicle:free-no-reminder', 'A vault on Free gets no expiry reminder: they are part of Family Plus (048)',
+        !failure && !mine ? 'pass' : 'fail', {
+          why: failure ?? (mine ? `a reminder WAS made: "${mine.title}"` : `none made (check made ${created ?? 0})`),
+        });
+    }
     // Once per stage (034): opening Home again makes no second reminder.
     if (mine) {
       await a.client.rpc('check_expiry_notifications', { p_family_id: vaultA.id });

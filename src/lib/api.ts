@@ -1246,11 +1246,12 @@ export async function fetchStorageUsage(
 
 // ─── Plans and storage limits (038) ──────────────────────────────
 //
-// Every plan has a storage limit: Free 1 GB, Family Plus 10 GB (039;
-// public.plan_limits). The server keeps it — the documents bucket refuses a
-// new file once a family is at its limit — and these say where a family
-// stands, so the app can tell people before it refuses them. They read 038's
-// shape too (a period beside each plan), so the app works either side of 039.
+// Every plan has a storage limit: on Free a family 200 MB and a personal
+// vault 100 MB, on Family Plus 10 GB (039, 048; public.plan_limits). The
+// server keeps it — the documents bucket refuses a new file once a vault is at
+// its limit — and these say where a vault stands, so the app can tell people
+// before it refuses them. They read 038's shape too (a period beside each
+// plan), so the app works either side of 039.
 
 export interface FamilyPlanStatus extends StorageRoom {
   /** When a Plus plan's paid time ends; null on Free. */
@@ -1278,31 +1279,36 @@ export async function fetchStorageStatus(familyId: string): Promise<FamilyPlanSt
     paidUntil: row.paid_until ?? null,
     limitBytes: Number(row.limit_bytes),
     usedBytes: Number(row.used_bytes),
-    // Before 040 the row has no removal_at, and before 042 no chats_bytes.
+    // Before 040 the row has no removal_at, before 042 no chats_bytes, and
+    // before 048 no personal (the words then say "your family", as they did).
     removalAt: (row as { removal_at?: string | null }).removal_at ?? null,
     chatsBytes: Number((row as { chats_bytes?: number | null }).chats_bytes ?? 0),
+    personal: (row as { personal?: boolean | null }).personal === true,
   };
 }
 
 // Each set of columns arrived with a migration (040: grace_days; 041:
-// max_members and voice_answers). A column that is not there yet fails the
-// whole select, so each one missing asks again with the set before it.
+// max_members and voice_answers; 048: personal_storage_bytes). A column that
+// is not there yet fails the whole select, so each one missing asks again
+// with the set before it.
 const PLAN_LIMIT_COLUMNS = [
+  'plan, storage_bytes, grace_days, max_members, voice_answers, personal_storage_bytes',
   'plan, storage_bytes, grace_days, max_members, voice_answers',
   'plan, storage_bytes, grace_days',
   'plan, storage_bytes',
 ] as const;
 
-/** What each plan allows, as the database says; 039–041's numbers before 038. */
+/** What each plan allows, as the database says; 039–048's numbers before 038. */
 export async function fetchPlanLimits(): Promise<PlanLimits> {
   type Row = {
     plan: string; storage_bytes: number; grace_days?: number | null;
     max_members?: number | null; voice_answers?: number | null;
+    personal_storage_bytes?: number | null;
   };
   let answer: { data: unknown; error: { message?: string } | null } = { data: null, error: null };
   for (const columns of PLAN_LIMIT_COLUMNS) {
     answer = await supabase.from('plan_limits').select(columns);
-    if (!answer.error || !/grace_days|max_members|voice_answers/.test(answer.error.message ?? '')) break;
+    if (!answer.error || !/grace_days|max_members|voice_answers|personal_storage_bytes/.test(answer.error.message ?? '')) break;
   }
   const rows = (answer.data ?? []) as Row[];
   if (answer.error || !rows.length) return DEFAULT_PLAN_LIMITS;
@@ -1323,8 +1329,14 @@ export async function fetchPlanLimits(): Promise<PlanLimits> {
     if (!row || !('voice_answers' in row)) return DEFAULT_PLAN_LIMITS.voiceAnswers[plan];
     return row.voice_answers == null ? null : Number(row.voice_answers);
   };
+  const free = of('free', DEFAULT_PLAN_LIMITS.free);
+  // A personal vault's own number (048), where the plan has one; before 048
+  // the server keeps one limit for every vault, so that one.
+  const freeRow = rows.find((r) => r.plan === 'free');
+  const freePersonal = freeRow?.personal_storage_bytes != null ? Number(freeRow.personal_storage_bytes) : free;
   return {
-    free: of('free', DEFAULT_PLAN_LIMITS.free),
+    free,
+    freePersonal,
     plus: of('plus', DEFAULT_PLAN_LIMITS.plus),
     graceDays: grace ? Number(grace) : DEFAULT_PLAN_LIMITS.graceDays,
     members: { free: members('free'), plus: members('plus') },

@@ -12,12 +12,12 @@ import { router, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../lib/auth';
 import { useFamily } from '../../lib/family-context';
-import { vaultName } from '../../lib/vaults';
+import { isPersonalVault, vaultName } from '../../lib/vaults';
 import {
   fetchPlanLimits, fetchStorageStatus, fetchStorageUsage, type FamilyPlanStatus, type FamilyStorage,
 } from '../../lib/api';
 import {
-  DEFAULT_PLAN_LIMITS, FREE_STORAGE_BYTES, PLUS_FOR_SALE, formatBytes, localPlusPrice, localPlusPrices,
+  DEFAULT_PLAN_LIMITS, PLUS_FOR_SALE, formatBytes, localPlusPrice, localPlusPrices,
   localPlusYearlyOffer, storageFullMessage, storageLevel, type PlanLimits, type StorageLevel,
 } from '../../lib/plans';
 import { longDate } from '../../lib/dates';
@@ -67,6 +67,8 @@ export default function StorageScreen() {
   }, [user?.id, familyKey]));
 
   const price = localPlusPrices();
+  // Which vaults are personal (046), for the free limit before the server says (048).
+  const personalIds = new Set(families.filter((f) => isPersonalVault(f.families)).map((f) => f.families.id));
   const yourBytes = usage?.reduce((sum, f) => sum + f.yourBytes, 0) ?? 0;
   const yourDocs = usage?.reduce((sum, f) => sum + f.yourDocuments, 0) ?? 0;
 
@@ -85,10 +87,16 @@ export default function StorageScreen() {
 
             <Card>
               <CardTitle icon="hard-drive">Plans</CardTitle>
-              <Body>Each family's documents share its plan's space. Every plan has a limit.</Body>
+              <Body>
+                Each vault's documents and saved chats share its plan's space. Every plan has a limit: on Free, a family
+                has {formatBytes(limits.free)} and your personal vault {formatBytes(limits.freePersonal)}.
+              </Body>
               <View style={styles.planRows}>
                 <View style={styles.planRow}>
-                  <Text style={styles.planRowName}>Free</Text>
+                  <View style={styles.planRowText}>
+                    <Text style={styles.planRowName}>Free</Text>
+                    <Text style={styles.planRowPrice}>{formatBytes(limits.freePersonal)} for your personal vault</Text>
+                  </View>
                   <Text style={styles.planRowSize}>{formatBytes(limits.free)}</Text>
                 </View>
                 <View style={styles.planRow}>
@@ -116,13 +124,13 @@ export default function StorageScreen() {
               </TouchableOpacity>
             </Card>
 
-            <Text style={styles.sectionTitle}>Your families</Text>
+            <Text style={styles.sectionTitle}>Your vaults</Text>
             {usage.length === 0 && <Muted>You are not in a family yet.</Muted>}
             {usage.map((f) => {
               const status = plans[f.familyId] ?? null;
               // As the server counts it once 038 is applied; the documents' sizes before.
               const used = status ? status.usedBytes : f.bytes;
-              const limit = status ? status.limitBytes : FREE_STORAGE_BYTES;
+              const limit = status ? status.limitBytes : personalIds.has(f.familyId) ? limits.freePersonal : limits.free;
               const level = storageLevel(used, limit);
               const percent = Math.min(100, Math.round((used / limit) * 100));
               const isPlus = status?.plan === 'plus';
@@ -171,7 +179,7 @@ export default function StorageScreen() {
                       <Text style={[styles.noteText, level === 'full' ? styles.noteTextFull : styles.noteTextNearly]}>
                         {!status
                           // Before 038: said, not kept.
-                          ? `This family has used ${level === 'full' ? 'all of' : 'most of'} its free ${formatBytes(limit)}.`
+                          ? `This ${personalIds.has(f.familyId) ? 'vault' : 'family'} has used ${level === 'full' ? 'all of' : 'most of'} its free ${formatBytes(limit)}.`
                           : level === 'full'
                             ? storageFullMessage(status, 0, {
                                 limits,
