@@ -86,7 +86,9 @@ Four things will mislead you if you assume otherwise:
    with the tree and written only through `set_family_person_nickname`, by
    an admin or the person themselves; 046's personal vaults are their
    owner's alone — made only by `ensure_personal_vault()`, one per person,
-   and triggers refuse any other membership or invitation, on every path).
+   and triggers refuse any other membership or invitation, on every path;
+   047's documents, and their files in Storage, are deleted only by whoever
+   added them, admins included).
    **A new writable
    column needs its own `GRANT` in a migration.** Nobody joins a family
    without saying yes: only an admin asks a person in, through the
@@ -151,7 +153,8 @@ without Razorpay's signature; DEV holds only Razorpay's test keys),
 the membership model (the second account is invited, not added: it sees
 nothing of the vault until it says yes, the admin cannot say yes for it, a
 no removes the invitation and a yes makes it a viewer, who must not be able
-to escalate or share an admin's document, becomes a person in the family
+to escalate, or share or delete an admin's document, and whose own document
+only it can delete, file and all (047), becomes a person in the family
 tree, writes only its own emergency card and nickname, must be able to leave, and is
 linked to an entry in the tree both ways: merged at once while a member,
 invited back as it after leaving),
@@ -690,7 +693,7 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `speech-text.ts` | `toSpeech()`: strips markdown and spells out ID numbers before they are read aloud — and a number named as one ("train number 16782", "PNR: 4512", "PIN 751001", "नंबर 16782") digit by digit, from its digits; the screen keeps the digits |
 | `voice-languages.ts` | The language picker list and the few phrases the app itself says, per language |
 | `storage.ts` | Key-value cache: localStorage on web, AsyncStorage on native |
-| `database.types.ts` | Generated Supabase types, current to 046 (030 changed nothing in them). Regenerate after every migration and re-append the hand-written block at the bottom (see the typecheck note) |
+| `database.types.ts` | Generated Supabase types, current to 047 (030 changed nothing in them). Regenerate after every migration and re-append the hand-written block at the bottom (see the typecheck note) |
 
 ---
 
@@ -1509,15 +1512,40 @@ so storage policies live only in `019`.
 - **The document count opens All documents** (`src/app/documents.tsx`; so
   does See all beside Recent Documents): every document in every vault,
   newest first, with a vault filter (`VaultDropdown`, All vaults first), and
-  Delete — the bin on a row, or Select to tick several. Delete is offered
-  only where it will work: anything in a vault where the person's
-  membership has `can_delete` (an admin's), elsewhere the documents they
-  added (`fetchDeleteRights()`). `delete_family_document` (023) keeps the
-  same rule on the server, and `deleteDocument()` then removes the file, so
-  the vault's space is freed. One confirmation for one or many, in the app's
-  own dialog; a document already gone counts as deleted; what was refused
-  is said in words. It is in the AuthGate's list of signed-in routes — a
-  route missing there sends a signed-in person Home.
+  Delete — the bin on a row, or Select to tick several — on the documents
+  the person added, and nowhere else: only whoever added a document deletes
+  it, admins included (047, below). `deleteDocument()` deletes the row
+  (`delete_family_document`), then the file, so the vault's space is freed.
+  One confirmation for one or many, in the app's own dialog; a document
+  already gone counts as deleted; what was refused is said in words. It is
+  in the AuthGate's list of signed-in routes — a route missing there sends
+  a signed-in person Home.
+
+### Deleting a document — only the person who added it (047)
+
+- **Whoever added a document deletes it; nobody else does, not even an
+  admin.** `delete_family_document` (047) refuses anyone else with 42501,
+  "only the person who added it can delete it". Until 047 an admin
+  (`can_delete`) could delete any document; `can_delete` now decides
+  nothing about documents. The app offers Delete only on your own: the bin
+  and Select on All documents, the Delete action on a document's page.
+- **The file goes by the same rule.** 019's storage delete policy let any
+  member delete any file in the family's folder through the Storage API —
+  a viewer refused by the function could still empty an admin's document of
+  its file. 047 adds `document_file_deletable(name)` to that policy: a
+  member deletes a file only when no document holds it (its document was
+  just deleted — the app deletes the row first, then the file — or its
+  upload never became a document) or only documents they added hold it.
+  The server's own removals (029's account deletion, 040's removal after
+  Plus) use the service role and are not affected.
+- **What someone who has gone added stays, and nobody can delete it.**
+  `documents.uploaded_by` keeps the id of a member who left, was removed or
+  deleted their account, and nobody else matches it, so their documents go
+  only with the family (or come back to them if they are invited back).
+  Leave family, Remove member and Delete account all say so first.
+- Before 047 is applied the app already hides Delete on other people's
+  documents, but an admin's call would still go through: apply it to both
+  projects before the release that carries this.
 
 ## Edge Functions
 

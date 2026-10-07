@@ -20,6 +20,9 @@
 //   delete rights, delete A's document, add a member, remove A or rename the
 //   vault. Each is checked by reading the row back: RLS answers a refused
 //   UPDATE or DELETE with "0 rows", not with an error.
+//   only whoever added a document deletes it (047): A, the admin, cannot
+//   delete a document B added, nor its file through Storage; B can, file and
+//   all (skipped, saying so, until 047 is applied to DEV).
 //   B leaves                      → "Leave family" works
 //   the family tree (031): B became a person in it when added, reads it,
 //   cannot change it but may edit its own details, and stays in it — without
@@ -54,6 +57,68 @@ export async function runMemberChecks(cfg, { a, b, vaultA }, results) {
   };
   const memberRow = async (userId) => (await roster()).find((m) => m.user_id === userId) ?? null;
   const check = (id, title, ok, why) => results.add('members', id, title, ok ? 'pass' : 'fail', { why });
+  const docThere = async (id) => !!(await a.client.rpc('get_document_detail', { p_family_id: vaultA.id, p_document_id: id })).data?.length;
+  const fileThere = async (actor, path) => !(await actor.client.storage.from('documents').download(path)).error;
+  // 047, with B a viewer in vault A. Everything B adds here is deleted again
+  // before this returns: once B is out of the family, nobody could delete it.
+  const runOwnDocumentChecks = async (viewerRefusal) => {
+    const title = 'An admin cannot delete a document someone else added (047)';
+    if (!/only the person who added it/i.test(viewerRefusal)) {
+      results.add('members', 'admin-cannot-delete-others', title, 'skipped',
+        { why: viewerRefusal ? 'migration 047 is not applied to DEV yet' : 'the viewer check before it did not run' });
+      return;
+    }
+    const name = `qa_viewer_${cfg.runId}.pdf`;
+    const path = `${vaultA.namespace}/${name}`;
+    const bytes = Buffer.from('%PDF-1.4\n% AskLocker QA: a document a viewer added\n');
+    let id = null;
+    try {
+      const { error: upErr } = await b.client.storage.from('documents').upload(path, bytes, { contentType: 'application/pdf' });
+      if (upErr) {
+        results.add('members', 'admin-cannot-delete-others', title, 'skipped', { why: `B could not upload a file of its own: ${upErr.message}` });
+        return;
+      }
+      const { data, error: insErr } = await b.client.rpc('insert_family_document', {
+        p_family_id: vaultA.id, p_uploaded_by: b.user.id, p_file_name: name,
+        p_file_type: 'pdf', p_file_size_bytes: bytes.length, p_storage_path: path,
+      });
+      if (insErr) {
+        results.add('members', 'admin-cannot-delete-others', title, 'skipped', { why: `B could not add a document of its own: ${insErr.message}` });
+        return;
+      }
+      id = data;
+
+      const { error: adminErr } = await a.client.rpc('delete_family_document', { p_family_id: vaultA.id, p_document_id: id, p_user_id: a.user.id });
+      const kept = await docThere(id);
+      check('admin-cannot-delete-others', title, refusedByAuth(adminErr) && kept,
+        adminErr ? short(adminErr) : kept ? 'no error, but the document survived' : 'the document is GONE');
+      const fileTitle = "Nor can an admin delete that document's file, through Storage (047)";
+      if (!kept) {
+        id = null;
+        results.add('members', 'admin-cannot-delete-others-file', fileTitle, 'skipped', { why: 'its document was deleted already, by the admin' });
+        return;
+      }
+
+      // Through the Storage API, past the function: a refused row is not an
+      // error there, so the file is looked for afterwards.
+      await a.client.storage.from('documents').remove([path]);
+      const fileKept = await fileThere(b, path);
+      check('admin-cannot-delete-others-file', fileTitle, fileKept,
+        fileKept ? 'the file is still there' : 'the file is GONE, its document left without it');
+
+      const { error: ownErr } = await b.client.rpc('delete_family_document', { p_family_id: vaultA.id, p_document_id: id, p_user_id: b.user.id });
+      await b.client.storage.from('documents').remove([path]);
+      const rowGone = !(await docThere(id));
+      const fileGone = !(await fileThere(a, path));
+      check('adder-deletes-own', 'Whoever added a document deletes it, a viewer included, file and all', !ownErr && rowGone && fileGone,
+        ownErr ? short(ownErr) : !rowGone ? 'the document is still there' : !fileGone ? 'the document went but its FILE stayed' : 'gone, file and all');
+      if (rowGone) id = null;
+    } finally {
+      if (id) await b.client.rpc('delete_family_document', { p_family_id: vaultA.id, p_document_id: id, p_user_id: b.user.id });
+      await b.client.storage.from('documents').remove([path]);
+      if (id && (await docThere(id))) results.note('members', `B's test document ${name} could not be deleted; nobody else can, so delete it by hand in QA Vault A`);
+    }
+  };
   const link = (actor, personId) =>
     invokeFunction(cfg, actor, 'link-account', { family_id: vaultA.id, person_id: personId, email: cfg.b.email }, { timeoutMs: 30_000 });
   // The invitation to B waiting in vault A (037), as the family sees it: by the
@@ -213,15 +278,23 @@ export async function runMemberChecks(cfg, { a, b, vaultA }, results) {
       p_family_id: vaultA.id, p_uploaded_by: a.user.id, p_file_name: `qa_sacrificial_${cfg.runId}_m.pdf`,
       p_file_type: 'pdf', p_file_size_bytes: 1, p_storage_path: `${vaultA.namespace}/qa_sacrificial_${cfg.runId}_m.pdf`,
     });
+    let viewerRefusal = '';
     if (sacErr) {
       results.add('members', 'viewer-cannot-delete', "A viewer cannot delete another member's document", 'skipped', { why: `could not create the target: ${sacErr.message}` });
     } else {
       sacrificialId = docId;
       const { error: delErr } = await b.client.rpc('delete_family_document', { p_family_id: vaultA.id, p_document_id: docId, p_user_id: b.user.id });
       const { data: still } = await a.client.rpc('get_document_detail', { p_family_id: vaultA.id, p_document_id: docId });
+      viewerRefusal = delErr?.message ?? '';
       check('viewer-cannot-delete', "A viewer cannot delete another member's document", refusedByAuth(delErr) && !!still?.length,
         delErr ? short(delErr) : still?.length ? 'no error, but the document survived' : 'the document is GONE');
     }
+
+    // Only whoever added a document deletes it, admins included (047): B adds
+    // one, with its file, and A — the admin — can delete neither; then B
+    // deletes it, the row and then the file, as the app does. 047's refusal
+    // says so in words, which is how a run knows DEV has it.
+    await runOwnDocumentChecks(viewerRefusal);
 
     const viaEndpoint = await add(b, `qa-nobody-${cfg.runId}@example.invalid`);
     check('viewer-cannot-add', 'A viewer cannot add members', viaEndpoint.status === 403, http(viaEndpoint));

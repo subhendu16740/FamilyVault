@@ -85,7 +85,7 @@ export default function FamilyScreen() {
   const familyName = currentFamily?.name || 'Family';
 
   const handleRemoveMember = (memberId: string, name: string) => {
-    showConfirm('Remove Member', `Remove ${name} from ${familyName} Vault?`, async () => {
+    showConfirm('Remove Member', `Remove ${name} from ${familyName} Vault? The documents they added stay in the vault, and nobody else can delete them.`, async () => {
       try {
         await removeFamilyMember(memberId);
         refreshMembers().catch(() => {});
@@ -120,7 +120,7 @@ export default function FamilyScreen() {
 
   const handleLeave = () => {
     if (!currentFamily || !user) return;
-    showConfirm('Leave Family', `Leave ${familyName} Vault? You will no longer see its documents. An admin can invite you again.`, async () => {
+    showConfirm('Leave Family', `Leave ${familyName} Vault? You will no longer see its documents. Documents you added stay, and nobody else can delete them, so delete any you want gone first. An admin can invite you again.`, async () => {
       try {
         await leaveFamily(currentFamily.id, user.id);
         await refreshFamilies();

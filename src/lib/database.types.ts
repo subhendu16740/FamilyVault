@@ -1298,6 +1298,7 @@ export type Database = {
         Args: { p_document_id: string; p_family_id: string; p_user_id: string }
         Returns: undefined
       }
+      document_file_deletable: { Args: { p_name: string }; Returns: boolean }
       family_storage_objects: {
         Args: { p_storage_namespace: string }
         Returns: string[]
