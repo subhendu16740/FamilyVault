@@ -13,6 +13,7 @@ import { useDrawer } from '../../lib/drawer-context';
 import { fetchRecentDocuments, fetchFamilyStats, fetchUnreadNotificationCount, checkExpiryNotifications } from '../../lib/api';
 import { usePreferences } from '../../lib/preferences';
 import { InvitationCards } from '../../components/invitation-cards';
+import { LockOffer } from '../../components/lock-offer';
 import { isPersonalVault, vaultName } from '../../lib/vaults';
 import type { FamilyDocumentRow } from '../../lib/database.types';
 import { color, radius, shadow, size, space, type } from '../../constants/design';
@@ -197,6 +198,9 @@ export default function HomeScreen() {
 
         {/* Invitations to join a family (037): answered here, the first place anyone looks */}
         <InvitationCards style={styles.invites} />
+
+        {/* The fingerprint or face lock, offered once where the device can check one */}
+        <LockOffer style={styles.invites} />
 
         {/* Stats Bar */}
         <View style={styles.section}>

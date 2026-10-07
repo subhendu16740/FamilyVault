@@ -157,7 +157,7 @@ export default function PersonScreen() {
           router.replace({ pathname: '/person/[id]', params: { id: outcome.memberId, joined: '1' } } as any);
           break;
         case 'no_account':
-          setLinkError(`No AskLocker account uses ${address} yet. Ask ${first(person.name)} to sign up with this email, then link again.`);
+          setLinkError(`No AskLocker account uses ${address} yet. Ask ${first(person.name)} to sign in to AskLocker once with Google, using this email, then link again.`);
           break;
         case 'invalid_email':
           setLinkError("That doesn't look like an email address.");
@@ -395,9 +395,9 @@ export default function PersonScreen() {
             <Pressable style={styles.dialog} onPress={() => {}}>
               <Text style={styles.dialogTitle}>Link {person ? first(person.name) : 'them'} to their account</Text>
               <Text style={styles.dialogText}>
-                If {person ? first(person.name) : 'they'} has signed up for AskLocker, enter the email they sign in with. They
-                get an invitation, and once they accept they join this family as a viewer and keep everything here: their
-                place in the tree, their documents and their emergency card.
+                {person ? `If ${first(person.name)} is` : 'If they are'} on AskLocker, enter the email of the Google account
+                they sign in with. They get an invitation, and once they accept they join this family as a viewer and keep
+                everything here: their place in the tree, their documents and their emergency card.
               </Text>
               <Muted>Already added in Manage Family? Linking makes the two entries one.</Muted>
               <Field

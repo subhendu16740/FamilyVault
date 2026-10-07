@@ -7,6 +7,8 @@ import { AuthProvider, useAuth } from '../lib/auth';
 import { FamilyProvider } from '../lib/family-context';
 import { PreferencesProvider } from '../lib/preferences';
 import { EnvBadge } from '../components/env-badge';
+import { AppLockProvider } from '../lib/app-lock';
+import { AppLockScreen } from '../components/app-lock-screen';
 
 function AuthGate() {
   const { session, loading: authLoading } = useAuth();
@@ -70,6 +72,7 @@ export default function RootLayout() {
 
   return (
     <AuthProvider>
+      <AppLockProvider>
       <PreferencesProvider>
       <FamilyProvider>
         <AuthGate />
@@ -92,8 +95,11 @@ export default function RootLayout() {
         {/* After the Stack, so it draws over every screen. Renders nothing
             in production. */}
         <EnvBadge />
+        {/* The fingerprint or face lock, over everything when it is up. */}
+        <AppLockScreen />
       </FamilyProvider>
       </PreferencesProvider>
+      </AppLockProvider>
     </AuthProvider>
   );
 }

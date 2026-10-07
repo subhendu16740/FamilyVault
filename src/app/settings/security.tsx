@@ -1,17 +1,19 @@
-// Settings › Security — how you sign in, your password, signing out of
-// every device at once, and deleting your account.
+// Settings › Security — how you sign in (Google), fingerprint sign-in on
+// this device, signing out of every device at once, and deleting your account.
 
 import { useState } from 'react';
-import { ScrollView, View, Text, StyleSheet } from 'react-native';
+import { ScrollView, View, Text, StyleSheet, Platform } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../lib/auth';
-import { changePassword, signOutEverywhere } from '../../lib/api';
+import { signOutEverywhere } from '../../lib/api';
 import { longDate } from '../../lib/dates';
+import { isProduction } from '../../lib/environment';
+import { lockAfterText, lockUnavailableText, useAppLock } from '../../lib/app-lock';
 import { ScreenHeader } from '../../components/screen-header';
 import {
-  Card, CardTitle, Body, Muted, Field, PrimaryButton, SecondaryButton, DangerButton, Status, screenStyles,
+  Card, CardTitle, Body, Muted, OnOff, SecondaryButton, DangerButton, Status, screenStyles,
 } from '../../components/settings-ui';
 import { space, type } from '../../constants/design';
 
@@ -22,31 +24,34 @@ export default function SecurityScreen() {
   const providers: string[] = Array.isArray(user?.app_metadata?.providers)
     ? user!.app_metadata.providers
     : user?.app_metadata?.provider ? [user.app_metadata.provider] : [];
-  const hasPassword = providers.includes('email');
+  // An account made with email and password before sign-in became Google
+  // only. Test builds still take passwords (password-sign-in.tsx).
+  const noGoogle = isProduction && providers.length > 0 && !providers.includes('google');
   const lastSignIn = user?.last_sign_in_at ? new Date(user.last_sign_in_at) : null;
 
-  const [password, setPassword] = useState('');
-  const [again, setAgain] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [status, setStatus] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
+  const lock = useAppLock();
+  const [lockBusy, setLockBusy] = useState(false);
+  const [lockStatus, setLockStatus] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
   const [confirmAll, setConfirmAll] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
 
-  const change = async () => {
-    if (password.length < 8) { setStatus({ kind: 'error', text: 'Use at least 8 characters.' }); return; }
-    if (password !== again) { setStatus({ kind: 'error', text: 'The two passwords are not the same.' }); return; }
-    setSaving(true);
-    setStatus(null);
+  const setLock = async (on: boolean) => {
+    if (on === lock.enabled || lockBusy) return;
+    setLockBusy(true);
+    setLockStatus(null);
     try {
-      await changePassword(password);
-      setPassword('');
-      setAgain('');
-      setStatus({ kind: 'ok', text: hasPassword ? 'Your password has been changed.' : 'Your password is set. You can now also sign in with your email.' });
+      if (on) {
+        await lock.turnOn();
+        setLockStatus({ kind: 'ok', text: 'Fingerprint sign-in is on. Next time, sign in with your fingerprint or face — no Google needed.' });
+      } else {
+        await lock.turnOff();
+        setLockStatus({ kind: 'ok', text: 'Fingerprint sign-in is off on this device.' });
+      }
     } catch (err: any) {
-      setStatus({ kind: 'error', text: err?.message || 'Could not change the password. Please try again.' });
+      setLockStatus({ kind: 'error', text: err?.message || 'That did not work. Please try again.' });
     } finally {
-      setSaving(false);
+      setLockBusy(false);
     }
   };
 
@@ -81,29 +86,38 @@ export default function SecurityScreen() {
               Last signed in {longDate(lastSignIn)} at {lastSignIn.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </Muted>
           )}
+          {noGoogle && (
+            <Body>
+              AskLocker now signs in with Google only. Next time, choose Continue with Google and pick the Google
+              account for {user?.email}: it opens this same account, with everything in it.
+            </Body>
+          )}
         </Card>
 
-        <Card>
-          <CardTitle icon="key">{hasPassword ? 'Change your password' : 'Set a password'}</CardTitle>
-          {!hasPassword && <Body>You sign in with Google. A password lets you also sign in with your email address.</Body>}
-          <Field
-            label="New password"
-            value={password}
-            onChangeText={(t) => { setPassword(t); setStatus(null); }}
-            secureTextEntry
-            autoComplete="new-password"
-            hint="At least 8 characters."
-          />
-          <Field
-            label="Type it again"
-            value={again}
-            onChangeText={(t) => { setAgain(t); setStatus(null); }}
-            secureTextEntry
-            autoComplete="new-password"
-          />
-          {status && <Status kind={status.kind}>{status.text}</Status>}
-          <PrimaryButton label={hasPassword ? 'Change password' : 'Set password'} onPress={change} busy={saving} />
-        </Card>
+        {/* On the web always, so the lock is never simply missing: where this
+            device cannot use it, the card says why and what to do. */}
+        {Platform.OS === 'web' && lock.support !== null && (
+          <Card>
+            <CardTitle icon="aperture">Fingerprint sign-in</CardTitle>
+            {lock.supported ? (
+              <>
+                <Body>
+                  Sign in with your fingerprint or face (or this device's PIN) — no Google, no password. AskLocker also
+                  locks itself when it opens and after {lockAfterText} away, and your fingerprint opens it. Turn it on on
+                  each phone or computer you use.
+                </Body>
+                <Muted>
+                  Your fingerprint and face never leave your device. Your device keeps a passkey for AskLocker, and may
+                  call it that. Google sign-in always works too.
+                </Muted>
+                <OnOff value={lock.enabled} onChange={setLock} label="Fingerprint sign-in" />
+                {lockStatus && <Status kind={lockStatus.kind}>{lockStatus.text}</Status>}
+              </>
+            ) : (
+              <Body>{lockUnavailableText(lock.support)}</Body>
+            )}
+          </Card>
+        )}
 
         <Card>
           <CardTitle icon="smartphone">Sign out on every device</CardTitle>

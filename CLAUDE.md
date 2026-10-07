@@ -111,7 +111,7 @@ npm run web                    # dev server, web  (expo start --web)
 npm start                      # dev server, pick platform interactively
 npm run android                # native Android (needs emulator/device)
 
-npm run build                  # static web export -> dist/
+npm run build                  # static web export -> dist/ (always with a cleared bundler cache: see Deployment)
 npm run typecheck              # tsc --noEmit
 ```
 
@@ -339,7 +339,7 @@ Copy `.env.example` to `.env`. Every variable is documented there.
 - `EXPO_PUBLIC_SUPABASE_ANON_KEY`
 
 and, optional, by `src/lib/google-button.web.ts` — Google's own sign-in
-button (see [Google sign-in](#google-sign-in--googles-own-button-where-it-is-set-up)):
+button (see [Signing in](#signing-in--google-only-with-googles-own-button-where-it-is-set-up)):
 
 - `EXPO_PUBLIC_GOOGLE_CLIENT_ID` — the sign-in OAuth client's id (public, like
   the anon key; the same client the Supabase Google provider uses)
@@ -379,9 +379,17 @@ Web build is hosted on **Vercel** as a static SPA. Config lives in
 | | |
 |---|---|
 | Install | `npm ci` |
-| Build | `npx expo export --platform web` |
+| Build | `npx expo export --platform web --clear` |
 | Output | `dist` |
 | Node | 22.x |
+
+**Every build clears the bundler cache (`--clear`), on purpose.** Expo writes
+each `EXPO_PUBLIC_*` value into the code when Metro transforms a file, and
+Metro keeps transformed files in its cache (`/tmp/metro-cache`) — keyed on the
+file, not on the value. A build after changing a value could therefore ship
+the old one: measured here, a build made with no Google settings still
+carried the client id of the build before it. `vercel.json` and
+`npm run build` both pass `--clear`; do the same for any build by hand.
 
 **The SPA rewrite in `vercel.json` is mandatory.** expo-router's web output
 defaults to `single`, so the export emits exactly one `index.html` and no
@@ -403,8 +411,38 @@ because the bundle was built against a different project URL.
 via `supabase functions deploy <name>`. A preview pointed at DEV runs DEV's
 copies, so DEV needs its own secrets and its own `documents` storage bucket.
 
-### Google sign-in — Google's own button, where it is set up
+### Signing in — Google only, with Google's own button where it is set up
 
+- **Google is the way in** (since 7 October 2026). The login screen is one
+  button: signing in with Google the first time makes the account, so there
+  is no sign-up form, no password and no email to confirm, and Settings ›
+  Security sets no password. After that, on a device where it is turned on,
+  a fingerprint signs the person in instead (see
+  [Fingerprint sign-in](#fingerprint-sign-in--a-passkey-after-google-once)).
+- **Test builds also take an email and password.** Wherever `isProduction`
+  is false — DEV, previews, an unknown project, the same builds that show
+  the badge — the login screen has a "Test builds only" form under Google
+  (`password-sign-in.tsx`: sign in, or create a test account), for QA's
+  accounts and for testing with several accounts. `signInWithPassword` and
+  `signUpWithPassword` in `auth.tsx` exist for it alone. Production never
+  shows it.
+- **An account made earlier with email and password opens with Google, same
+  email.** Supabase links a new Google identity to the existing account with
+  the same verified email (automatic identity linking), so its families and
+  documents stay. Security tells such an account so while it is still signed
+  in. An address that is not a Google account can become one (Google lets
+  anyone make an account with their own email), or the account is deleted
+  by hand (see [Deleting your account](#deleting-your-account--at-once-nothing-kept-029-030)).
+- **Keep the Email provider on in DEV.** QA signs its test accounts in with
+  passwords through the API (`qa/lib/supabase.mjs`), and the test form needs
+  it. On PROD nothing uses it: switching it off (Authentication › Sign In
+  / Providers › Email) stops anyone making a password account through the
+  API — once Authentication › Users shows nobody who signs in with one.
+- **There is always a way in.** A spinner holds the place of Google's button
+  until Google draws it; if Google's script cannot be loaded — blocked,
+  unreachable, or not there after 10 seconds — the login falls back to the
+  redirect sign-in (`drawFailed` in `google-sign-in.tsx`). That button is a
+  plain "Continue with Google" with Google's G (`assets/images/google-g.png`).
 - **The redirect sign-in names Supabase, not AskLocker.**
   `signInWithOAuth` sends the person through
   `<project>.supabase.co/auth/v1/callback`, so Google's account chooser
@@ -433,6 +471,17 @@ copies, so DEV needs its own secrets and its own `documents` storage bucket.
   (`google-button.ts` is a stand-in) — it is the redirect sign-in, as before.
   The Supabase Google provider must list the same client id (Authentication
   › Providers › Google › Client IDs), or Supabase refuses the token.
+- **The list is read however it was typed** (`parseOrigins()`): commas,
+  spaces, `;` or new lines between the addresses, quotes around them, with
+  or without `https://` (`http://` for localhost) or a path — each becomes
+  an origin as Google compares them. Quotes around the client id are
+  dropped too.
+- **The login page says which sign-in it uses, and why**, once in the
+  browser's console: `[Google sign-in] Google's own button, for
+  https://asklocker.com`, or the redirect and the reason — no client id in
+  this build (set it for that Vercel environment, then redeploy), or this
+  address missing from the list, with the list the build has
+  (`googleButtonReason()`).
 - **The redirect still needs its wildcard.** It sends
   `redirectTo: window.location.origin`, and every preview gets a fresh
   subdomain, so Supabase → Authentication → URL Configuration must contain
@@ -441,6 +490,86 @@ copies, so DEV needs its own secrets and its own `documents` storage bucket.
 - **To show "AskLocker" instead of an address**: Google's brand
   verification, free — a public home page and privacy policy on a domain
   verified in Search Console, both linked from the OAuth consent screen.
+
+### Fingerprint sign-in — a passkey, after Google once
+
+- **Sign in with Google once; after that a fingerprint or face signs you in**
+  (since 7 October 2026) — no Google, no password. Settings › Security ›
+  Fingerprint sign-in, or Home's offer (`lock-offer.tsx`), per device and per
+  account, off until turned on. It is a **Supabase Auth passkey**
+  (`registerPasskey()` / `signInWithPasskey()`, `src/lib/app-lock.tsx`): the
+  device keeps the private half and checks the person — fingerprint, face or
+  its own PIN — and Supabase keeps the public half and checks the device's
+  signature before it hands out a session. Nothing about a finger or a face
+  leaves the device. Passkeys need supabase-js 2.105 or later (2.117 here,
+  where they are on by default).
+- **Once on, on that device:** the login screen shows "Sign in with
+  fingerprint" above Google (`fingerprint-sign-in.tsx`; shown while
+  `deviceKey.passkeysHere` lists anyone who turned it on there), and
+  AskLocker locks when it is opened already signed in and when it comes back
+  after 5 minutes out of sight (`LOCK_AFTER_MS`). The lock screen
+  (`app-lock-screen.tsx`, a Modal over everything, with the rest of the page
+  inert) unlocks with the same passkey sign-in — so unlocking needs the
+  internet, like the rest of AskLocker; it tries once by itself and keeps a
+  big Unlock button, because older iPhones start the check only from a tap. `accountKey.appLock` holds the passkey's id, and `forgetAccount()`
+  clears both keys.
+- **A synced passkey is one passkey on several devices.** Google Password
+  Manager and iCloud Keychain carry a passkey to the person's other phones
+  and computers. Turning it on where one already is makes no second one
+  (the browser refuses, `ERROR_AUTHENTICATOR_PREVIOUSLY_REGISTERED`): that
+  device uses the one it has, and its entry says so (`passkeyId: null`).
+  Turning it off deletes the passkey at Supabase (`auth.passkey.delete`)
+  only on the device that made it — which ends it on the others too — and
+  elsewhere only stops it there.
+- **It checks itself** (`entryStillWorks()`, `auth.passkey.list`), once each
+  time the entry is read and each time it locks: the passkey deleted
+  (turned off on the device that made it) or the project's passkeys switched
+  off, and it is off here too and unlocks, since nothing could open that
+  lock; a check that cannot be made (offline) keeps the lock. Still working,
+  and the device lists the account again, so a failed sign-in that stopped
+  the button (below) is undone at the next sign-in.
+- **Each project must have passkeys switched on** — Supabase › Authentication
+  › Passkeys: Enable, Relying Party display name `AskLocker`, RP ID and
+  origins. PROD: RP ID `asklocker.com`, origins `https://asklocker.com,
+  https://www.asklocker.com`. DEV: RP ID and origin the dev branch's own
+  address, `family-vault-git-dev-subhendu16740.vercel.app` (a preview's fresh
+  address cannot be listed, so previews have Google and the test form only).
+  Changing an RP ID later makes every passkey on it useless. Where passkeys
+  are off, turning it on says "not switched on for AskLocker yet"
+  (`passkey_disabled`); on an address that is not an origin, "not set up for
+  this address". **Switch them on in PROD before the release that carries
+  this**, as a migration goes before its function.
+- **Never simply missing.** On the web, Settings › Security always shows the
+  card: the switch where the device can check a person, otherwise why not
+  and what to do (`lockSupport()` → `lockUnavailableText()`): `no-webauthn`,
+  usually a page open inside another app (WhatsApp, Gmail…) instead of
+  Chrome or Safari; `no-device-check`, no screen lock, fingerprint, Windows
+  Hello or Touch ID; `insecure`, not https. The browser's console says it
+  once (`[Fingerprint sign-in] …`). Errors are said in words
+  (`passkeyErrorText()`): cancelled, took too long, turned off elsewhere —
+  a sign-in with a passkey Supabase no longer has, or with passkeys switched
+  off, stops the login screen offering the button; whose passkey it was is
+  not known there, so it stops for every account on the device until each
+  signs in again.
+- **The lock guards the screen; the passkey guards the account.** A
+  signed-in session stays in the browser's storage, so developer tools get
+  past the lock; signing in, though, needs the passkey's signature, which
+  Supabase checks. Google stays a way in: "Use Google instead" on the lock
+  screen signs out, and any fresh sign-in opens AskLocker without the lock
+  for that visit (the redirect sign-in comes back as a new page load, so
+  `noteSignInStarted()` marks it in sessionStorage and `takeFreshSignIn()`
+  reads it, 15 minutes at most).
+- **Its first version (subhendu16740/FamilyVault#68, #69) was a lock only**,
+  with a key kept on the device and nothing at Supabase: it unlocked a
+  signed-in AskLocker but could not sign anyone in, so after signing out it
+  was Google again. Such an entry (`{ id }` in `accountKey.appLock`) is
+  dropped when read, and its key let go (`forgetLockKey()`).
+- **A shared document (`/s`) is never behind the lock.**
+- **The phone app's `app-lock-device.ts` is a stand-in** until EAS builds
+  exist: it needs Supabase's two-step passkey API with a native passkey
+  library (and Associated Domains / Digital Asset Links files), and
+  `expo-local-authentication` for the lock. Settings does not offer it there
+  meanwhile.
 
 ### Native (not yet set up)
 
@@ -482,7 +611,7 @@ src/
     _layout.tsx              # root Stack + AuthGate
     index.tsx                # redirect -> /onboarding or /home
     onboarding.tsx           # 3-slide intro
-    login.tsx                # email/password + Google (google-sign-in.tsx: Google's own button on the web where set up)
+    login.tsx                # Google; the first sign-in makes the account (google-sign-in.tsx: Google's own button on the web where set up); "Sign in with fingerprint" first where turned on (fingerprint-sign-in.tsx); test builds add email and password (password-sign-in.tsx)
     setup-family.tsx         # first-time vault creation
     notifications.tsx        # expiry alerts, uploads, invites, Family Plus
     family.tsx               # Manage Family: members, invitations (Pending approval), leaving, every vault, Create a family; the personal vault's own page (046)    (NOT a tab)
@@ -507,7 +636,7 @@ src/
     (tabs)/
       _layout.tsx            # custom tab bar (CustomTabBar): full width; the round Ask button (size.ask) sits on its bottom edge and rises above it
       home.tsx  search.tsx  upload.tsx
-  components/                # shared UI, incl. ProfileDrawer, ShareSheet (036), InvitationCards (037), the vault dropdown and sheet (vault-sheet.tsx, 046) and GoogleSignIn
+  components/                # shared UI, incl. ProfileDrawer, ShareSheet (036), InvitationCards (037), the vault dropdown and sheet (vault-sheet.tsx, 046), GoogleSignIn, FingerprintSignIn, PasswordSignIn (test builds), AppLockScreen and LockOffer
   constants/design.ts        # the one type/size/spacing scale every screen uses
   constants/theme.ts         # create-expo-app scaffold, largely unused
   hooks/                     # use-color-scheme, use-theme
@@ -537,11 +666,12 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | File | Role |
 |---|---|
 | `supabase.ts` | Client init. AsyncStorage for session persistence on native only. |
-| `auth.tsx` | `AuthProvider`: session, signIn, signUp, signInWithGoogle (the redirect), signInWithGoogleToken (Google's own button's ID token), signOut |
+| `auth.tsx` | `AuthProvider`: session, signInWithGoogle (the redirect), signInWithGoogleToken (Google's own button's ID token), signOut. Google is the only way in; `signInWithPassword` / `signUpWithPassword` serve only the test builds' form |
+| `app-lock.tsx` | Fingerprint sign-in (`AppLockProvider`, `useAppLock()`): a Supabase passkey — turning it on and off (`registerPasskey`, `passkey.delete`), signing in with it (`signIn`, the login screen's button), the lock (opened signed in; back after `LOCK_AFTER_MS`) and unlocking with it, checking the passkey is still there (`entryStillWorks()`), and errors in words (`passkeyErrorText()`). What the device can do is `app-lock-device.ts` / `app-lock-device.web.ts`; the screen, `components/app-lock-screen.tsx`. See [Fingerprint sign-in](#fingerprint-sign-in--a-passkey-after-google-once) |
 | `family-context.tsx` | `FamilyProvider`: currentFamily, members, membership, needsFamily; `families` is every vault, the personal one included, which it makes the first time it sees an account without one (`ensurePersonalVault()`, 046) |
 | `vaults.ts` | Personal vault or family (046): `vaultName()` ("Personal vault" everywhere), `splitVaults()`, `vaultSubtitle()` |
 | `drawer-context.tsx` | Profile drawer open/close state |
-| `api.ts` | **All** Supabase queries — documents, search, upload, RAG, notifications, adding and leaving families, invitations, Gmail import, saved chats, share links, deleting your account, plans and storage limits (`fetchStorageStatus`, `fetchPlanLimits`; `uploadDocument` throws `StorageFullError` before a file that does not fit is sent, and `saveChat` `ChatStorageFullError` for a chat, 042), voice chats (`claimVoiceAnswer`, 041; `fetchVoiceStatus`, how many are left, 042), paying for Family Plus (`fetchPaymentsStatus`, whether this project takes payments, asked once a session; `createPlusOrder`, `verifyPlusPayment`, 044), personal vaults and Ask across vaults (`ensurePersonalVault`; `ragSearch`'s `vaults` option, 046), and the Settings screens (profile, password, storage use, expiry dates, feedback) |
+| `api.ts` | **All** Supabase queries — documents, search, upload, RAG, notifications, adding and leaving families, invitations, Gmail import, saved chats, share links, deleting your account, plans and storage limits (`fetchStorageStatus`, `fetchPlanLimits`; `uploadDocument` throws `StorageFullError` before a file that does not fit is sent, and `saveChat` `ChatStorageFullError` for a chat, 042), voice chats (`claimVoiceAnswer`, 041; `fetchVoiceStatus`, how many are left, 042), paying for Family Plus (`fetchPaymentsStatus`, whether this project takes payments, asked once a session; `createPlusOrder`, `verifyPlusPayment`, 044), personal vaults and Ask across vaults (`ensurePersonalVault`; `ragSearch`'s `vaults` option, 046), and the Settings screens (profile, storage use, expiry dates, feedback) |
 | `dates.ts` | `parseDocumentDate()`: expiry dates exactly as ingest stores them (DD/MM/YYYY and kin, YYYY-MM-DD, "19 October 2026") |
 | `emergency.ts` | The emergency card's shape, blood groups (`bloodGroupLabel()`: "A−", "Bombay (hh)"), `telHref()`, and `cardProblem()` — the same checks and messages as `save_emergency_card()`, so the form can say what is wrong before saving |
 | `family-people.ts` | Whose a document can be: everyone in the tree, you first (`useDocumentOwners()`, members only before 031), and a person's expiry badge (`badgeFromExpiries()`) |
@@ -552,7 +682,7 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `ocr.ts` | Platform-split OCR with progress callback; reads the person's chosen languages |
 | `ocr-languages.ts` | The document-language picker list, and `resolveOcrLanguages()` which always appends English |
 | `razorpay.ts` / `razorpay.web.ts` | Paying for Family Plus (044): on the web, Razorpay's own checkout window (`openCheckout`; checkout.js is loaded the first time someone pays, and card and UPI details go to Razorpay, never to us); the phone app's file is a stand-in until EAS builds exist. Types in `razorpay-types.ts` |
-| `google-button.ts` / `google-button.web.ts` | Google's own sign-in button on the web (Google Identity Services): `googleButtonAvailable()` (a client id is set and this origin is in `EXPO_PUBLIC_GOOGLE_WEB_ORIGINS`), `renderGoogleButton()` (loads Google's script once, a fresh nonce each time). The phone app's file says no, so it keeps the redirect sign-in. Types in `google-button-types.ts`; see [Google sign-in](#google-sign-in--googles-own-button-where-it-is-set-up) |
+| `google-button.ts` / `google-button.web.ts` | Google's own sign-in button on the web (Google Identity Services): `googleButtonAvailable()` (a client id is set and this origin is in `EXPO_PUBLIC_GOOGLE_WEB_ORIGINS`), `renderGoogleButton()` (loads Google's script once, a fresh nonce each time). The phone app's file says no, so it keeps the redirect sign-in. Types in `google-button-types.ts`; see [Signing in](#signing-in--google-only-with-googles-own-button-where-it-is-set-up) |
 | `push.ts` / `push.web.ts` | Notifications on this device (034): on the web, Web Push through `public/sw.js` (`loadPushStatus`, `turnOnPush`, `turnOffPush`, `sendTestPush`, and `forgetPushOnThisDevice` on sign-out); the phone app's file is a stand-in until EAS builds exist. Types in `push-types.ts` |
 | `preferences.tsx` | `PreferencesProvider`: voice toggle + language, document languages. Cached locally, stored on `public.users`; reads and writes fall back to the older column set so an unapplied migration degrades one setting rather than all of them |
 | `speech.ts` | Voice: `listen`/`stopListening` (platform-split recogniser) and `speak`/`stopSpeaking` (expo-speech), in the voice chosen for the language on this device (`voicesFor`, `chooseVoice`: Settings › Accessibility › Voice, kept per language in `storage.ts`, not per account), or the best match |
@@ -576,6 +706,7 @@ src/lib/speech-recognition.ts      /  speech-recognition.web.ts
 src/lib/push.ts                    /  push.web.ts
 src/lib/razorpay.ts                /  razorpay.web.ts
 src/lib/google-button.ts           /  google-button.web.ts
+src/lib/app-lock-device.ts         /  app-lock-device.web.ts
 src/app/+html.tsx                     (web only — HTML shell, @font-face; NOT used by the single-page export)
 public/sw.js                          (web only — the service worker that shows notifications)
 src/global.css                        (web only)
@@ -845,7 +976,7 @@ so storage policies live only in `019`.
   confirmed, not deleted, not anonymous — and writes a `family_invites` row,
   an `invite` notification (on their devices too, 034) and an audit row, in
   one transaction. No such account → the admin is told to ask them to sign
-  up, and nothing is created.
+  in to AskLocker once with Google, using that email, and nothing is created.
 - **Answering:** the person sees which family asked and who
   (`get_my_invitations()`), on Home and in Manage Family
   (`invitation-cards.tsx`), and nothing of its documents. Accept
@@ -1413,6 +1544,18 @@ so storage policies live only in `019`.
   RAC and waitlist too). And when a vault has too few documents to fill
   the judge's 15 places, the same documents fill them past the per-document
   cap, so a family's only ticket is read whole.
+  **Sources are what the answer used.** The answer model sees the passages
+  numbered (`[Passage 1 | Document: …]`) and ends with one line, `USED: 1, 3`
+  or `USED: none`, which `splitUsedPassages()` (`_shared/used-passages.ts`,
+  pure, pinned by the self-test) takes off before the answer is shown or
+  read aloud; the source chips are the documents of those passages
+  (`passagesUsed()`). Before, they were every document sent to the model —
+  and when the judge rejects every passage, its fallback sends them all: a
+  question about a Delhi hotel answered from the booking also listed a bank
+  statement. No line, or numbers that point nowhere, and every passage sent
+  is a source, as before; `none` shows no chips. `debug.used_docs` says what
+  was used, and the line under an answer shows "answer used 1 doc" when that
+  is fewer than were kept.
   **Groq models are resolved at runtime** by `_shared/groq.ts`: each role
   (answer, condense, rerank) has a preference list, a secret of the role's name
   (`GROQ_MODEL`, `GROQ_CONDENSE_MODEL`, `GROQ_RERANK_MODEL`) always goes first,
@@ -1503,7 +1646,7 @@ so storage policies live only in `019`.
   `RAZORPAY_WEBHOOK_SECRET`; 500 on a passing fault, which Razorpay retries.
 - **`delete-account`** — a person deletes their own account: `preview`
   lists what would go, `delete` with `confirm: 'DELETE'` does it; see
-  [Deleting your account](#deleting-your-account--at-once-nothing-kept-029).
+  [Deleting your account](#deleting-your-account--at-once-nothing-kept-029-030).
   503 `needs_migration` where 029 is not applied.
 - **`gmail-connect`**, **`gmail-callback`**, **`gmail-scan`**,
   **`gmail-import`** — Gmail import; see [below](#gmail-import--your-own-mailbox-your-tick-026).
