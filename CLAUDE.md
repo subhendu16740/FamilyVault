@@ -629,6 +629,7 @@ src/
       storage.tsx  help.tsx  feedback.tsx  about.tsx   # storage: each family's plan, and how much of its space is used (038, 039)
       delete-account.tsx     # Security › Delete account: shows what goes, asks for DELETE (029)
     document/[id].tsx        # document viewer; Share opens the share sheet (036, web only)
+    documents.tsx            # All documents (Home's document count, See all): every vault's documents, a vault filter, Delete one or several (Select)
     gmail-import.tsx         # connect Gmail, review what it found, import (web only, ★ Family Plus)
     plus.tsx                 # Family Plus: what Plus gives, side by side with Free; every ★ opens it for a free family; pay for a month or a year (044, web only)
     s.tsx                    # what a share link opens: one document, for anyone with the link, no account (036)
@@ -1505,6 +1506,18 @@ so storage policies live only in `019`.
   (documents, members or "Only you", categories); with several, the
   documents in all of them and how many vaults — categories are counted per
   vault, so a sum would count one twice.
+- **The document count opens All documents** (`src/app/documents.tsx`; so
+  does See all beside Recent Documents): every document in every vault,
+  newest first, with a vault filter (`VaultDropdown`, All vaults first), and
+  Delete — the bin on a row, or Select to tick several. Delete is offered
+  only where it will work: anything in a vault where the person's
+  membership has `can_delete` (an admin's), elsewhere the documents they
+  added (`fetchDeleteRights()`). `delete_family_document` (023) keeps the
+  same rule on the server, and `deleteDocument()` then removes the file, so
+  the vault's space is freed. One confirmation for one or many, in the app's
+  own dialog; a document already gone counts as deleted; what was refused
+  is said in words. It is in the AuthGate's list of signed-in routes — a
+  route missing there sends a signed-in person Home.
 
 ## Edge Functions
 

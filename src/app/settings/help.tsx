@@ -31,6 +31,10 @@ function faq(payments: PaymentsStatus | null): { q: string; a: string }[] {
       a: 'Everyone has one: a vault just for you. Nobody else using AskLocker can open it, and nobody can be invited to it. If you are not in a family, everything you upload goes there. To share documents, create a family from Manage Family and invite the people you want, or accept an invitation from one. Home shows your newest documents from all your vaults together, each marked with the vault it is in.',
     },
     {
+      q: 'How do I see all my documents, or delete some?',
+      a: 'On Home, tap the number of documents (or See all, beside Recent Documents). All documents lists every document, newest first; choose a vault at the top to see only its documents. Tap the bin beside a document to delete it, or tap Select to tick several and delete them together. You can also delete a document from its own page. In a family, an admin can delete any document, and everyone else the documents they added. Deleting removes the file too, frees its space, and cannot be undone.',
+    },
+    {
       q: 'How do I find a document or an answer?',
       a: 'Open Search and ask in your own words, for example "When does Mom\'s passport expire?". AskLocker searches all your vaults at once — your personal vault and every family — answers, and shows which document the answer came from. To get an answer sooner, tap Search in and pick one vault.',
     },
