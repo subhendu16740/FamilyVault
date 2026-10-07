@@ -205,6 +205,8 @@ export interface RagSearchResult {
     /** Passages that survived reranking — same unit as candidate_count. */
     kept_count?: number;
     kept_docs: string[];
+    /** The documents the answer said it used, which the source chips show; null when it did not say. */
+    used_docs?: string[] | null;
     /** Groq models that actually ran each step. Missing = the step didn't run. */
     models?: { answer?: string; condense?: string; rerank?: string };
     /** false means the retriever was given the raw follow-up, not a rewrite. */

@@ -20,6 +20,7 @@ import { cleanText } from '../../supabase/functions/_shared/text.ts';
 import { ticketCodeNotes, ticketSearchTerms } from '../../supabase/functions/_shared/tickets.ts';
 import { digitsFromWords, restoreCodes } from '../../supabase/functions/_shared/numbers.ts';
 import { takeInTurn, uniqueRelatives } from '../../supabase/functions/_shared/vaults.ts';
+import { passagesUsed, splitUsedPassages } from '../../supabase/functions/_shared/used-passages.ts';
 import { toSpeech } from '../../src/lib/speech-text.ts';
 import { acceptedCurrencies, hmacSha256Hex, paymentSignatureOk, plusOrderAmount, plusOrderDescription, sameText, webhookSignatureOk, ORDER_ID, PAYMENT_ID } from '../../supabase/functions/_shared/razorpay.ts';
 import { createHmac } from 'node:crypto';
@@ -257,6 +258,31 @@ await test('numbers stay in digits on the screen, and are read out digit by digi
   for (const plain of ['Seat number 17, coach B4, upper berth.', 'The fee is ₹18500.', 'It expires in 2027.', 'There is no 2027 renewal.']) {
     assert.equal(toSpeech(plain), plain, plain);
   }
+});
+
+await test('sources: only the passages the answer says it used', () => {
+  // The answer ends with "USED: …"; the line is taken off and the chips come from it.
+  const hotel = splitUsedPassages('आप होटल Luxe 8 Stayz में ठहरेंगे। बुकिंग आईडी NH90000000000000 है।\nUSED: 1');
+  assert.equal(hotel.answer, 'आप होटल Luxe 8 Stayz में ठहरेंगे। बुकिंग आईडी NH90000000000000 है।');
+  assert.deepEqual(hotel.used, [1]);
+  assert.deepEqual(passagesUsed(['booking', 'bank statement'], hotel.used), ['booking'], 'the bank statement is not a source');
+  // However the model writes it: same line, bold, "and", other scripts' digits, "none".
+  assert.deepEqual(splitUsedPassages('Your hotel is Luxe 8 Stayz. USED: 2, 3'), { answer: 'Your hotel is Luxe 8 Stayz.', used: [2, 3] });
+  assert.deepEqual(splitUsedPassages('Answer.\n**USED:** 1 and 3.').used, [1, 3]);
+  assert.deepEqual(splitUsedPassages('Answer.\nUsed passages: 2').used, [2]);
+  assert.deepEqual(splitUsedPassages('उत्तर।\nUSED: १ और ३'), { answer: 'उत्तर।', used: [1, 3] });
+  assert.deepEqual(splitUsedPassages("I couldn't find that.\nUSED: none"), { answer: "I couldn't find that.", used: [] });
+  assert.deepEqual(splitUsedPassages('Answer.\nUSED: 1\nNote: dates are in IST.'), { answer: 'Answer.\n\nNote: dates are in IST.', used: [1] });
+  // No line: every passage sent stays a source, as before. Words are not the line.
+  for (const plain of ['Just an answer.', 'This is the policy you used: the Harrier one.', 'Here is what I used:',
+    'Used: 2019 Honda City, 40,000 km']) {
+    assert.deepEqual(splitUsedPassages(plain), { answer: plain, used: null }, plain);
+  }
+  assert.deepEqual(passagesUsed(['a', 'b'], null), ['a', 'b']);
+  assert.deepEqual(passagesUsed(['a', 'b'], []), [], 'none: no chips');
+  assert.deepEqual(passagesUsed(['a', 'b', 'c'], [3, 1]), ['c', 'a']);
+  assert.deepEqual(passagesUsed(['a', 'b'], [9]), ['a', 'b'], 'numbers that point nowhere say nothing');
+  assert.deepEqual(passagesUsed(['a', 'b'], [2, 9]), ['b']);
 });
 
 await test('cleanText makes extracted text storable', () => {
@@ -765,4 +791,4 @@ if (failures.length) {
   console.error(`\n${failures.length} self-test(s) failed, ${passed} passed.`);
   process.exit(1);
 }
-console.log(`✓ ${passed} self-tests passed — matchers, judge, run-time PDF, metadata, ticket codes, text cleaning, Gmail rules and token sealing, kinship and the family tree, emergency card checks, web push, plan limits, Razorpay signatures, numbers in digits, questions and budget.`);
+console.log(`✓ ${passed} self-tests passed — matchers, judge, run-time PDF, metadata, ticket codes, text cleaning, Gmail rules and token sealing, kinship and the family tree, emergency card checks, web push, plan limits, Razorpay signatures, numbers in digits, sources the answer used, questions and budget.`);

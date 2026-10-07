@@ -639,6 +639,9 @@ export default function SearchScreen() {
                             {msg.debug.condensed ? '' : ' (not rewritten)'}
                             {'\n'}
                             {msg.debug.kept_count ?? msg.debug.kept_docs.length} of {msg.debug.candidate_count} passages kept ({msg.debug.kept_docs.length} {msg.debug.kept_docs.length === 1 ? 'doc' : 'docs'}) · {msg.debug.pinned_docs.length} pinned
+                            {Array.isArray(msg.debug.used_docs) && msg.debug.used_docs.length < msg.debug.kept_docs.length
+                              ? ` · answer used ${msg.debug.used_docs.length} ${msg.debug.used_docs.length === 1 ? 'doc' : 'docs'}`
+                              : ''}
                             {msg.debug.models?.answer ? ` · ${shortModel(msg.debug.models.answer)}` : ''}
                             {msg.debug.history_turns > 0 && !msg.debug.client_sent_sources ? ' · old client' : ''}
                             {msg.debug.index_rebuilding ? ' · index rebuilding — run Settings › Search' : ''}

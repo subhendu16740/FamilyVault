@@ -1432,6 +1432,18 @@ so storage policies live only in `019`.
   RAC and waitlist too). And when a vault has too few documents to fill
   the judge's 15 places, the same documents fill them past the per-document
   cap, so a family's only ticket is read whole.
+  **Sources are what the answer used.** The answer model sees the passages
+  numbered (`[Passage 1 | Document: …]`) and ends with one line, `USED: 1, 3`
+  or `USED: none`, which `splitUsedPassages()` (`_shared/used-passages.ts`,
+  pure, pinned by the self-test) takes off before the answer is shown or
+  read aloud; the source chips are the documents of those passages
+  (`passagesUsed()`). Before, they were every document sent to the model —
+  and when the judge rejects every passage, its fallback sends them all: a
+  question about a Delhi hotel answered from the booking also listed a bank
+  statement. No line, or numbers that point nowhere, and every passage sent
+  is a source, as before; `none` shows no chips. `debug.used_docs` says what
+  was used, and the line under an answer shows "answer used 1 doc" when that
+  is fewer than were kept.
   **Groq models are resolved at runtime** by `_shared/groq.ts`: each role
   (answer, condense, rerank) has a preference list, a secret of the role's name
   (`GROQ_MODEL`, `GROQ_CONDENSE_MODEL`, `GROQ_RERANK_MODEL`) always goes first,
