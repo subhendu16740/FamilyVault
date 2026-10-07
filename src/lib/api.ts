@@ -1169,11 +1169,6 @@ export async function updateProfile(userId: string, profile: Profile): Promise<{
   return { familySees: true };
 }
 
-export async function changePassword(newPassword: string): Promise<void> {
-  const { error } = await supabase.auth.updateUser({ password: newPassword });
-  if (error) throw error;
-}
-
 /**
  * Ends every session this account has, on every device, this one included —
  * and their notifications with them (034): a lost phone must not go on

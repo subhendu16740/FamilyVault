@@ -170,7 +170,7 @@ export default function FamilyScreen() {
           setAddError(`${address} has been invited already. They join once they accept.`);
           break;
         case 'no_account':
-          setAddError(`No AskLocker account uses ${address} yet. Ask them to sign up with this email, then add them again.`);
+          setAddError(`No AskLocker account uses ${address} yet. Ask them to sign in to AskLocker once with Google, using this email, then add them again.`);
           break;
         case 'invalid_email':
           setAddError("That doesn't look like an email address.");

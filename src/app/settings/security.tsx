@@ -1,5 +1,5 @@
-// Settings › Security — how you sign in, your password, signing out of
-// every device at once, and deleting your account.
+// Settings › Security — how you sign in (Google, the only way in), signing
+// out of every device at once, and deleting your account.
 
 import { useState } from 'react';
 import { ScrollView, View, Text, StyleSheet } from 'react-native';
@@ -7,11 +7,11 @@ import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../lib/auth';
-import { changePassword, signOutEverywhere } from '../../lib/api';
+import { signOutEverywhere } from '../../lib/api';
 import { longDate } from '../../lib/dates';
 import { ScreenHeader } from '../../components/screen-header';
 import {
-  Card, CardTitle, Body, Muted, Field, PrimaryButton, SecondaryButton, DangerButton, Status, screenStyles,
+  Card, CardTitle, Body, Muted, SecondaryButton, DangerButton, Status, screenStyles,
 } from '../../components/settings-ui';
 import { space, type } from '../../constants/design';
 
@@ -22,33 +22,13 @@ export default function SecurityScreen() {
   const providers: string[] = Array.isArray(user?.app_metadata?.providers)
     ? user!.app_metadata.providers
     : user?.app_metadata?.provider ? [user.app_metadata.provider] : [];
-  const hasPassword = providers.includes('email');
+  // An account made with email and password before sign-in became Google only.
+  const noGoogle = providers.length > 0 && !providers.includes('google');
   const lastSignIn = user?.last_sign_in_at ? new Date(user.last_sign_in_at) : null;
 
-  const [password, setPassword] = useState('');
-  const [again, setAgain] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [status, setStatus] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
   const [confirmAll, setConfirmAll] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
-
-  const change = async () => {
-    if (password.length < 8) { setStatus({ kind: 'error', text: 'Use at least 8 characters.' }); return; }
-    if (password !== again) { setStatus({ kind: 'error', text: 'The two passwords are not the same.' }); return; }
-    setSaving(true);
-    setStatus(null);
-    try {
-      await changePassword(password);
-      setPassword('');
-      setAgain('');
-      setStatus({ kind: 'ok', text: hasPassword ? 'Your password has been changed.' : 'Your password is set. You can now also sign in with your email.' });
-    } catch (err: any) {
-      setStatus({ kind: 'error', text: err?.message || 'Could not change the password. Please try again.' });
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const signOutAll = async () => {
     setSigningOut(true);
@@ -81,28 +61,12 @@ export default function SecurityScreen() {
               Last signed in {longDate(lastSignIn)} at {lastSignIn.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </Muted>
           )}
-        </Card>
-
-        <Card>
-          <CardTitle icon="key">{hasPassword ? 'Change your password' : 'Set a password'}</CardTitle>
-          {!hasPassword && <Body>You sign in with Google. A password lets you also sign in with your email address.</Body>}
-          <Field
-            label="New password"
-            value={password}
-            onChangeText={(t) => { setPassword(t); setStatus(null); }}
-            secureTextEntry
-            autoComplete="new-password"
-            hint="At least 8 characters."
-          />
-          <Field
-            label="Type it again"
-            value={again}
-            onChangeText={(t) => { setAgain(t); setStatus(null); }}
-            secureTextEntry
-            autoComplete="new-password"
-          />
-          {status && <Status kind={status.kind}>{status.text}</Status>}
-          <PrimaryButton label={hasPassword ? 'Change password' : 'Set password'} onPress={change} busy={saving} />
+          {noGoogle && (
+            <Body>
+              AskLocker now signs in with Google only. Next time, choose Continue with Google and pick the Google
+              account for {user?.email}: it opens this same account, with everything in it.
+            </Body>
+          )}
         </Card>
 
         <Card>

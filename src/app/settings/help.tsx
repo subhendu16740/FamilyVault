@@ -38,6 +38,10 @@ function faq(payments: PaymentsStatus | null): { q: string; a: string }[] {
       a: `Yes. Turn on the Voice assistant in Settings, under Accessibility. Then tap the microphone on Search and say your question, and the answer is read out loud. Said something by mistake? Tap Cancel while it is still listening, and nothing is asked. On the free plan, each person has ${DEFAULT_PLAN_LIMITS.voiceAnswers.free} free voice chats of their own — a question asked by voice or an answer read aloud, one per question — and Search shows how many you have left. After that you type, and the answer is on the screen; ★ Family Plus has no limit. Settings › Accessibility › Voice chooses who reads the answers, from the voices on your phone or computer.`,
     },
     {
+      q: 'How do I sign in?',
+      a: 'With your Google account: open AskLocker and choose Continue with Google. The first time, that makes your AskLocker account; after that it opens the same account on any phone or computer. There is no AskLocker password to remember.',
+    },
+    {
       q: 'Who can see my documents?',
       a: 'Only the people in your family — and anyone you send a share link to, for that one document, until the link stops working. An admin invites each person by the email they sign in with, and they join only if they accept; nobody can join by themselves. Settings › Privacy has more.',
     },
@@ -47,7 +51,7 @@ function faq(payments: PaymentsStatus | null): { q: string; a: string }[] {
     },
     {
       q: 'How do I add someone to my family?',
-      a: `If you are an admin, open Manage Family and choose Add, then type the email they use for AskLocker. They need to have signed up first. They get an invitation and join once they accept — until then they show in Manage Family as Pending approval, and you can withdraw it. A family can have up to ${DEFAULT_PLAN_LIMITS.members.free} members, and invitations waiting for an answer count too. Anyone can be in the family tree without an account.`,
+      a: `If you are an admin, open Manage Family and choose Add, then type the email of the Google account they sign in with. They need to have signed in to AskLocker once first. They get an invitation and join once they accept — until then they show in Manage Family as Pending approval, and you can withdraw it. A family can have up to ${DEFAULT_PLAN_LIMITS.members.free} members, and invitations waiting for an answer count too. Anyone can be in the family tree without an account.`,
     },
     {
       q: 'Someone invited me to their family. What do I do?',
@@ -58,8 +62,8 @@ function faq(payments: PaymentsStatus | null): { q: string; a: string }[] {
       a: 'Everyone in your family, with or without an account — a grandmother who will never sign in included. Admins add people and say how they are related; everyone in the family sees the tree, with how each person is related to you (mother, aunt, cousin…) and any nickname the family gave them, like "Pinky". A green phone on someone\'s picture means they are on AskLocker with their own account; nobody else needs one. You can change your own name, nickname and date of birth. Mark a document as someone\'s and you can ask about it by relation or nickname, like "Nani\'s pension papers" or "Pinky\'s passport".',
     },
     {
-      q: 'Someone in our tree has just signed up. How do I connect them?',
-      a: 'If you are an admin, open them in the family tree and choose Link to their AskLocker account, then type the email they sign in with. They get an invitation, and once they accept they join the family as a viewer and keep their place in the tree, their documents and their emergency card. If you already added them in Manage Family and they now appear twice, linking makes the two one.',
+      q: 'Someone in our tree has just joined AskLocker. How do I connect them?',
+      a: 'If you are an admin, open them in the family tree and choose Link to their AskLocker account, then type the email of the Google account they sign in with. They get an invitation, and once they accept they join the family as a viewer and keep their place in the tree, their documents and their emergency card. If you already added them in Manage Family and they now appear twice, linking makes the two one.',
     },
     {
       q: 'What is an emergency card?',

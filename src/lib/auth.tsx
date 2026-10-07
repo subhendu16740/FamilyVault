@@ -19,8 +19,7 @@ interface AuthState {
   session: Session | null;
   user: User | null;
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<{ error: string | null }>;
-  signUp: (email: string, password: string, displayName: string) => Promise<{ error: string | null }>;
+  /** Google is the only way in, and the first sign-in makes the account. This is the redirect sign-in. */
   signInWithGoogle: () => Promise<{ error: string | null }>;
   /** Google's own button on the web (google-button.web.ts): the ID token it gave, and the one-time value it carries. */
   signInWithGoogleToken: (token: string, nonce: string) => Promise<{ error: string | null }>;
@@ -31,8 +30,6 @@ const AuthContext = createContext<AuthState>({
   session: null,
   user: null,
   loading: true,
-  signIn: async () => ({ error: null }),
-  signUp: async () => ({ error: null }),
   signInWithGoogle: async () => ({ error: null }),
   signInWithGoogleToken: async () => ({ error: null }),
   signOut: async () => {},
@@ -54,20 +51,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => subscription.unsubscribe();
   }, []);
-
-  const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    return { error: error?.message ?? null };
-  };
-
-  const signUp = async (email: string, password: string, displayName: string) => {
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { display_name: displayName } },
-    });
-    return { error: error?.message ?? null };
-  };
 
   const signInWithGoogle = async () => {
     try {
@@ -143,8 +126,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         session,
         user: session?.user ?? null,
         loading,
-        signIn,
-        signUp,
         signInWithGoogle,
         signInWithGoogleToken,
         signOut,

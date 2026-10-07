@@ -339,7 +339,7 @@ Copy `.env.example` to `.env`. Every variable is documented there.
 - `EXPO_PUBLIC_SUPABASE_ANON_KEY`
 
 and, optional, by `src/lib/google-button.web.ts` — Google's own sign-in
-button (see [Google sign-in](#google-sign-in--googles-own-button-where-it-is-set-up)):
+button (see [Signing in](#signing-in--google-only-with-googles-own-button-where-it-is-set-up)):
 
 - `EXPO_PUBLIC_GOOGLE_CLIENT_ID` — the sign-in OAuth client's id (public, like
   the anon key; the same client the Supabase Google provider uses)
@@ -411,8 +411,30 @@ because the bundle was built against a different project URL.
 via `supabase functions deploy <name>`. A preview pointed at DEV runs DEV's
 copies, so DEV needs its own secrets and its own `documents` storage bucket.
 
-### Google sign-in — Google's own button, where it is set up
+### Signing in — Google only, with Google's own button where it is set up
 
+- **Google is the only way in** (since 7 October 2026). The login screen is
+  one button: signing in with Google the first time makes the account, so
+  there is no sign-up form, no password and no email to confirm. The app
+  has no password sign-in or sign-up (`auth.tsx`), and Settings › Security
+  sets no password.
+- **An account made earlier with email and password opens with Google, same
+  email.** Supabase links a new Google identity to the existing account with
+  the same verified email (automatic identity linking), so its families and
+  documents stay. Security tells such an account so while it is still signed
+  in. An address that is not a Google account can become one (Google lets
+  anyone make an account with their own email), or the account is deleted
+  by hand (see [Deleting your account](#deleting-your-account--at-once-nothing-kept-029-030)).
+- **Keep the Email provider on in DEV.** QA signs its test accounts in with
+  passwords through the API (`qa/lib/supabase.mjs`), never through the login
+  screen. On PROD nothing uses it: switching it off (Authentication › Sign In
+  / Providers › Email) stops anyone making a password account through the
+  API — once Authentication › Users shows nobody who signs in with one.
+- **There is always a way in.** A spinner holds the place of Google's button
+  until Google draws it; if Google's script cannot be loaded — blocked,
+  unreachable, or not there after 10 seconds — the login falls back to the
+  redirect sign-in (`drawFailed` in `google-sign-in.tsx`). That button is a
+  plain "Continue with Google" with Google's G (`assets/images/google-g.png`).
 - **The redirect sign-in names Supabase, not AskLocker.**
   `signInWithOAuth` sends the person through
   `<project>.supabase.co/auth/v1/callback`, so Google's account chooser
@@ -501,7 +523,7 @@ src/
     _layout.tsx              # root Stack + AuthGate
     index.tsx                # redirect -> /onboarding or /home
     onboarding.tsx           # 3-slide intro
-    login.tsx                # email/password + Google (google-sign-in.tsx: Google's own button on the web where set up)
+    login.tsx                # Google only; the first sign-in makes the account (google-sign-in.tsx: Google's own button on the web where set up)
     setup-family.tsx         # first-time vault creation
     notifications.tsx        # expiry alerts, uploads, invites, Family Plus
     family.tsx               # Manage Family: members, invitations (Pending approval), leaving, every vault, Create a family; the personal vault's own page (046)    (NOT a tab)
@@ -556,11 +578,11 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | File | Role |
 |---|---|
 | `supabase.ts` | Client init. AsyncStorage for session persistence on native only. |
-| `auth.tsx` | `AuthProvider`: session, signIn, signUp, signInWithGoogle (the redirect), signInWithGoogleToken (Google's own button's ID token), signOut |
+| `auth.tsx` | `AuthProvider`: session, signInWithGoogle (the redirect), signInWithGoogleToken (Google's own button's ID token), signOut. Google is the only way in: no password sign-in or sign-up |
 | `family-context.tsx` | `FamilyProvider`: currentFamily, members, membership, needsFamily; `families` is every vault, the personal one included, which it makes the first time it sees an account without one (`ensurePersonalVault()`, 046) |
 | `vaults.ts` | Personal vault or family (046): `vaultName()` ("Personal vault" everywhere), `splitVaults()`, `vaultSubtitle()` |
 | `drawer-context.tsx` | Profile drawer open/close state |
-| `api.ts` | **All** Supabase queries — documents, search, upload, RAG, notifications, adding and leaving families, invitations, Gmail import, saved chats, share links, deleting your account, plans and storage limits (`fetchStorageStatus`, `fetchPlanLimits`; `uploadDocument` throws `StorageFullError` before a file that does not fit is sent, and `saveChat` `ChatStorageFullError` for a chat, 042), voice chats (`claimVoiceAnswer`, 041; `fetchVoiceStatus`, how many are left, 042), paying for Family Plus (`fetchPaymentsStatus`, whether this project takes payments, asked once a session; `createPlusOrder`, `verifyPlusPayment`, 044), personal vaults and Ask across vaults (`ensurePersonalVault`; `ragSearch`'s `vaults` option, 046), and the Settings screens (profile, password, storage use, expiry dates, feedback) |
+| `api.ts` | **All** Supabase queries — documents, search, upload, RAG, notifications, adding and leaving families, invitations, Gmail import, saved chats, share links, deleting your account, plans and storage limits (`fetchStorageStatus`, `fetchPlanLimits`; `uploadDocument` throws `StorageFullError` before a file that does not fit is sent, and `saveChat` `ChatStorageFullError` for a chat, 042), voice chats (`claimVoiceAnswer`, 041; `fetchVoiceStatus`, how many are left, 042), paying for Family Plus (`fetchPaymentsStatus`, whether this project takes payments, asked once a session; `createPlusOrder`, `verifyPlusPayment`, 044), personal vaults and Ask across vaults (`ensurePersonalVault`; `ragSearch`'s `vaults` option, 046), and the Settings screens (profile, storage use, expiry dates, feedback) |
 | `dates.ts` | `parseDocumentDate()`: expiry dates exactly as ingest stores them (DD/MM/YYYY and kin, YYYY-MM-DD, "19 October 2026") |
 | `emergency.ts` | The emergency card's shape, blood groups (`bloodGroupLabel()`: "A−", "Bombay (hh)"), `telHref()`, and `cardProblem()` — the same checks and messages as `save_emergency_card()`, so the form can say what is wrong before saving |
 | `family-people.ts` | Whose a document can be: everyone in the tree, you first (`useDocumentOwners()`, members only before 031), and a person's expiry badge (`badgeFromExpiries()`) |
@@ -571,7 +593,7 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `ocr.ts` | Platform-split OCR with progress callback; reads the person's chosen languages |
 | `ocr-languages.ts` | The document-language picker list, and `resolveOcrLanguages()` which always appends English |
 | `razorpay.ts` / `razorpay.web.ts` | Paying for Family Plus (044): on the web, Razorpay's own checkout window (`openCheckout`; checkout.js is loaded the first time someone pays, and card and UPI details go to Razorpay, never to us); the phone app's file is a stand-in until EAS builds exist. Types in `razorpay-types.ts` |
-| `google-button.ts` / `google-button.web.ts` | Google's own sign-in button on the web (Google Identity Services): `googleButtonAvailable()` (a client id is set and this origin is in `EXPO_PUBLIC_GOOGLE_WEB_ORIGINS`), `renderGoogleButton()` (loads Google's script once, a fresh nonce each time). The phone app's file says no, so it keeps the redirect sign-in. Types in `google-button-types.ts`; see [Google sign-in](#google-sign-in--googles-own-button-where-it-is-set-up) |
+| `google-button.ts` / `google-button.web.ts` | Google's own sign-in button on the web (Google Identity Services): `googleButtonAvailable()` (a client id is set and this origin is in `EXPO_PUBLIC_GOOGLE_WEB_ORIGINS`), `renderGoogleButton()` (loads Google's script once, a fresh nonce each time). The phone app's file says no, so it keeps the redirect sign-in. Types in `google-button-types.ts`; see [Signing in](#signing-in--google-only-with-googles-own-button-where-it-is-set-up) |
 | `push.ts` / `push.web.ts` | Notifications on this device (034): on the web, Web Push through `public/sw.js` (`loadPushStatus`, `turnOnPush`, `turnOffPush`, `sendTestPush`, and `forgetPushOnThisDevice` on sign-out); the phone app's file is a stand-in until EAS builds exist. Types in `push-types.ts` |
 | `preferences.tsx` | `PreferencesProvider`: voice toggle + language, document languages. Cached locally, stored on `public.users`; reads and writes fall back to the older column set so an unapplied migration degrades one setting rather than all of them |
 | `speech.ts` | Voice: `listen`/`stopListening` (platform-split recogniser) and `speak`/`stopSpeaking` (expo-speech), in the voice chosen for the language on this device (`voicesFor`, `chooseVoice`: Settings › Accessibility › Voice, kept per language in `storage.ts`, not per account), or the best match |
@@ -864,7 +886,7 @@ so storage policies live only in `019`.
   confirmed, not deleted, not anonymous — and writes a `family_invites` row,
   an `invite` notification (on their devices too, 034) and an audit row, in
   one transaction. No such account → the admin is told to ask them to sign
-  up, and nothing is created.
+  in to AskLocker once with Google, using that email, and nothing is created.
 - **Answering:** the person sees which family asked and who
   (`get_my_invitations()`), on Home and in Manage Family
   (`invitation-cards.tsx`), and nothing of its documents. Accept
@@ -1534,7 +1556,7 @@ so storage policies live only in `019`.
   `RAZORPAY_WEBHOOK_SECRET`; 500 on a passing fault, which Razorpay retries.
 - **`delete-account`** — a person deletes their own account: `preview`
   lists what would go, `delete` with `confirm: 'DELETE'` does it; see
-  [Deleting your account](#deleting-your-account--at-once-nothing-kept-029).
+  [Deleting your account](#deleting-your-account--at-once-nothing-kept-029-030).
   503 `needs_migration` where 029 is not applied.
 - **`gmail-connect`**, **`gmail-callback`**, **`gmail-scan`**,
   **`gmail-import`** — Gmail import; see [below](#gmail-import--your-own-mailbox-your-tick-026).
