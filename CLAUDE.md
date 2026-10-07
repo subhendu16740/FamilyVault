@@ -413,10 +413,12 @@ copies, so DEV needs its own secrets and its own `documents` storage bucket.
 
 ### Signing in — Google only, with Google's own button where it is set up
 
-- **Google is the only way in** (since 7 October 2026). The login screen is
-  one button: signing in with Google the first time makes the account, so
-  there is no sign-up form, no password and no email to confirm, and
-  Settings › Security sets no password.
+- **Google is the way in** (since 7 October 2026). The login screen is one
+  button: signing in with Google the first time makes the account, so there
+  is no sign-up form, no password and no email to confirm, and Settings ›
+  Security sets no password. After that, on a device where it is turned on,
+  a fingerprint signs the person in instead (see
+  [Fingerprint sign-in](#fingerprint-sign-in--a-passkey-after-google-once)).
 - **Test builds also take an email and password.** Wherever `isProduction`
   is false — DEV, previews, an unknown project, the same builds that show
   the badge — the login screen has a "Test builds only" form under Google
@@ -489,57 +491,85 @@ copies, so DEV needs its own secrets and its own `documents` storage bucket.
   verification, free — a public home page and privacy policy on a domain
   verified in Search Console, both linked from the OAuth consent screen.
 
-### Fingerprint or face lock — on this device, after Google
+### Fingerprint sign-in — a passkey, after Google once
 
-- **Sign in with Google once; after that a fingerprint or face opens
-  AskLocker** (since 7 October 2026). Settings › Security › Fingerprint or
-  face lock, per device and per account, off until turned on. Once on,
-  AskLocker locks when it is opened already signed in, and when it comes
-  back after 5 minutes out of sight (`LOCK_AFTER_MS`, `src/lib/app-lock.tsx`).
-  The lock screen (`src/components/app-lock-screen.tsx`, a Modal over
-  everything) tries the check once by itself and keeps a big Unlock button,
-  because older iPhones start the check only from a tap.
-- **The device checks the person; nothing is sent anywhere.** On the web it
-  is WebAuthn with the device's own authenticator (`app-lock-device.web.ts`)
-  — Android's fingerprint or face, Face ID or Touch ID, Windows Hello — with
-  user verification required, so the device may take its own PIN instead,
-  as phones do. Turning it on makes a key on the device (its user handle is
-  the account id, so off and on again replaces the key rather than piling
-  them up; the device may list it as a passkey); the page keeps only the
-  key's id, in `accountKey.appLock`, which `forgetAccount()` clears.
-  Unlocking has the device sign a random challenge with that key and checks
-  the user-verified flag in its answer. Offered only where
-  `isUserVerifyingPlatformAuthenticatorAvailable()` says yes.
+- **Sign in with Google once; after that a fingerprint or face signs you in**
+  (since 7 October 2026) — no Google, no password. Settings › Security ›
+  Fingerprint sign-in, or Home's offer (`lock-offer.tsx`), per device and per
+  account, off until turned on. It is a **Supabase Auth passkey**
+  (`registerPasskey()` / `signInWithPasskey()`, `src/lib/app-lock.tsx`): the
+  device keeps the private half and checks the person — fingerprint, face or
+  its own PIN — and Supabase keeps the public half and checks the device's
+  signature before it hands out a session. Nothing about a finger or a face
+  leaves the device. Passkeys need supabase-js 2.105 or later (2.117 here,
+  where they are on by default).
+- **Once on, on that device:** the login screen shows "Sign in with
+  fingerprint" above Google (`fingerprint-sign-in.tsx`; shown while
+  `deviceKey.passkeysHere` lists anyone who turned it on there), and
+  AskLocker locks when it is opened already signed in and when it comes back
+  after 5 minutes out of sight (`LOCK_AFTER_MS`). The lock screen
+  (`app-lock-screen.tsx`, a Modal over everything, with the rest of the page
+  inert) unlocks with the same passkey sign-in — so unlocking needs the
+  internet, like the rest of AskLocker; it tries once by itself and keeps a
+  big Unlock button, because older iPhones start the check only from a tap. `accountKey.appLock` holds the passkey's id, and `forgetAccount()`
+  clears both keys.
+- **A synced passkey is one passkey on several devices.** Google Password
+  Manager and iCloud Keychain carry a passkey to the person's other phones
+  and computers. Turning it on where one already is makes no second one
+  (the browser refuses, `ERROR_AUTHENTICATOR_PREVIOUSLY_REGISTERED`): that
+  device uses the one it has, and its entry says so (`passkeyId: null`).
+  Turning it off deletes the passkey at Supabase (`auth.passkey.delete`)
+  only on the device that made it — which ends it on the others too — and
+  elsewhere only stops it there.
+- **It checks itself** (`entryStillWorks()`, `auth.passkey.list`), once each
+  time the entry is read and each time it locks: the passkey deleted
+  (turned off on the device that made it) or the project's passkeys switched
+  off, and it is off here too and unlocks, since nothing could open that
+  lock; a check that cannot be made (offline) keeps the lock. Still working,
+  and the device lists the account again, so a failed sign-in that stopped
+  the button (below) is undone at the next sign-in.
+- **Each project must have passkeys switched on** — Supabase › Authentication
+  › Passkeys: Enable, Relying Party display name `AskLocker`, RP ID and
+  origins. PROD: RP ID `asklocker.com`, origins `https://asklocker.com,
+  https://www.asklocker.com`. DEV: RP ID and origin the dev branch's own
+  address, `family-vault-git-dev-subhendu16740.vercel.app` (a preview's fresh
+  address cannot be listed, so previews have Google and the test form only).
+  Changing an RP ID later makes every passkey on it useless. Where passkeys
+  are off, turning it on says "not switched on for AskLocker yet"
+  (`passkey_disabled`); on an address that is not an origin, "not set up for
+  this address". **Switch them on in PROD before the release that carries
+  this**, as a migration goes before its function.
 - **Never simply missing.** On the web, Settings › Security always shows the
   card: the switch where the device can check a person, otherwise why not
   and what to do (`lockSupport()` → `lockUnavailableText()`): `no-webauthn`,
   usually a page open inside another app (WhatsApp, Gmail…) instead of
   Chrome or Safari; `no-device-check`, no screen lock, fingerprint, Windows
-  Hello or Touch ID; `insecure`, not https. The browser's console says the
-  same once (`[Fingerprint lock] …`). Home offers it once after signing in,
-  on a device that can (`lock-offer.tsx`: Turn on / Not now, "Not now" kept
-  per account on the device in `accountKey.lockOffer`). Its first version
-  hid the card where the device could not, and the lock looked absent.
-- **It locks the screen, not the data.** It keeps out someone who picks up
-  an unlocked phone or a computer left open. The sign-in itself stays in
-  the browser's storage, so developer tools get past it; nothing on the
-  server knows about it, and no access rule depends on it.
-- **Google stays the way in.** "Use Google instead" on the lock screen signs
-  out; signing in again with Google opens AskLocker without the lock for
-  that visit, and the lock stays on for next time. So a lost key — a new
-  phone, a reset fingerprint, a deleted passkey — never shuts anyone out,
-  and the lock is never easier to get past than signing in with Google. A
-  sign-in in the page never locks; the redirect sign-in comes back as a new
-  page load, so `noteSignInStarted()` marks it in sessionStorage before
-  leaving and `takeFreshSignIn()` reads it on return (15 minutes at most).
+  Hello or Touch ID; `insecure`, not https. The browser's console says it
+  once (`[Fingerprint sign-in] …`). Errors are said in words
+  (`passkeyErrorText()`): cancelled, took too long, turned off elsewhere —
+  a sign-in with a passkey Supabase no longer has, or with passkeys switched
+  off, stops the login screen offering the button; whose passkey it was is
+  not known there, so it stops for every account on the device until each
+  signs in again.
+- **The lock guards the screen; the passkey guards the account.** A
+  signed-in session stays in the browser's storage, so developer tools get
+  past the lock; signing in, though, needs the passkey's signature, which
+  Supabase checks. Google stays a way in: "Use Google instead" on the lock
+  screen signs out, and any fresh sign-in opens AskLocker without the lock
+  for that visit (the redirect sign-in comes back as a new page load, so
+  `noteSignInStarted()` marks it in sessionStorage and `takeFreshSignIn()`
+  reads it, 15 minutes at most).
+- **Its first version (subhendu16740/FamilyVault#68, #69) was a lock only**,
+  with a key kept on the device and nothing at Supabase: it unlocked a
+  signed-in AskLocker but could not sign anyone in, so after signing out it
+  was Google again. Such an entry (`{ id }` in `accountKey.appLock`) is
+  dropped when read, and its key let go (`forgetLockKey()`).
 - **A shared document (`/s`) is never behind the lock.**
 - **The phone app's `app-lock-device.ts` is a stand-in** until EAS builds
-  exist; it will use `expo-local-authentication` (free; Face ID cannot be
-  tried in Expo Go). Settings does not offer the lock there meanwhile.
-- **Passkeys as a way to sign in** (Supabase Auth, beta since May 2026) were
-  weighed and not taken: experimental, a newer supabase-js (2.105+), one
-  domain per project (so no previews), extra files for the phone app, and a
-  second way in beside Google.
+  exist: it needs Supabase's two-step passkey API with a native passkey
+  library (and Associated Domains / Digital Asset Links files), and
+  `expo-local-authentication` for the lock. Settings does not offer it there
+  meanwhile.
 
 ### Native (not yet set up)
 
@@ -581,7 +611,7 @@ src/
     _layout.tsx              # root Stack + AuthGate
     index.tsx                # redirect -> /onboarding or /home
     onboarding.tsx           # 3-slide intro
-    login.tsx                # Google only; the first sign-in makes the account (google-sign-in.tsx: Google's own button on the web where set up); test builds add email and password (password-sign-in.tsx)
+    login.tsx                # Google; the first sign-in makes the account (google-sign-in.tsx: Google's own button on the web where set up); "Sign in with fingerprint" first where turned on (fingerprint-sign-in.tsx); test builds add email and password (password-sign-in.tsx)
     setup-family.tsx         # first-time vault creation
     notifications.tsx        # expiry alerts, uploads, invites, Family Plus
     family.tsx               # Manage Family: members, invitations (Pending approval), leaving, every vault, Create a family; the personal vault's own page (046)    (NOT a tab)
@@ -606,7 +636,7 @@ src/
     (tabs)/
       _layout.tsx            # custom tab bar (CustomTabBar): full width; the round Ask button (size.ask) sits on its bottom edge and rises above it
       home.tsx  search.tsx  upload.tsx
-  components/                # shared UI, incl. ProfileDrawer, ShareSheet (036), InvitationCards (037), the vault dropdown and sheet (vault-sheet.tsx, 046), GoogleSignIn, PasswordSignIn (test builds) and AppLockScreen
+  components/                # shared UI, incl. ProfileDrawer, ShareSheet (036), InvitationCards (037), the vault dropdown and sheet (vault-sheet.tsx, 046), GoogleSignIn, FingerprintSignIn, PasswordSignIn (test builds), AppLockScreen and LockOffer
   constants/design.ts        # the one type/size/spacing scale every screen uses
   constants/theme.ts         # create-expo-app scaffold, largely unused
   hooks/                     # use-color-scheme, use-theme
@@ -637,7 +667,7 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 |---|---|
 | `supabase.ts` | Client init. AsyncStorage for session persistence on native only. |
 | `auth.tsx` | `AuthProvider`: session, signInWithGoogle (the redirect), signInWithGoogleToken (Google's own button's ID token), signOut. Google is the only way in; `signInWithPassword` / `signUpWithPassword` serve only the test builds' form |
-| `app-lock.tsx` | The fingerprint or face lock (`AppLockProvider`, `useAppLock()`): whether this device can check a person, whether the lock is on for this account, when it locks (opened signed in; back after `LOCK_AFTER_MS`), turning it on and off. The device check is `app-lock-device.ts` / `app-lock-device.web.ts`; the screen, `components/app-lock-screen.tsx`. See [Fingerprint or face lock](#fingerprint-or-face-lock--on-this-device-after-google) |
+| `app-lock.tsx` | Fingerprint sign-in (`AppLockProvider`, `useAppLock()`): a Supabase passkey — turning it on and off (`registerPasskey`, `passkey.delete`), signing in with it (`signIn`, the login screen's button), the lock (opened signed in; back after `LOCK_AFTER_MS`) and unlocking with it, checking the passkey is still there (`entryStillWorks()`), and errors in words (`passkeyErrorText()`). What the device can do is `app-lock-device.ts` / `app-lock-device.web.ts`; the screen, `components/app-lock-screen.tsx`. See [Fingerprint sign-in](#fingerprint-sign-in--a-passkey-after-google-once) |
 | `family-context.tsx` | `FamilyProvider`: currentFamily, members, membership, needsFamily; `families` is every vault, the personal one included, which it makes the first time it sees an account without one (`ensurePersonalVault()`, 046) |
 | `vaults.ts` | Personal vault or family (046): `vaultName()` ("Personal vault" everywhere), `splitVaults()`, `vaultSubtitle()` |
 | `drawer-context.tsx` | Profile drawer open/close state |

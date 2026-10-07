@@ -1,8 +1,8 @@
-// Home's offer of the fingerprint or face lock (app-lock.tsx), so nobody has
-// to find it in Settings: shown on a device that can check a fingerprint or
-// face, while the lock is off, until it is turned on or "Not now" is chosen
-// (remembered per account on this device, accountKey.lockOffer). Settings ›
-// Security turns it on or off at any time.
+// Home's offer of fingerprint sign-in (app-lock.tsx), so nobody has to find
+// it in Settings: shown on a device that can check a fingerprint or face,
+// while it is off, until it is turned on or "Not now" is chosen (remembered
+// per account on this device, accountKey.lockOffer). Settings › Security
+// turns it on or off at any time.
 
 import { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, ActivityIndicator, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
@@ -57,7 +57,7 @@ export function LockOffer({ style }: { style?: StyleProp<ViewStyle> }) {
         <View style={styles.news}>
           <Feather name="check-circle" size={16} color="#15803D" />
           <Text style={styles.newsText}>
-            The lock is on. Next time AskLocker opens, it asks for your fingerprint or face.
+            Fingerprint sign-in is on. Next time, your fingerprint or face signs you in — no Google needed.
           </Text>
         </View>
         <TouchableOpacity style={styles.secondary} onPress={() => setClosed(true)} accessibilityRole="button">
@@ -76,10 +76,10 @@ export function LockOffer({ style }: { style?: StyleProp<ViewStyle> }) {
           <Feather name="aperture" size={16} color={color.primary} />
         </View>
         <View style={styles.text}>
-          <Text style={styles.title}>Open AskLocker with your fingerprint</Text>
+          <Text style={styles.title}>Sign in with your fingerprint</Text>
           <Text style={styles.sub}>
-            Lock it on this device: your fingerprint or face (or its PIN) opens it, and after {lockAfterText} away it
-            asks again. Your fingerprint never leaves the device.
+            Turn it on once, and next time your fingerprint or face (or this device's PIN) signs you in — no Google
+            needed. AskLocker also locks itself after {lockAfterText} away. Your fingerprint never leaves the device.
           </Text>
         </View>
       </View>

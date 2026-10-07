@@ -1,6 +1,5 @@
-// Settings › Security — how you sign in (Google, the only way in), the
-// fingerprint or face lock on this device, signing out of every device at
-// once, and deleting your account.
+// Settings › Security — how you sign in (Google), fingerprint sign-in on
+// this device, signing out of every device at once, and deleting your account.
 
 import { useState } from 'react';
 import { ScrollView, View, Text, StyleSheet, Platform } from 'react-native';
@@ -44,10 +43,10 @@ export default function SecurityScreen() {
     try {
       if (on) {
         await lock.turnOn();
-        setLockStatus({ kind: 'ok', text: `The lock is on. AskLocker asks for your fingerprint or face when it opens, and after ${lockAfterText} away.` });
+        setLockStatus({ kind: 'ok', text: 'Fingerprint sign-in is on. Next time, sign in with your fingerprint or face — no Google needed.' });
       } else {
         await lock.turnOff();
-        setLockStatus({ kind: 'ok', text: 'The lock is off on this device.' });
+        setLockStatus({ kind: 'ok', text: 'Fingerprint sign-in is off on this device.' });
       }
     } catch (err: any) {
       setLockStatus({ kind: 'error', text: err?.message || 'That did not work. Please try again.' });
@@ -99,18 +98,19 @@ export default function SecurityScreen() {
             device cannot use it, the card says why and what to do. */}
         {Platform.OS === 'web' && lock.support !== null && (
           <Card>
-            <CardTitle icon="aperture">Fingerprint or face lock</CardTitle>
+            <CardTitle icon="aperture">Fingerprint sign-in</CardTitle>
             {lock.supported ? (
               <>
                 <Body>
-                  AskLocker asks for your fingerprint or face (or this device's PIN) when it opens, and after {lockAfterText}
-                  {' '}away. It is for this phone or computer only: turn it on on each one you use.
+                  Sign in with your fingerprint or face (or this device's PIN) — no Google, no password. AskLocker also
+                  locks itself when it opens and after {lockAfterText} away, and your fingerprint opens it. Turn it on on
+                  each phone or computer you use.
                 </Body>
                 <Muted>
-                  Your fingerprint and face stay on your device: AskLocker only hears yes or no. Your device may call the
-                  lock a passkey. If it ever does not work, the lock screen lets you sign in with Google instead.
+                  Your fingerprint and face never leave your device. Your device keeps a passkey for AskLocker, and may
+                  call it that. Google sign-in always works too.
                 </Muted>
-                <OnOff value={lock.enabled} onChange={setLock} label="Fingerprint or face lock" />
+                <OnOff value={lock.enabled} onChange={setLock} label="Fingerprint sign-in" />
                 {lockStatus && <Status kind={lockStatus.kind}>{lockStatus.text}</Status>}
               </>
             ) : (

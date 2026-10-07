@@ -122,7 +122,7 @@ export function OnOff({ value, onChange, label }: { value: boolean; onChange: (o
             onPress={() => onChange(on)}
             activeOpacity={0.8}
             accessibilityRole="radio"
-            accessibilityState={{ selected }}
+            aria-checked={selected}
           >
             <Text style={[styles.segmentText, selected && styles.segmentTextSelected]}>{on ? 'On' : 'Off'}</Text>
           </TouchableOpacity>

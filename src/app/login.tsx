@@ -1,15 +1,18 @@
-// The way in: Google, and nothing else. Signing in with Google the first time
-// makes the account, so there is no sign-up form, no password to forget and
-// no email to confirm. On the web, where it is set up, the button is Google's
-// own; elsewhere it is the redirect sign-in (google-sign-in.tsx). Test
-// builds — DEV and previews — also take an email and password, for test
-// accounts (password-sign-in.tsx); production never shows that.
+// The way in: Google. Signing in with Google the first time makes the
+// account, so there is no sign-up form, no password to forget and no email to
+// confirm. On the web, where it is set up, the button is Google's own;
+// elsewhere it is the redirect sign-in (google-sign-in.tsx). On a device where
+// someone turned fingerprint sign-in on, "Sign in with fingerprint" comes
+// first (fingerprint-sign-in.tsx). Test builds — DEV and previews — also take
+// an email and password, for test accounts (password-sign-in.tsx); production
+// never shows that.
 
 import { View, Text, StyleSheet, ScrollView, Image, KeyboardAvoidingView, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { GoogleSignIn } from '../components/google-sign-in';
+import { FingerprintSignIn } from '../components/fingerprint-sign-in';
 import { PasswordSignIn } from '../components/password-sign-in';
 import { isProduction } from '../lib/environment';
 import { color, radius, space, type } from '../constants/design';
@@ -32,6 +35,7 @@ export default function LoginScreen() {
           <Text style={styles.tagline}>Your family's documents, safe in one place.</Text>
         </View>
 
+        <FingerprintSignIn onSignedIn={() => router.replace('/home' as any)} />
         <Text style={styles.lead}>Sign in with your Google account.</Text>
         <GoogleSignIn onSignedIn={() => router.replace('/home' as any)} />
         <Text style={styles.note}>

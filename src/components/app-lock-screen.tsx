@@ -1,7 +1,8 @@
 // What a locked AskLocker shows (app-lock.tsx): the logo, one big Unlock
-// button that asks the device for a fingerprint or face, and Google as the
-// way back in. It tries once by itself when it appears; some browsers (older
-// iPhones) start the check only from a tap, so the button stays. Drawn over
+// button — a passkey sign-in, so the device asks for a fingerprint or face and
+// Supabase checks it — and Google as the other way back in. It tries once by
+// itself when it appears; some browsers (older iPhones) start the check only
+// from a tap, so the button stays. Drawn over
 // everything, in a Modal; on the web everything else on the page is made
 // inert meanwhile, so no screen reader, keyboard or click reaches what is
 // behind it.
@@ -130,7 +131,7 @@ export function AppLockScreen() {
           >
             <Text style={styles.googleText}>Use Google instead</Text>
           </TouchableOpacity>
-          <Text style={styles.small}>This signs you out. Sign in again with Google and AskLocker opens; the lock stays on for next time.</Text>
+          <Text style={styles.small}>This signs you out. Sign in again with Google and AskLocker opens; fingerprint sign-in stays on for next time.</Text>
         </View>
       </SafeAreaView>
     </Modal>
