@@ -505,9 +505,9 @@ src/
     s.tsx                    # what a share link opens: one document, for anyone with the link, no account (036)
     +html.tsx                # custom HTML shell, web only
     (tabs)/
-      _layout.tsx            # custom tab bar (CustomTabBar)
+      _layout.tsx            # custom tab bar (CustomTabBar): full width; the round Ask button (size.ask) sits on its bottom edge and rises above it
       home.tsx  search.tsx  upload.tsx
-  components/                # shared UI, incl. ProfileDrawer, ShareSheet (036), InvitationCards (037), the vault picker (vault-sheet.tsx, 046) and GoogleSignIn
+  components/                # shared UI, incl. ProfileDrawer, ShareSheet (036), InvitationCards (037), the vault dropdown and sheet (vault-sheet.tsx, 046) and GoogleSignIn
   constants/design.ts        # the one type/size/spacing scale every screen uses
   constants/theme.ts         # create-expo-app scaffold, largely unused
   hooks/                     # use-color-scheme, use-theme
@@ -1333,7 +1333,11 @@ so storage policies live only in `019`.
   whatever its row says.
 - **Upload asks where a document goes** whenever there is a choice: someone in
   no family saves to their personal vault without a question; someone in a
-  family is asked every time — personal vault or one of their families — and
+  family is asked every time — personal vault or one of their families, in
+  the "Where should this go?" dropdown (`VaultDropdown`,
+  `src/components/vault-sheet.tsx`: a field, and the vaults dropping down
+  under it in a Modal placed by measuring the field, or above it near the
+  bottom of the screen) — and
   nothing is chosen for them (a private paper must never land in a shared
   vault by default), except from a person's page, which is that person's
   vault. "Whose document" follows the chosen vault's tree
@@ -1354,8 +1358,18 @@ so storage policies live only in `019`.
 - **A source opens in its own vault**: each source carries `family_id`, and the
   document viewer opens `/document/[id]?family=…` there — its share sheet,
   owners and actions included — without switching the open vault, so a chat
-  on Ask survives the visit. Home shows one vault at a time; "Showing ▾" at
-  its top moves between them.
+  on Ask survives the visit.
+- **Home lists every vault's newest documents together**, newest first, each
+  tagged with the vault it is in (a lock for the personal vault, people for a
+  family) and opened there, like a source on Ask. There is no vault switcher
+  on Home: the open vault — what the family tree, emergency cards and
+  Manage Family show — changes in Manage Family's list of vaults. Home asks
+  each vault for its newest documents and stats (`get_family_documents`,
+  `get_family_stats`, one call each per vault); a vault that cannot be read
+  leaves the others listed. With one vault the stats are as before
+  (documents, members or "Only you", categories); with several, the
+  documents in all of them and how many vaults — categories are counted per
+  vault, so a sum would count one twice.
 
 ## Edge Functions
 
@@ -1774,7 +1788,9 @@ rule again once pinned chunks are mixed in.
     (`overline`, uppercase) 12. Nothing in the app is smaller than 12.
   - **Controls:** buttons and text fields 44 tall (Apple's smallest touch
     target), list rows 56, selection chips 40, icon boxes 32, icons 24 in a
-    bar and 16 in a row.
+    bar and 16 in a row. The tab bar is 64 tall and its round Ask button 76
+    (`size.tabBar`, `size.ask`), so the button rises 12 above the bar; a tab
+    with something at its foot keeps that clear (Ask's question box does).
   - **Spacing** 4/8/12/16/24, screen gutter 16; **radius** 12 for controls
     and list rows, 16 for cards.
 

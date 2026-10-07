@@ -27,7 +27,7 @@ function faq(payments: PaymentsStatus | null): { q: string; a: string }[] {
     },
     {
       q: 'What is my personal vault?',
-      a: 'Everyone has one: a vault only you can see, which nobody can be invited to. If you are not in a family, everything you upload goes there. To share documents, create a family from Manage Family and invite the people you want, or accept an invitation from one. Home shows one vault at a time; tap Showing at the top of Home to move between them.',
+      a: 'Everyone has one: a vault only you can see, which nobody can be invited to. If you are not in a family, everything you upload goes there. To share documents, create a family from Manage Family and invite the people you want, or accept an invitation from one. Home shows your newest documents from all your vaults together, each marked with the vault it is in.',
     },
     {
       q: 'How do I find a document or an answer?',

@@ -64,6 +64,14 @@ export const size = {
   row: 56,
   icon: 24,
   iconBox: 32,
+  /** The bottom tab bar (Home, Ask, Upload). */
+  tabBar: 64,
+  /**
+   * The round Ask button in the middle of the tab bar: taller than the bar,
+   * so it rises above it by the difference. A tab with something at its
+   * foot (Ask's question box) leaves that much room.
+   */
+  ask: 76,
 } as const;
 
 export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24 } as const;
