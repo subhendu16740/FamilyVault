@@ -795,8 +795,15 @@ DEV's test files and QA traffic use the same allowance as PROD's families
   read-only, or 402 on every request. 048's limits keep each vault in bounds,
   but nothing keeps all the vaults together under 1 GB: at 048's free limits
   that is about five full families or ten full personal vaults, less what DEV
-  keeps (64 MB, 141 files, on 7 October 2026). The database is not the first
-  wall: DEV was at 35 MB.
+  keeps (64 MB, 141 files, on 7 October 2026).
+- **The database fills with vaults, not only documents.** Every vault is a
+  schema of its own (Layer 2): 20 tables and indexes, about 250 KB with
+  nothing in it (184 KB of relations and about 70 KB of catalog rows,
+  measured on DEV), and every account gets a personal vault the first time
+  it signs in. A document adds about 30–50 KB of text, passages and vectors,
+  and a long one, like a tax return, up to about 1 MB. So 500 MB holds about
+  1,800 empty vaults, or about 150 families of three with 30 documents each.
+  Past it the database is read-only, and signing in writes to it too.
 - **Two free projects per person, in any organisations.** Moving DEV to an
   organisation of its own (DEV's Project Settings › General › Transfer
   project; no GitHub integration or log drain may be connected) gives PROD
@@ -813,6 +820,48 @@ DEV's test files and QA traffic use the same allowance as PROD's families
   paused. Each project also pays for its own server, about $10 a month, of
   which Pro includes $10: $25 with PROD alone in the organisation, about $35
   with DEV in it too.
+
+### Where the free tiers run out — worked out for 1,000 families
+
+Every outside service is on a free tier, and each runs out at its own size.
+Worked out on 7 October 2026 for a family of three (four vaults with their
+personal ones), 30 documents of DEV's average 463 KB, about 20 documents
+opened a month and two questions a week:
+
+| What | Free allowance | Runs out at about |
+|---|---|---|
+| Search vectors (HuggingFace) | $0.10 of credit a month; no pay-as-you-go on a free account | already: DEV's is used up (402), and search falls back to keywords |
+| Files (Supabase) | 1 GB, shared with DEV | 70 families |
+| Answers (Groq) | 200K tokens a day and 8K a minute per model, per Groq organisation; a question is ~9K, mostly the judge on `gpt-oss-20b` | 25 questions a day for everyone, one a minute: 80 families |
+| Database (Supabase) | 500 MB per project | 150 families; 1,800 vaults even empty |
+| Data sent out (Supabase) | 5 GB a month (another 5 GB from its cache), shared with DEV | 400 families |
+| Scanned PDFs (OCR.space) | 25,000 a month, 500 a day per IP address, 1 MB and 3 pages a file | the file limits, at any size |
+| Users, function calls, push | 50,000 users and 500,000 calls a month | not at 1,000 families |
+
+Over Supabase's allowance the whole organisation can be restricted (see
+above); over Groq's, an answer says the AI service is rate limited. Not
+about size, but true already:
+
+- **Vercel's free Hobby plan is for non-commercial use only**, and taking
+  payments counts as commercial: Vercel Pro (about $20 a month a member) or
+  a host whose free plan allows it.
+- **Google sign-in must be "In production"** in the sign-in project's
+  Google Cloud console: an app in Testing signs in only its test users, at
+  most 100.
+- **Gmail import stays at 100 users ever** until Google verifies the
+  restricted scope, which needs a paid security assessment.
+- **The free database server is small**: Nano, up to 0.5 GB of memory, a
+  shared CPU, 60 connections. 1,000 families are about 4,000 vaults and
+  80,000 tables and indexes.
+
+What costs nothing, and moves a limit without removing it: DEV in an
+organisation of its own; a personal vault's schema made when something is
+first saved to it; Supabase's built-in `gte-small` embedding model, which
+runs inside Edge Functions with no outside service (384 dimensions like the
+column, but English only, and every stored vector re-made); fewer or shorter
+passages for the judge. Files and answers for 1,000 families need paid
+plans by then: Supabase Pro, and Groq's paid tier at about a tenth of a
+rupee a question.
 
 ### The migration gap — closed, and checked properly this time
 
