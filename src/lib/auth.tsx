@@ -19,9 +19,16 @@ interface AuthState {
   session: Session | null;
   user: User | null;
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<{ error: string | null }>;
-  signUp: (email: string, password: string, displayName: string) => Promise<{ error: string | null }>;
+  /** Google is the only way in, and the first sign-in makes the account. This is the redirect sign-in. */
   signInWithGoogle: () => Promise<{ error: string | null }>;
+  /**
+   * Test builds only (DEV and previews, where isProduction is false): QA's
+   * accounts and testing with several accounts. The login screen shows the
+   * form nowhere else; production signs in with Google only.
+   */
+  signInWithPassword: (email: string, password: string) => Promise<{ error: string | null }>;
+  /** Test builds only, like signInWithPassword. `signedIn` is false while the address waits to be confirmed. */
+  signUpWithPassword: (email: string, password: string, displayName: string) => Promise<{ error: string | null; signedIn: boolean }>;
   /** Google's own button on the web (google-button.web.ts): the ID token it gave, and the one-time value it carries. */
   signInWithGoogleToken: (token: string, nonce: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
@@ -31,9 +38,9 @@ const AuthContext = createContext<AuthState>({
   session: null,
   user: null,
   loading: true,
-  signIn: async () => ({ error: null }),
-  signUp: async () => ({ error: null }),
   signInWithGoogle: async () => ({ error: null }),
+  signInWithPassword: async () => ({ error: null }),
+  signUpWithPassword: async () => ({ error: null, signedIn: false }),
   signInWithGoogleToken: async () => ({ error: null }),
   signOut: async () => {},
 });
@@ -54,20 +61,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => subscription.unsubscribe();
   }, []);
-
-  const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    return { error: error?.message ?? null };
-  };
-
-  const signUp = async (email: string, password: string, displayName: string) => {
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { display_name: displayName } },
-    });
-    return { error: error?.message ?? null };
-  };
 
   const signInWithGoogle = async () => {
     try {
@@ -123,6 +116,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const signInWithPassword = async (email: string, password: string) => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    return { error: error?.message ?? null };
+  };
+
+  const signUpWithPassword = async (email: string, password: string, displayName: string) => {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { display_name: displayName } },
+    });
+    return { error: error?.message ?? null, signedIn: !!data?.session };
+  };
+
   // Supabase checks Google's signature, that the token is for this app's
   // client, and that it carries this nonce's hash — then signs the person in,
   // making the account the first time, as the redirect sign-in does.
@@ -143,9 +150,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         session,
         user: session?.user ?? null,
         loading,
-        signIn,
-        signUp,
         signInWithGoogle,
+        signInWithPassword,
+        signUpWithPassword,
         signInWithGoogleToken,
         signOut,
       }}

@@ -12,6 +12,7 @@ import { buildGraph, relativesNamedIn, type KinGraph, type NamedRelative } from 
 import { ticketCodeNotes, ticketSearchTerms } from '../_shared/tickets.ts';
 import { digitsFromWords, restoreCodes } from '../_shared/numbers.ts';
 import { takeInTurn, uniqueRelatives } from '../_shared/vaults.ts';
+import { USED_PASSAGES_RULE, passagesUsed, splitUsedPassages } from '../_shared/used-passages.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -389,10 +390,14 @@ Deno.serve(async (req) => {
     );
 
     // 7. Return answer + source documents
-    // Built from the chunks that made it INTO the prompt — not from everything
-    // retrieved — so a chip never claims a document the model never read.
+    // Built from the passages the answer says it used (its "USED:" line), so
+    // a document that was only retrieved — a bank statement sent beside the
+    // hotel booking that held the answer — is not shown as a source. Without
+    // that line, every passage that made it INTO the prompt, never everything
+    // retrieved, so a chip never claims a document the model never read.
     // Each says which vault it is in, so the app opens it there.
-    const sources = [...new Map(built.used.map(c => [c.document_id, {
+    const cited = result.degraded ? built.used : passagesUsed(built.used, result.used ?? null);
+    const sources = [...new Map(cited.map(c => [c.document_id, {
       id: c.document_id,
       file_name: c.file_name,
       file_type: c.file_type,
@@ -409,7 +414,12 @@ Deno.serve(async (req) => {
       degraded: result.degraded,
       ...(result.retryAfterSeconds ? { retry_after_seconds: result.retryAfterSeconds } : {}),
       ...(language ? { answer_language: language } : {}),
-      debug: { ...debug, models: { ...debug.models, ...(result.model ? { answer: result.model } : {}) } },
+      debug: {
+        ...debug,
+        // What the answer said it used: the source chips are these documents.
+        ...(result.degraded ? {} : { used_docs: result.used == null ? null : uniqNames(cited) }),
+        models: { ...debug.models, ...(result.model ? { answer: result.model } : {}) },
+      },
     });
 
   } catch (err) {
@@ -1146,6 +1156,11 @@ interface AnswerResult {
   retryAfterSeconds?: number;
   /** Which Groq model produced (or failed to produce) the text. */
   model?: string;
+  /**
+   * The passages (1-based) the answer says it relied on, from its "USED:"
+   * line; [] for none; null when it gave no such line.
+   */
+  used?: number[] | null;
 }
 
 async function generateAnswer(
@@ -1185,7 +1200,8 @@ You ONLY answer based on the provided document context.
 The context is whatever search returned — it may not actually answer the question. If it doesn't, say so plainly and, if a related document exists, say what it does cover instead. NEVER answer a different question just because the context happens to contain information about it.
 This is an ongoing conversation: use earlier turns to understand what the user is referring to.
 Keep answers concise (1-3 sentences). Include specific details like dates, amounts, and document names.
-Copy every number exactly as the document writes it, in digits: train, PNR, seat, berth, policy, account, phone and ID numbers, and amounts. Never write a number in words, and never reorder, round or respell its digits.${opts.family ? `\n${opts.family} Answer about that person, and say whose document it is.` : ''}${opts.notes?.length ? `\nTicket codes in the context, explained: ${opts.notes.join(' ')} On a train ticket the seat is this berth (coach and berth number), shown in Booking Status or Current Status.` : ''}${languageRule}${voiceRule}`,
+Copy every number exactly as the document writes it, in digits: train, PNR, seat, berth, policy, account, phone and ID numbers, and amounts. Never write a number in words, and never reorder, round or respell its digits.${opts.family ? `\n${opts.family} Answer about that person, and say whose document it is.` : ''}${opts.notes?.length ? `\nTicket codes in the context, explained: ${opts.notes.join(' ')} On a train ticket the seat is this berth (coach and berth number), shown in Booking Status or Current Status.` : ''}${languageRule}${voiceRule}
+The passages in the context are numbered: [Passage 1 | …], [Passage 2 | …]. ${USED_PASSAGES_RULE}`,
         },
         // Prior turns, so "this one" and "that policy" resolve naturally.
         ...history.map(t => ({ role: t.role, content: t.content })),
@@ -1224,9 +1240,17 @@ Copy every number exactly as the document writes it, in digits: train, PNR, seat
       return { answer: buildFallbackAnswer(chunks, 'unavailable'), degraded: true, model };
     }
 
+    // The "USED:" line comes off first: it names the passages the answer
+    // relied on, for the source chips, and is never shown or read aloud.
+    const { answer, used } = splitUsedPassages(text);
+    if (!answer) {
+      console.warn('[rag] Groq returned only the USED line');
+      return { answer: buildFallbackAnswer(chunks, 'unavailable'), degraded: true, model };
+    }
+
     // Numbers spelled out despite the prompt (_shared/numbers.ts): a code goes
     // back to exactly how the passages write it, and other digits to digits.
-    return { answer: digitsFromWords(restoreCodes(text, context)), degraded: false, model };
+    return { answer: digitsFromWords(restoreCodes(answer, context)), degraded: false, model, used };
 
   } catch (err) {
     console.warn('[rag] Groq generation failed:', err);
@@ -1340,7 +1364,8 @@ function buildContext(chunks: ChunkResult[], acrossVaults = false): { text: stri
     const whose = c.owner ? ` | Marked as ${c.owner}'s` : '';
     // Across vaults, two passports can be two people's: say where each is from.
     const where = acrossVaults && c.vault ? ` | In: ${c.vault}` : '';
-    parts.push(`[Document: ${c.file_name}${type}${whose}${where}]\n${body}`);
+    // Numbered, so the answer can say which passages it used (its "USED:" line).
+    parts.push(`[Passage ${parts.length + 1} | Document: ${c.file_name}${type}${whose}${where}]\n${body}`);
     used.push(c);
     budget -= body.length;
   }

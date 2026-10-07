@@ -70,18 +70,28 @@ export function googleButtonReason(): string {
 
 let loading: Promise<void> | null = null;
 
+/** How long Google's script may take before the login falls back to the redirect sign-in. */
+const SCRIPT_WAIT_MS = 10_000;
+
 function loadScript(): Promise<void> {
   if ((window as any).google?.accounts?.id) return Promise.resolve();
   loading ??= new Promise<void>((resolve, reject) => {
     const tag = document.createElement('script');
-    tag.src = SCRIPT;
-    tag.async = true;
-    tag.onload = () => resolve();
-    tag.onerror = () => {
+    const fail = (message: string) => {
+      clearTimeout(timer);
       loading = null;
       tag.remove();
-      reject(new Error('Google could not be reached. Check the internet connection and try again.'));
+      reject(new Error(message));
     };
+    const timer = setTimeout(() => fail('Google took too long to answer.'), SCRIPT_WAIT_MS);
+    tag.src = SCRIPT;
+    tag.async = true;
+    tag.onload = () => {
+      clearTimeout(timer);
+      if ((window as any).google?.accounts?.id) resolve();
+      else fail('Google\'s sign-in script loaded without its sign-in.');
+    };
+    tag.onerror = () => fail('Google could not be reached. Check the internet connection and try again.');
     document.head.appendChild(tag);
   });
   return loading;
