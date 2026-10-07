@@ -18,6 +18,7 @@ import { DEFAULT_PLAN_LIMITS, type PlanLimits } from '../lib/plans';
 import { ScreenHeader, HeaderButton } from '../components/screen-header';
 import { InvitationCards } from '../components/invitation-cards';
 import { longDate } from '../lib/dates';
+import { isPersonalVault, vaultName, vaultSubtitle } from '../lib/vaults';
 import { color, radius, shadow, size, space, type } from '../constants/design';
 
 const relations = ['Father', 'Mother', 'Spouse', 'Son', 'Daughter', 'Brother', 'Sister', 'Other'];
@@ -190,6 +191,55 @@ export default function FamilyScreen() {
     }
   };
 
+  // Every vault this person is in (046): their personal vault and each
+  // family. Tapping one opens it everywhere — Home, the family tree, Storage.
+  const vaultList = families.length > 1 && currentFamily && (
+    <View style={styles.section}>
+      <Text style={styles.sectionLabel}>Your vaults</Text>
+      <View style={styles.memberList}>
+        {families.map((f) => {
+          const isCurrent = f.family_id === currentFamily.id;
+          return (
+            <TouchableOpacity
+              key={f.family_id}
+              onPress={() => switchFamily(f.family_id)}
+              style={[styles.familyRow, isCurrent && styles.familyRowCurrent]}
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityState={{ selected: isCurrent }}
+            >
+              <Feather name={isPersonalVault(f.families) ? 'lock' : 'home'} size={16} color={isCurrent ? '#FFFFFF' : color.primary} />
+              <View style={styles.memberInfo}>
+                <Text style={[styles.familyRowName, isCurrent && styles.familyRowNameCurrent]}>{vaultName(f.families)}</Text>
+                <Text style={[styles.familyRowRole, isCurrent && styles.familyRowRoleCurrent]}>{vaultSubtitle(f)}</Text>
+              </View>
+              {isCurrent && <Feather name="check" size={16} color="#FFFFFF" />}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+
+  // A family is how documents are shared; anyone can make one, at any time.
+  const createFamily = (
+    <TouchableOpacity
+      onPress={() => router.push('/setup-family' as any)}
+      style={styles.treeLink}
+      activeOpacity={0.8}
+      accessibilityRole="button"
+    >
+      <View style={styles.treeIcon}>
+        <Feather name="plus" size={16} color={color.primary} />
+      </View>
+      <View style={styles.memberInfo}>
+        <Text style={styles.treeTitle}>Create a family</Text>
+        <Text style={styles.treeSub}>A vault to share documents with the people you invite</Text>
+      </View>
+      <Feather name="chevron-right" size={16} color="#9CA3AF" />
+    </TouchableOpacity>
+  );
+
   if (!currentFamily) {
     return (
       <SafeAreaView style={styles.safe} edges={['top']}>
@@ -215,6 +265,43 @@ export default function FamilyScreen() {
             </LinearGradient>
           </TouchableOpacity>
         </View>
+      </SafeAreaView>
+    );
+  }
+
+  // A personal vault (046) has nobody to manage: nobody else can be invited
+  // to it. This is where its owner sees that, moves between their vaults,
+  // and makes a family to share with.
+  if (isPersonalVault(currentFamily)) {
+    return (
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <ScreenHeader title="Personal vault" subtitle="Only you can see it" />
+        <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
+          <InvitationCards style={styles.invites} />
+          {notice && (
+            <TouchableOpacity style={styles.notice} onPress={() => setNotice(null)} activeOpacity={0.8}>
+              <Feather name="info" size={16} color="#2A3D66" />
+              <Text style={styles.noticeText}>{notice}</Text>
+              <Feather name="x" size={16} color="#6B7280" />
+            </TouchableOpacity>
+          )}
+          <View style={styles.personalCard}>
+            <View style={styles.treeIcon}>
+              <Feather name="lock" size={16} color={color.primary} />
+            </View>
+            <View style={styles.memberInfo}>
+              <Text style={styles.treeTitle}>Your documents, for you alone</Text>
+              <Text style={styles.personalText}>
+                Nobody else can see your personal vault, and nobody can be invited to it. To keep documents with your
+                family, create a family and invite them, or accept an invitation from one. Each time you upload, you
+                choose where the document goes, and Ask searches all your vaults at once.
+              </Text>
+            </View>
+          </View>
+          {vaultList}
+          {createFamily}
+          <View style={{ height: 24 }} />
+        </ScrollView>
       </SafeAreaView>
     );
   }
@@ -271,32 +358,8 @@ export default function FamilyScreen() {
           <Feather name="chevron-right" size={16} color="#9CA3AF" />
         </TouchableOpacity>
 
-        {/* Every family this person is in — more than one once an admin adds them elsewhere */}
-        {families.length > 1 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionLabel}>Your Families</Text>
-            <View style={styles.memberList}>
-              {families.map((f) => {
-                const isCurrent = f.family_id === currentFamily.id;
-                return (
-                  <TouchableOpacity
-                    key={f.family_id}
-                    onPress={() => switchFamily(f.family_id)}
-                    style={[styles.familyRow, isCurrent && styles.familyRowCurrent]}
-                    activeOpacity={0.8}
-                  >
-                    <Feather name="home" size={16} color={isCurrent ? '#FFFFFF' : color.primary} />
-                    <View style={styles.memberInfo}>
-                      <Text style={[styles.familyRowName, isCurrent && styles.familyRowNameCurrent]}>{f.families.name}</Text>
-                      <Text style={[styles.familyRowRole, isCurrent && styles.familyRowRoleCurrent]}>{f.role}</Text>
-                    </View>
-                    {isCurrent && <Feather name="check" size={16} color="#FFFFFF" />}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
-        )}
+        {/* Every vault this person is in, and a family of their own to start (046) */}
+        {vaultList}
 
         {/* Members */}
         {members.length > 0 && (
@@ -418,6 +481,8 @@ export default function FamilyScreen() {
             <Text style={styles.emptySubtitle}>Add your family members to get started</Text>
           </View>
         )}
+
+        {createFamily}
 
         {canLeave && (
           <TouchableOpacity onPress={handleLeave} style={styles.leaveBtn} activeOpacity={0.8}>
@@ -702,7 +767,7 @@ const styles = StyleSheet.create({
   familyRowCurrent: { backgroundColor: color.primary },
   familyRowName: type.label,
   familyRowNameCurrent: { color: '#FFFFFF' },
-  familyRowRole: { ...type.caption, textTransform: 'capitalize' },
+  familyRowRole: type.caption,
   familyRowRoleCurrent: { color: 'rgba(255,255,255,0.8)' },
   leaveBtn: {
     flexDirection: 'row',
@@ -878,4 +943,16 @@ const styles = StyleSheet.create({
   treeIcon: { width: size.iconBox, height: size.iconBox, borderRadius: 8, backgroundColor: color.tint, alignItems: 'center', justifyContent: 'center' },
   treeTitle: type.label,
   treeSub: type.caption,
+  personalCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: space.md,
+    marginHorizontal: space.lg,
+    marginTop: space.lg,
+    padding: space.lg,
+    borderRadius: radius.card,
+    backgroundColor: color.surface,
+    ...shadow.card,
+  },
+  personalText: { ...type.caption, marginTop: space.xs },
 });

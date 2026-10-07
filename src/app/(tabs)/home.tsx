@@ -13,6 +13,8 @@ import { useDrawer } from '../../lib/drawer-context';
 import { fetchRecentDocuments, fetchFamilyStats, fetchUnreadNotificationCount, checkExpiryNotifications } from '../../lib/api';
 import { usePreferences } from '../../lib/preferences';
 import { InvitationCards } from '../../components/invitation-cards';
+import { VaultPill, VaultSheet, type VaultChoice } from '../../components/vault-sheet';
+import { isPersonalVault, vaultName, vaultSubtitle } from '../../lib/vaults';
 import type { FamilyDocumentRow } from '../../lib/database.types';
 import { color, radius, shadow, size, space, type } from '../../constants/design';
 
@@ -56,7 +58,16 @@ export default function HomeScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const { user } = useAuth();
-  const { currentFamily, refreshFamilies } = useFamily();
+  const { currentFamily, families, refreshFamilies, switchFamily } = useFamily();
+  // Home shows one vault at a time (046): someone with a personal vault and a
+  // family, or several families, moves between them here.
+  const [vaultOpen, setVaultOpen] = useState(false);
+  const vaultChoices: VaultChoice[] = families.map((f) => ({
+    key: f.family_id,
+    name: vaultName(f.families),
+    subtitle: vaultSubtitle(f),
+    icon: isPersonalVault(f.families) ? 'lock' : 'users',
+  }));
   const { openDrawer } = useDrawer();
   // Settings › Notifications off: the bell stays, its count does not.
   const { notificationsEnabled } = usePreferences();
@@ -152,6 +163,18 @@ export default function HomeScreen() {
               <Text style={styles.searchPlaceholder}>Search documents...</Text>
               <Feather name="mic" size={18} color="rgba(255,255,255,0.8)" />
             </TouchableOpacity>
+
+            {families.length > 1 && currentFamily && (
+              <View style={styles.vaultRow}>
+                <VaultPill
+                  label="Showing"
+                  value={vaultName(currentFamily)}
+                  icon={isPersonalVault(currentFamily) ? 'lock' : 'users'}
+                  onPress={() => setVaultOpen(true)}
+                  light
+                />
+              </View>
+            )}
           </SafeAreaView>
         </LinearGradient>
 
@@ -163,7 +186,9 @@ export default function HomeScreen() {
           <View style={[styles.statsBar, isDark && styles.statsBarDark]}>
             <Text style={[styles.statText, isDark && styles.statTextDark]}>{stats.doc_count} Documents</Text>
             <Text style={styles.statDivider}>|</Text>
-            <Text style={[styles.statText, isDark && styles.statTextDark]}>{stats.member_count} Members</Text>
+            <Text style={[styles.statText, isDark && styles.statTextDark]}>
+              {isPersonalVault(currentFamily) ? 'Only you' : `${stats.member_count} ${stats.member_count === 1 ? 'Member' : 'Members'}`}
+            </Text>
             <Text style={styles.statDivider}>|</Text>
             <Text style={[styles.statText, isDark && styles.statTextDark]}>{stats.category_count} Categories</Text>
           </View>
@@ -223,6 +248,16 @@ export default function HomeScreen() {
           )}
         </View>
       </ScrollView>
+
+      <VaultSheet
+        visible={vaultOpen}
+        title="Show a vault"
+        intro="Home shows one vault at a time. Ask can search all of them at once."
+        choices={vaultChoices}
+        selected={currentFamily?.id ?? null}
+        onSelect={switchFamily}
+        onClose={() => setVaultOpen(false)}
+      />
     </View>
   );
 }
@@ -305,6 +340,7 @@ const styles = StyleSheet.create({
   searchPlaceholder: { ...type.body, flex: 1, color: 'rgba(255,255,255,0.75)' },
   section: { paddingHorizontal: space.lg, marginTop: space.lg },
   invites: { paddingHorizontal: space.lg, marginTop: space.lg },
+  vaultRow: { marginTop: space.md },
   sectionBottom: { marginBottom: space.xl },
   sectionTitle: { ...type.overline, marginBottom: space.sm, marginLeft: space.xs },
   statsBar: {

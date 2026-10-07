@@ -291,6 +291,25 @@ const emergencyJudge = (expect, needsCard) => (outcome) => {
   return judge(expect, outcome);
 };
 
+// Personal vaults (046): nobody but its owner sees one, joins one or is
+// invited to one, and Ask searches only vaults the asker is in. Skipped
+// until 046 is on DEV, and the rag-search probes until the rag-search that
+// searches across vaults is deployed there: before it, a request that names
+// vaults and no family_id is a 400 ("Missing family_id").
+const personalJudge = (expect, needsVault) => (outcome) => {
+  if (outcome.missing || String(outcome.error?.code) === 'PGRST202') return ['skipped', 'migration 046 is not applied to DEV yet'];
+  if (needsVault && outcome.noTarget) return ['skipped', "no personal vault of account A's to aim at (see its control)"];
+  return judge(expect, outcome);
+};
+const vaultsJudge = (outcome) => {
+  if (outcome.missing) return ['skipped', 'migration 046 is not applied to DEV yet'];
+  if (outcome.noTarget) return ['skipped', "no personal vault of account A's to aim at (see its control)"];
+  if (outcome.status === 400 && /missing family_id/i.test(String(outcome.data?.error ?? ''))) {
+    return ['skipped', 'rag-search on DEV does not search across vaults yet'];
+  }
+  return judge('http-401-403', outcome);
+};
+
 async function attempt(fn) {
   try {
     const out = await fn();
@@ -666,6 +685,59 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     return run();
   };
 
+  // ── Personal vaults (046): account A's own, made the first time it is
+  // asked for and the same one every time after; and Ask across every vault
+  // A is in, which must be exactly A's. The controls for the probes below.
+  // Ask is given a one-letter question, which searches nothing: no model
+  // runs, so it costs no Groq budget.
+  let personalA = null;
+  let personalMissing = false;
+  {
+    const title = 'Control — account A has a personal vault, the same one every time, with A alone in it';
+    const first = await a.client.rpc('ensure_personal_vault');
+    if (String(first.error?.code) === 'PGRST202') {
+      personalMissing = true;
+      results.add('access', 'control:personal-vault', title, 'skipped', { why: 'migration 046 is not applied to DEV yet' });
+    } else {
+      const again = first.error ? null : await a.client.rpc('ensure_personal_vault');
+      const row = first.data
+        ? (await a.client.from('families').select('id, is_personal').eq('id', first.data).maybeSingle()).data : null;
+      const inIt = first.data
+        ? (await a.client.from('family_members').select('user_id, role').eq('family_id', first.data)).data : null;
+      const ok = !first.error && !!first.data && again?.data === first.data && row?.is_personal === true
+        && inIt?.length === 1 && inIt[0].user_id === a.user.id && inIt[0].role === 'admin';
+      personalA = ok ? first.data : null;
+      results.add('access', 'control:personal-vault', title, ok ? 'pass' : 'fail',
+        ok ? {} : { why: first.error ? short(first.error) : JSON.stringify({ same: again?.data === first.data, row, inIt }).slice(0, 160) });
+    }
+  }
+  {
+    const title = 'Control — account A asks across all its vaults, and exactly its own are searched';
+    if (!personalA) {
+      results.add('access', 'control:ask-all-vaults', title, 'skipped', {
+        why: personalMissing ? 'migration 046 is not applied to DEV yet' : "no personal vault of A's (see its control)",
+      });
+    } else {
+      const r = await invokeFunction(cfg, a, 'rag-search', { family_id: A.family, scope: 'all', query: 'a' }, { timeoutMs: 60_000 });
+      const { data: mine } = await a.client.from('family_members').select('family_id').eq('user_id', a.user.id);
+      const want = (mine ?? []).map((m) => m.family_id).sort();
+      const got = (r.data?.debug?.vaults ?? []).map((v) => v.family_id).sort();
+      const [state, why] = r.status !== 200
+        ? ['fail', `HTTP ${r.status}: ${JSON.stringify(r.data).slice(0, 160)}`]
+        : !r.data?.debug?.vaults
+          ? ['skipped', 'rag-search on DEV does not search across vaults yet']
+          : JSON.stringify(got) === JSON.stringify(want)
+            ? ['pass', `${got.length} vaults searched: QA Vault A and A's personal vault${got.length > 2 ? ', and more' : ''}`]
+            : ['fail', `searched ${got.length} vaults; A is in ${want.length}`];
+      results.add('access', 'control:ask-all-vaults', title, state, { why });
+    }
+  }
+  const onPersonalA = (run) => async () => {
+    if (personalMissing) return { missing: true };
+    if (!personalA) return { noTarget: true };
+    return run();
+  };
+
   const probes = [
     // Logged out
     ['anon', 'list QA Vault A', 'refused-or-empty', rpc(anon, 'get_family_documents', { p_family_id: A.family, p_limit: 5, p_offset: 0 })],
@@ -673,6 +745,8 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     ['anon', "read account A's notifications", 'refused', rpc(anon, 'get_user_notifications', { p_user_id: A.user, p_limit: 5, p_offset: 0 })],
     ['anon', 'create a family owned by account A', 'refused', rpc(anon, 'create_family', { p_user_id: A.user, p_family_name: 'QA intrusion' })],
     ['anon', 'ask rag-search about QA Vault A', 'http-401-403', fn(anon, 'rag-search', { family_id: A.family, query: 'passport' })],
+    ['anon', 'ask rag-search across every vault', vaultsJudge, fn(anon, 'rag-search', { scope: 'all', query: 'passport' })],
+    ['anon', 'make a personal vault', personalJudge('refused'), rpc(anon, 'ensure_personal_vault', {})],
     ['anon', "list QA Vault A's files", 'refused-or-empty', () => anon.client.storage.from('documents').list(A.ns)],
     ['anon', "read QA Vault A's family row", 'refused-or-empty', () => anon.client.from('families').select('id').eq('id', A.family)],
 
@@ -692,6 +766,10 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     ['B', 'plant an expiry alert (server-only)', 'refused', rpc(b, 'create_expiry_alert', { p_family_id: A.family, p_document_id: sacrificialId, p_expiry_date: '2030-01-01' })],
     ['B', "read A's chunks by schema name (server-only)", 'refused', rpc(b, 'rag_retrieve_chunks', { p_schema: A.ns, p_tsquery: 'passport', p_query_pattern: '%passport%' })],
     ['B', 'ask rag-search about QA Vault A', 'http-401-403', fn(b, 'rag-search', { family_id: A.family, query: 'passport' })],
+    // Ask across vaults (046): every vault searched must be the asker's own.
+    ['B', 'ask rag-search about QA Vault A beside its own vault', vaultsJudge, fn(b, 'rag-search', { family_ids: [vaultB.id, A.family], query: 'passport' })],
+    ['B', "ask rag-search about A's personal vault", vaultsJudge, onPersonalA(fn(b, 'rag-search', { family_ids: [personalA], query: 'passport' }))],
+    ['B', "read A's personal vault", personalJudge('refused-or-empty', true), onPersonalA(() => b.client.from('families').select('id').eq('id', personalA))],
     ['B', "re-ingest A's document", 'http-401-403', fn(b, 'ingest-document', { family_id: A.family, document_id: sacrificialId, storage_path: sacrificialPath })],
     ['B', "read QA Vault A's index status", 'http-401-403', fn(b, 'reembed-index', { family_id: A.family, status_only: true })],
     ['B', "list QA Vault A's files", 'refused-or-empty', () => b.client.storage.from('documents').list(A.ns)],
@@ -977,6 +1055,32 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     const outcome = await attempt(run);
     const [status, why] = typeof expect === 'function' ? expect(outcome) : judge(expect, outcome);
     results.add('access', `probe:${n}`, `${who === 'anon' ? 'Logged-out visitor' : 'Account B'} cannot ${what}`, status, { why });
+  }
+
+  // ── Nobody joins a personal vault (046): A, its owner and admin, invites
+  // B to it through add-member, as the app's Add would. The database refuses,
+  // and add-member says why (409 personal_vault). No invitation may be left.
+  {
+    const title = 'Account A cannot invite anyone to its personal vault';
+    if (!personalA) {
+      results.add('access', 'personal-vault-invite', title, 'skipped', {
+        why: personalMissing ? 'migration 046 is not applied to DEV yet' : "no personal vault of A's (see its control)",
+      });
+    } else {
+      const r = await invokeFunction(cfg, a, 'add-member', { family_id: personalA, email: b.user.email }, { timeoutMs: 30_000 });
+      const { data: asked } = await a.client.from('family_invites').select('id').eq('family_id', personalA);
+      const { data: inIt } = await a.client.from('family_members').select('user_id').eq('family_id', personalA);
+      for (const invite of asked ?? []) await a.client.rpc('cancel_family_invite', { p_invite_id: invite.id });
+      const alone = (inIt ?? []).every((m) => m.user_id === a.user.id);
+      const [state, why] = asked?.length || !alone
+        ? ['fail', `B was ${asked?.length ? 'INVITED' : 'ADDED'} (an invitation is withdrawn again)`]
+        : r.status === 409 && r.data?.status === 'personal_vault'
+          ? ['pass', 'refused: a personal vault is for its owner alone']
+          : r.status >= 400
+            ? ['pass', `refused (HTTP ${r.status}: the add-member on DEV is older than 046 and says so less clearly)`]
+            : ['fail', `HTTP ${r.status}: ${JSON.stringify(r.data).slice(0, 160)}`];
+      results.add('access', 'personal-vault-invite', title, state, { why });
+    }
   }
 
   // ── Clean up anything a probe managed to create, and verify the target survived.

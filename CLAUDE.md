@@ -84,7 +84,9 @@ Four things will mislead you if you assume otherwise:
    no client reads or writes them, and only `apply_plan_payment`, service
    role only, turns a payment into Family Plus; 045's nicknames are read
    with the tree and written only through `set_family_person_nickname`, by
-   an admin or the person themselves).
+   an admin or the person themselves; 046's personal vaults are their
+   owner's alone — made only by `ensure_personal_vault()`, one per person,
+   and triggers refuse any other membership or invitation, on every path).
    **A new writable
    column needs its own `GRANT` in a migration.** Nobody joins a family
    without saying yes: only an admin asks a person in, through the
@@ -134,10 +136,12 @@ errors**) and `npm run build` are the local gates.
 at 03:10 IST, and on pushes that change `qa/`. It uploads synthetic SPECIMEN
 documents to its own vault (QA Vault A, account A), asks questions about
 them, and checks the answers on facts and sources, never wording. It also
-runs the 023 sweep and the 024 DEV/PROD fingerprint, 149 access probes (a
+runs the 023 sweep and the 024 DEV/PROD fingerprint, 154 access probes (a
 logged-out visitor and a second account must be refused everywhere, Gmail
 import's endpoints, the family tree and its nicknames, emergency cards, linking,
-notification devices, share links, invitations and plans included; a share
+notification devices, share links, invitations, plans and personal vaults
+included — nobody else sees or is invited to one, and Ask across vaults
+searches only the asker's own; a share
 link must open without an account, and stop once it is turned off; nobody
 can give a family Plus, raise a limit, read another family's storage, end
 its Plus or start, run or close a removal, use up or read another
@@ -440,7 +444,7 @@ src/
     login.tsx                # email/password + Google OAuth
     setup-family.tsx         # first-time vault creation
     notifications.tsx        # expiry alerts, uploads, invites, Family Plus
-    family.tsx               # Manage Family: members, invitations (Pending approval), leaving    (NOT a tab)
+    family.tsx               # Manage Family: members, invitations (Pending approval), leaving, every vault, Create a family; the personal vault's own page (046)    (NOT a tab)
     family-tree.tsx          # the family tree: everyone, and how they are related (031)
     person/[id].tsx          # one person: their relation to you, emergency card, documents, expiry dates, link to their account (033)
     emergency/               # emergency cards (032), in the drawer
@@ -462,7 +466,7 @@ src/
     (tabs)/
       _layout.tsx            # custom tab bar (CustomTabBar)
       home.tsx  search.tsx  upload.tsx
-  components/                # shared UI, incl. ProfileDrawer, ShareSheet (036) and InvitationCards (037)
+  components/                # shared UI, incl. ProfileDrawer, ShareSheet (036), InvitationCards (037) and the vault picker (vault-sheet.tsx, 046)
   constants/design.ts        # the one type/size/spacing scale every screen uses
   constants/theme.ts         # create-expo-app scaffold, largely unused
   hooks/                     # use-color-scheme, use-theme
@@ -493,9 +497,10 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 |---|---|
 | `supabase.ts` | Client init. AsyncStorage for session persistence on native only. |
 | `auth.tsx` | `AuthProvider`: session, signIn, signUp, signInWithGoogle, signOut |
-| `family-context.tsx` | `FamilyProvider`: currentFamily, members, membership, needsFamily |
+| `family-context.tsx` | `FamilyProvider`: currentFamily, members, membership, needsFamily; `families` is every vault, the personal one included, which it makes the first time it sees an account without one (`ensurePersonalVault()`, 046) |
+| `vaults.ts` | Personal vault or family (046): `vaultName()` ("Personal vault" everywhere), `splitVaults()`, `vaultSubtitle()` |
 | `drawer-context.tsx` | Profile drawer open/close state |
-| `api.ts` | **All** Supabase queries — documents, search, upload, RAG, notifications, adding and leaving families, invitations, Gmail import, saved chats, share links, deleting your account, plans and storage limits (`fetchStorageStatus`, `fetchPlanLimits`; `uploadDocument` throws `StorageFullError` before a file that does not fit is sent, and `saveChat` `ChatStorageFullError` for a chat, 042), voice chats (`claimVoiceAnswer`, 041; `fetchVoiceStatus`, how many are left, 042), paying for Family Plus (`fetchPaymentsStatus`, whether this project takes payments, asked once a session; `createPlusOrder`, `verifyPlusPayment`, 044), and the Settings screens (profile, password, storage use, expiry dates, feedback) |
+| `api.ts` | **All** Supabase queries — documents, search, upload, RAG, notifications, adding and leaving families, invitations, Gmail import, saved chats, share links, deleting your account, plans and storage limits (`fetchStorageStatus`, `fetchPlanLimits`; `uploadDocument` throws `StorageFullError` before a file that does not fit is sent, and `saveChat` `ChatStorageFullError` for a chat, 042), voice chats (`claimVoiceAnswer`, 041; `fetchVoiceStatus`, how many are left, 042), paying for Family Plus (`fetchPaymentsStatus`, whether this project takes payments, asked once a session; `createPlusOrder`, `verifyPlusPayment`, 044), personal vaults and Ask across vaults (`ensurePersonalVault`; `ragSearch`'s `vaults` option, 046), and the Settings screens (profile, password, storage use, expiry dates, feedback) |
 | `dates.ts` | `parseDocumentDate()`: expiry dates exactly as ingest stores them (DD/MM/YYYY and kin, YYYY-MM-DD, "19 October 2026") |
 | `emergency.ts` | The emergency card's shape, blood groups (`bloodGroupLabel()`: "A−", "Bombay (hh)"), `telHref()`, and `cardProblem()` — the same checks and messages as `save_emergency_card()`, so the form can say what is wrong before saving |
 | `family-people.ts` | Whose a document can be: everyone in the tree, you first (`useDocumentOwners()`, members only before 031), and a person's expiry badge (`badgeFromExpiries()`) |
@@ -512,7 +517,7 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `speech-text.ts` | `toSpeech()`: strips markdown and spells out ID numbers before they are read aloud — and a number named as one ("train number 16782", "PNR: 4512", "PIN 751001", "नंबर 16782") digit by digit, from its digits; the screen keeps the digits |
 | `voice-languages.ts` | The language picker list and the few phrases the app itself says, per language |
 | `storage.ts` | Key-value cache: localStorage on web, AsyncStorage on native |
-| `database.types.ts` | Generated Supabase types, current to 045 (030 changed nothing in them). Regenerate after every migration and re-append the hand-written block at the bottom (see the typecheck note) |
+| `database.types.ts` | Generated Supabase types, current to 046 (030 changed nothing in them). Regenerate after every migration and re-append the hand-written block at the bottom (see the typecheck note) |
 
 ---
 
@@ -1257,6 +1262,58 @@ so storage policies live only in `019`.
   a mandate: UPI Autopay or a saved card); a reminder before Plus ends that
   leads straight to paying; the phone app's checkout.
 
+### Personal vaults, and asking across vaults (046)
+
+- **Every account has a personal vault**: a family of one (`families.is_personal`)
+  that nobody else can see, be invited to or join. The app makes it the
+  first time it sees an account without one (`ensure_personal_vault()`, the
+  caller from `auth.uid()`; `FamilyProvider`), so it is an existing member's
+  newest membership and never becomes the vault they see by itself; for
+  someone in no family it is the only one. One per person: a unique index on
+  `families(created_by) WHERE is_personal`, and the calls for one person are
+  serialised, so two tabs make one vault. Before 046 the call finds no
+  function and the app carries on with families only.
+- **Nobody else joins one.** Triggers on `family_members` and `family_invites`
+  (`personal_vault_stays_personal()`) refuse a membership for anyone but its
+  owner and any invitation at all — every path in: add-member, link-account,
+  accepting, the older functions kept from 025 and 033 — with HINT
+  `personal_vault`, which add-member and link-account answer as 409
+  `personal_vault`, in the database's words. Not 42501: they read that as
+  "only an admin". The "vault becomes shared" lines in the older functions
+  are never reached for a personal vault, because the insert before them is
+  refused first. Manage Family shows a personal vault its own page (no Add,
+  no members), and a person's page there offers no account to link.
+- **Otherwise it is a family like any other**: its own schema, storage limit
+  (Free 1 GB) and plan, its own family tree (a document can still be marked
+  as Mom's), and it goes with the account (029: its last admin and only member).
+  "Personal vault" is its name on every screen (`vaultName()`, `src/lib/vaults.ts`),
+  whatever its row says.
+- **Upload asks where a document goes** whenever there is a choice: someone in
+  no family saves to their personal vault without a question; someone in a
+  family is asked every time — personal vault or one of their families — and
+  nothing is chosen for them (a private paper must never land in a shared
+  vault by default), except from a person's page, which is that person's
+  vault. "Whose document" follows the chosen vault's tree
+  (`useDocumentOwners(familyId)`), and Save names the vault ("Save to
+  Personal vault").
+- **Ask searches every vault by default** (`scope: 'all'`), or the one picked
+  under "Search in", which answers sooner; the choice is kept on the device
+  (`accountKey.askIn`). rag-search checks the asker is in EVERY vault named
+  (`requireVaults()`, `_shared/auth.ts`: one vault someone else's and the whole
+  request is refused, 403), searches each as one always was — its own tree,
+  index state and capped retrieval — and takes their candidates in turn
+  (`takeInTurn()`, `_shared/vaults.ts`), so the judge's 15 places are shared out,
+  not won by the vault with the most documents. The judge and the answer run
+  once: a question across three vaults costs the Groq budget what one does.
+  One embedding per distinct text; at most 10 vaults (oldest memberships).
+  Clients always send `family_id` as well, so a rag-search older than 046
+  searches that one vault and nothing breaks.
+- **A source opens in its own vault**: each source carries `family_id`, and the
+  document viewer opens `/document/[id]?family=…` there — its share sheet,
+  owners and actions included — without switching the open vault, so a chat
+  on Ask survives the visit. Home shows one vault at a time; "Showing ▾" at
+  its top moves between them.
+
 ## Edge Functions
 
 `supabase/functions/` — Deno, excluded from `tsconfig.json` (they use remote
@@ -1286,7 +1343,9 @@ so storage policies live only in `019`.
   ingest) → retrieves chunks via `rag_retrieve_chunks`, which blends semantic
   distance and full-text rank 0.7/0.3 → sends chunks + query to Groq → returns
   answer plus source document references. If embedding fails the RPC falls back
-  to keyword-only rather than erroring.
+  to keyword-only rather than erroring. **Across vaults (046)**: `scope: 'all'`
+  or `family_ids` searches several of the asker's vaults, every one checked;
+  see [Personal vaults](#personal-vaults-and-asking-across-vaults-046).
   **Tickets speak in codes** (`_shared/tickets.ts`, pure, pinned by the
   self-test). An Indian Railways ticket never says "seat": the berth is
   "CNF/B4/17 UB" under Booking Status, so "what's my seat number?" found
@@ -1336,7 +1395,8 @@ so storage policies live only in `019`.
 - **`add-member`** — a family admin invites a person who already has an
   account, by email: checks the caller is an admin, then calls
   `invite_family_member()` (037) as the service role. Answers 200 `invited`,
-  404 `no_account`, 409 `already_member` or `already_invited`, and 503
+  404 `no_account`, 409 `already_member`, `already_invited` or
+  `personal_vault` (046: nobody is invited to one), and 503
   `needs_migration` where 037 is not applied; see
   [Membership](#membership--an-admin-invites-only-a-yes-joins-025-037).
   It replaced `invite-member`, which the deploy workflow deletes from each
@@ -1349,8 +1409,8 @@ so storage policies live only in `019`.
   member: an invitation to be that person) or `merged` (already a member:
   the two entries are one now), 404 `no_account`/`no_person`, 409
   `already_linked`, `already_member`, `already_invited` (someone else is
-  asked to be that person) or `tree_rule` (with the rule's own words), and
-  503 `needs_migration` where 037 is not applied.
+  asked to be that person), `tree_rule` (with the rule's own words) or
+  `personal_vault` (046), and 503 `needs_migration` where 037 is not applied.
 - **`push`** — notifications on devices (034; see
   [Reminders](#reminders--once-per-stage-on-every-device-that-asks-034)):
   `key` and `test` for a signed-in person, `send` for the hourly clock (open

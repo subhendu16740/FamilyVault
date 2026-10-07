@@ -5,12 +5,13 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { embedQuery, EMBEDDING_MODEL } from '../_shared/embeddings.ts';
-import { requireFamilyMember } from '../_shared/auth.ts';
+import { requireFamilyMember, requireVaults, type Vault } from '../_shared/auth.ts';
 import { runReembed, afterResponse } from '../_shared/reembed.ts';
 import { groqChat, groqText, hasGroqKey } from '../_shared/groq.ts';
 import { buildGraph, relativesNamedIn, type KinGraph, type NamedRelative } from '../_shared/kinship.ts';
 import { ticketCodeNotes, ticketSearchTerms } from '../_shared/tickets.ts';
 import { digitsFromWords, restoreCodes } from '../_shared/numbers.ts';
+import { takeInTurn, uniqueRelatives } from '../_shared/vaults.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -69,6 +70,8 @@ interface CitedSource {
   file_name: string;
   file_type: string;
   category_name: string | null;
+  /** The vault it is in (046). Older clients send none. */
+  family_id?: string;
 }
 
 interface HistoryTurn {
@@ -104,6 +107,13 @@ const PIN_MAX_CHARS_PER_CHUNK = 1600;
 const OWNER_MAX_DOCS = 2;
 const OWNER_CHUNKS_PER_DOC = 2;
 
+// Ask across vaults (046): a person's personal vault and every family they
+// are in, searched together, or only the ones they pick. Each vault is
+// searched as one always was, and the judge and the answer run once over
+// all of them, so a question across three vaults costs the Groq budget what
+// one does. More vaults than this and the oldest memberships are searched.
+const MAX_VAULTS = 10;
+
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
 const corsHeaders = {
@@ -118,7 +128,9 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { family_id, query, history: rawHistory, language: rawLanguage, voice: rawVoice } = await req.json();
+    const {
+      family_id, family_ids, scope, query, history: rawHistory, language: rawLanguage, voice: rawVoice,
+    } = await req.json();
 
     // Voice assistant (optional). `language` is a BCP-47 tag for the
     // question and the wanted answer; `voice` means the answer will be read
@@ -127,38 +139,72 @@ Deno.serve(async (req) => {
     const voice = rawVoice === true;
     const nonEnglish = !!language && !language.toLowerCase().startsWith('en');
 
-    if (!family_id || !query) {
+    // Which vaults to search (046). `scope: 'all'` is every vault the asker
+    // is in, their personal vault included; `family_ids` the ones they
+    // picked; `family_id` alone, one. Clients always send `family_id` as
+    // well, so a server without this change searches that one vault and
+    // nothing breaks.
+    const wanted: string[] | 'all' | null = scope === 'all'
+      ? 'all'
+      : Array.isArray(family_ids) && family_ids.length > 0
+        ? family_ids.filter((x: unknown): x is string => typeof x === 'string').slice(0, 20)
+        : null;
+
+    if (!query || (!family_id && !wanted)) {
       return jsonResponse({ error: 'Missing family_id or query' }, 400);
     }
 
     // The service-role client below bypasses RLS, so this is the only place
-    // the caller's right to read this family's documents is ever checked.
-    const auth = await requireFamilyMember(req, supabase, family_id);
-    if (!auth.ok) return auth.response;
+    // the caller's right to read these documents is ever checked: every
+    // vault searched is one they are a member of, or nothing is searched.
+    let userId: string;
+    let vaults: Vault[];
+    if (wanted) {
+      const auth = await requireVaults(req, supabase, wanted);
+      if (!auth.ok) return auth.response;
+      userId = auth.userId;
+      vaults = auth.vaults;
+    } else {
+      const auth = await requireFamilyMember(req, supabase, family_id);
+      if (!auth.ok) return auth.response;
+      userId = auth.member.userId;
+
+      // 1. Get family schema
+      const { data: family, error: famErr } = await supabase
+        .from('families')
+        .select('name, storage_namespace, is_personal')
+        .eq('id', family_id)
+        .single();
+
+      if (famErr || !family) {
+        return jsonResponse({ error: 'Family not found' }, 404);
+      }
+      vaults = [{
+        familyId: family_id,
+        role: auth.member.role,
+        name: family.name,
+        schema: family.storage_namespace,
+        isPersonal: family.is_personal === true,
+      }];
+    }
+    const skipped = vaults.slice(MAX_VAULTS).map(vaultLabel);
+    vaults = vaults.slice(0, MAX_VAULTS);
+    const multi = vaults.length > 1;
 
     const history = sanitiseHistory(rawHistory);
     // Did the client send cited documents (new shape) or only IDs (old bundle)?
     // Distinguishes "pinning had nothing to work with" from "pinning failed".
     const clientSentSources = Array.isArray(rawHistory)
       && rawHistory.some((t: unknown) => Array.isArray((t as HistoryTurn)?.sources));
-    console.log(`[rag] Query: "${query}" for family=${family_id} (history: ${history.length} turns, sources: ${clientSentSources})`);
+    console.log(`[rag] Query: "${query}" for ${multi ? `${vaults.length} vaults` : `family=${vaults[0]?.familyId}`} (history: ${history.length} turns, sources: ${clientSentSources})`);
 
-    // 1. Get family schema
-    const { data: family, error: famErr } = await supabase
-      .from('families')
-      .select('storage_namespace')
-      .eq('id', family_id)
-      .single();
-
-    if (famErr || !family) {
-      return jsonResponse({ error: 'Family not found' }, 404);
+    if (vaults.length === 0) {
+      return jsonResponse({
+        answer: nothingFoundMessage(language),
+        sources: [],
+        ...(language ? { answer_language: language } : {}),
+      });
     }
-
-    const schema = family.storage_namespace;
-
-    // Who is asking, in the family tree — so "Mom" and "Nani" mean the
-    // asker's mother and grandmother. Absent before 031: nothing changes.
-    const tree = await loadTree(family_id, auth.member.userId);
 
     // 2. Turn a follow-up into a standalone question, then retrieve on THAT.
     //    "latest available data?" retrieves nothing; "latest ISB placement
@@ -181,48 +227,53 @@ Deno.serve(async (req) => {
     if (cond.changed) console.log(`[rag] Condensed: "${standalone}"`);
     else if (history.length > 0) console.log(`[rag] Not condensed${cond.error ? ` (${cond.error})` : ''}`);
 
-    // Relations become names: "Nani's pension" is searched as "… Meena Rao".
-    // Checked against the question as asked, as translated and as condensed.
-    const named = tree.graph ? relativesNamedIn(tree.graph, tree.meId, query, trans.query, standalone) : [];
-    const searchQuery = named.length ? `${standalone} ${named.map(n => n.name).join(' ')}` : standalone;
-    const judgeQuestion = named.length
-      ? `${standalone} (${named.map(n => `"${n.term}" is ${n.name}, the asker's ${n.label.toLowerCase()}`).join('; ')})`
-      : standalone;
-    if (named.length) console.log(`[rag] Relatives named: ${named.map(n => `${n.term}=${n.name}`).join(', ')}`);
-
     // A ticket's words for what the question asks: a train ticket never says
     // "seat", only Booking Status and a code (_shared/tickets.ts). Searched
     // by keyword only; the question's meaning is embedded as asked.
     const ticketTerms = ticketSearchTerms(`${query} ${trans.query} ${standalone}`);
-
     const citedIds = history.flatMap(t => t.source_ids ?? []);
-    const indexReady = await isIndexReady(schema);
-    if (!indexReady) {
-      console.log(`[rag] ${schema} is mid re-embed — keyword-only retrieval`);
-      // Start the rebuild here rather than waiting to be asked. A rebuild
-      // gated on someone opening the right Settings row does not happen, and
-      // until it does this family has no vectors at all — so a question in
-      // another script, or one phrased differently from the document, finds
-      // nothing. Runs after the response is sent, holds a lease so parallel
-      // searches do not trample each other, and resumes from its cursor on
-      // the next search. A few questions and the index builds itself.
-      afterResponse(
-        runReembed(supabase, schema, { budgetMs: 20_000, requireLease: true, familyId: family_id })
-          .then(p => console.log(`[rag] Background re-embed: ${p.done_count}/${p.total_count}${p.error ? ` (${p.error})` : ''}`))
-          .catch(err => console.warn('[rag] Background re-embed failed:', err)),
-      );
-    }
-    const [pin, owned, retrieved] = await Promise.all([
-      history.length > 0 ? pinnedChunks(schema, history) : Promise.resolve({ chunks: [] as ChunkResult[], error: undefined as string | undefined }),
-      named.length > 0 ? ownerChunks(schema, named, searchQuery) : Promise.resolve({ chunks: [] as ChunkResult[], error: undefined as string | undefined }),
-      retrieveChunks(schema, searchQuery, citedIds, indexReady, ticketTerms),
-    ]);
-    const pinned = pin.chunks;
-    const retrievedChunks = retrieved.chunks;
+
+    // One embedding per distinct text, however many vaults are searched with it.
+    const embedded = new Map<string, ReturnType<typeof embedQuery>>();
+    const embed = (text: string) => {
+      let vector = embedded.get(text);
+      if (!vector) {
+        vector = embedQuery(text);
+        embedded.set(text, vector);
+      }
+      return vector;
+    };
+
+    // 3. Each vault searched as one always was: its own family tree, its own
+    //    index state, its own capped retrieval.
+    const searched = await Promise.all(vaults.map(v => searchVault(v, {
+      userId, query, translated: trans.query, standalone, history, citedIds, ticketTerms, embed,
+    })));
+    const first = <T>(values: (T | undefined)[]) => values.find(x => x !== undefined);
+
+    // Relations become names: "Nani's pension" is searched as "… Meena Rao".
+    const named = uniqueRelatives(searched.flatMap(s => s.named));
+    const meName = first(searched.map(s => s.tree.meName ?? undefined)) ?? null;
+    const searchQuery = multi
+      ? (named.length ? `${standalone} ${[...new Set(named.map(n => n.name))].join(' ')}` : standalone)
+      : searched[0].searchQuery;
+    const judgeQuestion = named.length
+      ? `${standalone} (${named.map(n => `"${n.term}" is ${n.name}, the asker's ${n.label.toLowerCase()}`).join('; ')})`
+      : standalone;
+
+    const pinned = searched.flatMap(s => s.pinned);
+    const owned = searched.flatMap(s => s.owned);
+    // Each vault's best first, in turn, so the judge's places are shared out
+    // rather than won by whichever vault holds the most documents.
+    const retrievedChunks = multi ? takeInTurn(searched.map(s => s.retrieved)) : searched[0].retrieved;
+    const pinError = first(searched.map(s => s.pinError));
+    const ownedError = first(searched.map(s => s.ownedError));
+    const treeError = first(searched.map(s => s.tree.error));
+    const rebuilding = searched.filter(s => !s.indexReady).map(s => s.vault.familyId);
     if (pinned.length) console.log(`[rag] Pinned ${pinned.length} chunk(s) from cited documents`);
-    if (pin.error) console.warn(`[rag] Pin error: ${pin.error}`);
-    if (owned.chunks.length) console.log(`[rag] ${owned.chunks.length} chunk(s) from documents marked as theirs`);
-    if (owned.error) console.warn(`[rag] Owner documents error: ${owned.error}`);
+    if (pinError) console.warn(`[rag] Pin error: ${pinError}`);
+    if (owned.length) console.log(`[rag] ${owned.length} chunk(s) from documents marked as theirs`);
+    if (ownedError) console.warn(`[rag] Owner documents error: ${ownedError}`);
 
     // Pinned chunks are CANDIDATES, not guaranteed context. They join the
     // pool so a document from earlier in the conversation is always
@@ -230,13 +281,13 @@ Deno.serve(async (req) => {
     // what stops last turn's document crowding out this turn's answer when
     // the user changes subject.
     const candidates = diversify(
-      dedupeChunks([...pinned, ...owned.chunks, ...retrievedChunks]),
+      dedupeChunks([...pinned, ...owned, ...retrievedChunks]),
       MAX_CHUNKS_PER_DOC,
       RERANK_CANDIDATES,
     );
     console.log(`[rag] ${candidates.length} candidate chunks`);
 
-    // 3. Judge every candidate against the question; keep only the relevant.
+    // 4. Judge every candidate against the question; keep only the relevant.
     // What any ticket codes among them mean, so "CNF/B4/17 UB" is a seat.
     const candidateNotes = ticketCodeNotes(candidates.map(c => c.content));
     const rank = await rerankChunks(judgeQuestion, candidates, candidateNotes);
@@ -247,12 +298,13 @@ Deno.serve(async (req) => {
     // Surfaced in the response so a screenshot of the app is a full diagnosis:
     // what was searched, what was pinned, what came back, what survived.
     const uniqNames = (cs: ChunkResult[]) => [...new Set(cs.map(c => c.file_name))];
+    const embedError = first(searched.map(s => s.embedError));
     const debug = {
       searched_for: ticketTerms.length ? `${searchQuery} (+ ${ticketTerms.join(', ')})` : searchQuery,
       ...(named.length ? { relatives: named.map(n => ({ term: n.term, name: n.name })) } : {}),
-      ...(owned.chunks.length ? { owner_docs: uniqNames(owned.chunks) } : {}),
-      ...(owned.error ? { owner_error: owned.error } : {}),
-      ...(tree.error ? { tree_error: tree.error } : {}),
+      ...(owned.length ? { owner_docs: uniqNames(owned) } : {}),
+      ...(ownedError ? { owner_error: ownedError } : {}),
+      ...(treeError ? { tree_error: treeError } : {}),
       history_turns: history.length,
       client_sent_sources: clientSentSources,
       pinned_docs: uniqNames(pinned),
@@ -264,13 +316,23 @@ Deno.serve(async (req) => {
       condensed: cond.changed,
       ...(language ? { language } : {}),
       ...(trans.changed ? { translated: trans.query } : {}),
-      ...(indexReady ? {} : { index_rebuilding: true }),
+      ...(rebuilding.length ? { index_rebuilding: true, rebuilding_family_ids: rebuilding } : {}),
+      // Which vaults were searched, and what each gave, when there was more than one.
+      ...(multi ? {
+        vaults: searched.map(s => ({
+          family_id: s.vault.familyId,
+          name: s.label,
+          retrieved_docs: uniqNames(s.retrieved),
+          ...(s.indexReady ? {} : { index_rebuilding: true }),
+        })),
+      } : {}),
+      ...(skipped.length ? { vaults_skipped: skipped } : {}),
       // Did the question actually get a vector? Without one, retrieval is
       // keyword-only, which finds nothing when the question and the documents
       // are in different scripts. This is the difference between "the index
       // is not ready", "embedding failed" and "there is genuinely no match".
-      embedded: retrieved.embedded,
-      ...(retrieved.embedError ? { embed_error: retrieved.embedError } : {}),
+      embedded: searched.some(s => s.embedded),
+      ...(embedError ? { embed_error: embedError } : {}),
       ...(trans.error ? { translate_error: trans.error } : {}),
       ...(voice ? { voice: true } : {}),
       // Which models actually ran, so a retired one shows up in a screenshot
@@ -280,7 +342,7 @@ Deno.serve(async (req) => {
         ...(rank.model ? { rerank: rank.model } : {}),
       } as { condense?: string; rerank?: string; answer?: string },
       ...(cond.error ? { condense_error: cond.error } : {}),
-      ...(pin.error ? { pin_error: pin.error } : {}),
+      ...(pinError ? { pin_error: pinError } : {}),
       ...(rank.error ? { rerank_error: rank.error } : {}),
     };
 
@@ -305,17 +367,18 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 4. Build context from the survivors, within a token budget.
-    const built = buildContext(chunks);
+    // 5. Build context from the survivors, within a token budget. Across
+    //    vaults, each passage says which vault it is from.
+    const built = buildContext(chunks, multi);
     const context = built.text;
 
-    // 4. Generate answer with Groq
+    // 6. Generate answer with Groq
     // The model answers the STANDALONE question. Handing it the raw
     // follow-up ("What about 2026?") next to whatever retrieval found lets it
     // answer a different question from the context instead of the one asked.
     // Who "Nani" is, for the model: the asker, and each relative the question named.
-    const familyNote = named.length && tree.meName
-      ? `The person asking is ${tree.meName}. In this question, ${named.map(n => `"${n.term}" means ${n.name}, their ${n.label.toLowerCase()}`).join('; ')}.`
+    const familyNote = named.length && meName
+      ? `The person asking is ${meName}. In this question, ${named.map(n => `"${n.term}" means ${n.name}, their ${n.label.toLowerCase()}`).join('; ')}.`
       : undefined;
     const answerNotes = ticketCodeNotes(built.used.map(c => c.content));
     const result = await generateAnswer(standalone, context, chunks, history, {
@@ -325,14 +388,17 @@ Deno.serve(async (req) => {
       `[rag] Answer ${result.degraded ? 'DEGRADED' : 'generated'} (${result.answer.length} chars)`,
     );
 
-    // 5. Return answer + source documents
+    // 7. Return answer + source documents
     // Built from the chunks that made it INTO the prompt — not from everything
     // retrieved — so a chip never claims a document the model never read.
+    // Each says which vault it is in, so the app opens it there.
     const sources = [...new Map(built.used.map(c => [c.document_id, {
       id: c.document_id,
       file_name: c.file_name,
       file_type: c.file_type,
       category_name: c.category_name,
+      family_id: c.family_id,
+      family_name: c.vault,
     }])).values()];
 
     // `degraded` tells the client the answer did NOT come from the model, so
@@ -352,6 +418,97 @@ Deno.serve(async (req) => {
   }
 });
 
+// ─── One vault ─────────────────────────────────────────────────
+
+/** What searching one vault found, before the vaults are put together. */
+interface VaultSearch {
+  vault: Vault;
+  /** How the vault is named to the person: "Personal vault", or the family's name. */
+  label: string;
+  tree: FamilyTreeForSearch;
+  named: NamedRelative[];
+  searchQuery: string;
+  indexReady: boolean;
+  pinned: ChunkResult[];
+  pinError?: string;
+  owned: ChunkResult[];
+  ownedError?: string;
+  retrieved: ChunkResult[];
+  embedded: boolean;
+  embedError?: string;
+}
+
+const vaultLabel = (v: Vault) => (v.isPersonal ? 'Personal vault' : v.name);
+
+async function searchVault(v: Vault, ctx: {
+  userId: string;
+  query: string;
+  translated: string;
+  standalone: string;
+  history: HistoryTurn[];
+  citedIds: string[];
+  ticketTerms: string[];
+  embed: (text: string) => ReturnType<typeof embedQuery>;
+}): Promise<VaultSearch> {
+  const label = vaultLabel(v);
+
+  // Who is asking, in this vault's family tree — so "Mom" and "Nani" mean the
+  // asker's mother and grandmother. Absent before 031: nothing changes.
+  const tree = await loadTree(v.familyId, ctx.userId);
+
+  // Relations become names: "Nani's pension" is searched as "… Meena Rao".
+  // Checked against the question as asked, as translated and as condensed.
+  const named = tree.graph ? relativesNamedIn(tree.graph, tree.meId, ctx.query, ctx.translated, ctx.standalone) : [];
+  const searchQuery = named.length ? `${ctx.standalone} ${named.map(n => n.name).join(' ')}` : ctx.standalone;
+  if (named.length) console.log(`[rag] Relatives named in ${v.schema}: ${named.map(n => `${n.term}=${n.name}`).join(', ')}`);
+
+  const indexReady = await isIndexReady(v.schema);
+  if (!indexReady) {
+    console.log(`[rag] ${v.schema} is mid re-embed — keyword-only retrieval`);
+    // Start the rebuild here rather than waiting to be asked. A rebuild
+    // gated on someone opening the right Settings row does not happen, and
+    // until it does this family has no vectors at all — so a question in
+    // another script, or one phrased differently from the document, finds
+    // nothing. Runs after the response is sent, holds a lease so parallel
+    // searches do not trample each other, and resumes from its cursor on
+    // the next search. A few questions and the index builds itself.
+    afterResponse(
+      runReembed(supabase, v.schema, { budgetMs: 20_000, requireLease: true, familyId: v.familyId })
+        .then(p => console.log(`[rag] Background re-embed: ${p.done_count}/${p.total_count}${p.error ? ` (${p.error})` : ''}`))
+        .catch(err => console.warn('[rag] Background re-embed failed:', err)),
+    );
+  }
+
+  const [pin, owned, retrieved] = await Promise.all([
+    ctx.history.length > 0
+      ? pinnedChunks(v.schema, ctx.history, v.familyId)
+      : Promise.resolve({ chunks: [] as ChunkResult[], error: undefined as string | undefined }),
+    named.length > 0
+      ? ownerChunks(v.schema, named, searchQuery)
+      : Promise.resolve({ chunks: [] as ChunkResult[], error: undefined as string | undefined }),
+    retrieveChunks(v.schema, searchQuery, ctx.citedIds, indexReady, ctx.ticketTerms, ctx.embed),
+  ]);
+
+  // Every passage remembers its vault: the answer says where it is from, and
+  // the app opens the document there.
+  const tag = (cs: ChunkResult[]) => cs.map(c => ({ ...c, family_id: v.familyId, vault: label }));
+  return {
+    vault: v,
+    label,
+    tree,
+    named,
+    searchQuery,
+    indexReady,
+    pinned: tag(pin.chunks),
+    pinError: pin.error,
+    owned: tag(owned.chunks),
+    ownedError: owned.error,
+    retrieved: tag(retrieved.chunks),
+    embedded: retrieved.embedded,
+    embedError: retrieved.embedError,
+  };
+}
+
 // ─── Retrieve Chunks ───────────────────────────────────────────
 
 interface ChunkResult {
@@ -363,6 +520,9 @@ interface ChunkResult {
   chunk_index: number;
   /** Whose document the family marked it as, when that is why it is here. */
   owner?: string;
+  /** The vault it came from, and its name as the person knows it (046). */
+  family_id?: string;
+  vault?: string;
 }
 
 async function retrieveChunks(
@@ -371,6 +531,7 @@ async function retrieveChunks(
   citedIds: string[] = [],
   useVector = true,
   extraTerms: string[] = [],
+  embed: (text: string) => ReturnType<typeof embedQuery> = embedQuery,
 ): Promise<{ chunks: ChunkResult[]; embedded: boolean; embedError?: string }> {
   // Build tsquery from words. Letters and digits in any script, plus the
   // combining marks that Indic scripts need (a Devanagari vowel sign is \p{M}
@@ -395,12 +556,12 @@ async function retrieveChunks(
   // onto the current model. Comparing a new query vector against old chunk
   // vectors would rank by noise, so keyword-only is the correct answer until
   // the rebuild finishes (see _shared/embeddings.ts and migration 013).
-  const embed = useVector
-    ? await embedQuery(query)
+  const vector = useVector
+    ? await embed(query)
     : { vector: null as number[] | null, error: undefined as string | undefined };
-  const queryEmbedding = embed.vector;
+  const queryEmbedding = vector.vector;
   if (useVector && !queryEmbedding) {
-    console.warn(`[rag] No query embedding (${embed.error ?? 'unknown'}) — keyword-only retrieval`);
+    console.warn(`[rag] No query embedding (${vector.error ?? 'unknown'}) — keyword-only retrieval`);
   }
 
   // Hybrid retrieval: 0.7 semantic + 0.3 keyword when an embedding is present.
@@ -436,7 +597,7 @@ async function retrieveChunks(
 
   if (error) {
     console.warn('[rag] Chunk retrieval RPC failed, trying direct query:', error.message);
-    return { chunks: await fallbackRetrieve(schema, query, words), embedded: false, embedError: embed.error };
+    return { chunks: await fallbackRetrieve(schema, query, words), embedded: false, embedError: vector.error };
   }
 
   const results = (data ?? []) as ChunkResult[];
@@ -450,7 +611,7 @@ async function retrieveChunks(
       Number(cited.has(b.document_id)) - Number(cited.has(a.document_id)));
   }
 
-  return { chunks: results, embedded: !!queryEmbedding, embedError: embed.error };
+  return { chunks: results, embedded: !!queryEmbedding, embedError: vector.error };
 }
 
 // ─── Conversation helpers ──────────────────────────────────────
@@ -469,12 +630,16 @@ function sanitiseHistory(raw: unknown): HistoryTurn[] {
       ? rawSources
           .filter(x => x && typeof x === 'object' && typeof (x as CitedSource).id === 'string')
           .slice(0, 5)
-          .map(x => ({
-            id: (x as CitedSource).id,
-            file_name: String((x as CitedSource).file_name ?? ''),
-            file_type: String((x as CitedSource).file_type ?? ''),
-            category_name: (x as CitedSource).category_name ?? null,
-          }))
+          .map(x => {
+            const vault = (x as CitedSource).family_id;
+            return {
+              id: (x as CitedSource).id,
+              file_name: String((x as CitedSource).file_name ?? ''),
+              file_type: String((x as CitedSource).file_type ?? ''),
+              category_name: (x as CitedSource).category_name ?? null,
+              ...(typeof vault === 'string' && /^[0-9a-f-]{36}$/i.test(vault) ? { family_id: vault } : {}),
+            };
+          })
       : undefined;
     const legacyIds = Array.isArray((t as HistoryTurn).source_ids)
       ? (t as HistoryTurn).source_ids!.filter(id => typeof id === 'string').slice(0, 5)
@@ -494,11 +659,16 @@ function sanitiseHistory(raw: unknown): HistoryTurn[] {
 async function pinnedChunks(
   schema: string,
   history: HistoryTurn[],
+  familyId: string,
 ): Promise<{ chunks: ChunkResult[]; error?: string }> {
   const lastCited = [...history].reverse().find(t => t.role === 'assistant' && t.sources?.length);
   if (!lastCited?.sources) return { chunks: [], error: 'no cited sources in history' };
 
-  const docs = lastCited.sources.slice(0, PIN_MAX_DOCS);
+  // A document cited from another vault is pinned there, not here (046). One
+  // with no vault (an older client) is looked for here; it is only found if
+  // it is in this schema.
+  const docs = lastCited.sources.filter(s => !s.family_id || s.family_id === familyId).slice(0, PIN_MAX_DOCS);
+  if (docs.length === 0) return { chunks: [] };
   const results: ChunkResult[] = [];
   const errors: string[] = [];
 
@@ -1156,7 +1326,7 @@ function parseRetryAfter(errText: string): number | undefined {
  * Keep the model's context under the free-tier token budget. Chunks arrive
  * ranked, so taking from the front keeps the most relevant material.
  */
-function buildContext(chunks: ChunkResult[]): { text: string; used: ChunkResult[] } {
+function buildContext(chunks: ChunkResult[], acrossVaults = false): { text: string; used: ChunkResult[] } {
   const parts: string[] = [];
   const used: ChunkResult[] = [];
   let budget = MAX_CONTEXT_CHARS;
@@ -1168,7 +1338,9 @@ function buildContext(chunks: ChunkResult[]): { text: string; used: ChunkResult[
     // "IDV" belongs to the insurance policy, not the tax return beside it.
     const type = c.category_name ? ` | Type: ${c.category_name}` : '';
     const whose = c.owner ? ` | Marked as ${c.owner}'s` : '';
-    parts.push(`[Document: ${c.file_name}${type}${whose}]\n${body}`);
+    // Across vaults, two passports can be two people's: say where each is from.
+    const where = acrossVaults && c.vault ? ` | In: ${c.vault}` : '';
+    parts.push(`[Document: ${c.file_name}${type}${whose}${where}]\n${body}`);
     used.push(c);
     budget -= body.length;
   }

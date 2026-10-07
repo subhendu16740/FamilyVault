@@ -8,6 +8,9 @@ import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFamily } from '../../lib/family-context';
+import { useAuth } from '../../lib/auth';
+import { accountKey, storageGet, storageSet } from '../../lib/storage';
+import { isPersonalVault, vaultName } from '../../lib/vaults';
 import {
   fetchCategories, ragSearch, indexStatus, saveChat, getSavedChat, isMissingMigration, claimVoiceAnswer,
   fetchVoiceStatus, ChatStorageFullError,
@@ -22,6 +25,7 @@ import {
 } from '../../lib/speech';
 import { toSpeech } from '../../lib/speech-text';
 import { ScreenHeader, HeaderIconButton, HeaderActions } from '../../components/screen-header';
+import { VaultPill, VaultSheet, type VaultChoice } from '../../components/vault-sheet';
 import { color, space, type } from '../../constants/design';
 
 type DocumentCategory = Database['public']['Tables']['document_categories']['Row'];
@@ -45,7 +49,41 @@ function shortModel(id: string): string {
 type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking';
 
 export default function SearchScreen() {
-  const { currentFamily, members } = useFamily();
+  const { user } = useAuth();
+  const { currentFamily, members, families } = useFamily();
+
+  // Where Ask searches (046): every vault this person is in — their personal
+  // vault and each family — unless they pick one, which answers sooner.
+  // Remembered on this device. A vault they have left since is no choice: all
+  // of them, then.
+  const [searchIn, setSearchIn] = useState('all');
+  const [searchInOpen, setSearchInOpen] = useState(false);
+  useEffect(() => {
+    if (!user) return;
+    storageGet(accountKey.askIn(user.id)).then((v) => { if (v) setSearchIn(v); }).catch(() => {});
+  }, [user?.id]);
+  const chooseSearchIn = (key: string) => {
+    setSearchIn(key);
+    if (user) storageSet(accountKey.askIn(user.id), key).catch(() => {});
+  };
+  const severalVaults = families.length > 1;
+  const pickedVault = searchIn !== 'all' ? families.find((f) => f.family_id === searchIn) ?? null : null;
+  const askAll = severalVaults && !pickedVault;
+  const askFamily = pickedVault?.families ?? currentFamily;
+  const searchInChoices: VaultChoice[] = [
+    { key: 'all', name: 'All my vaults', subtitle: 'Every document you can see', icon: 'layers' },
+    ...families.map((f): VaultChoice => ({
+      key: f.family_id,
+      name: vaultName(f.families),
+      subtitle: isPersonalVault(f.families) ? 'Only you' : 'Family',
+      icon: isPersonalVault(f.families) ? 'lock' : 'users',
+    })),
+  ];
+  /** A source's vault, by the name every screen uses for it. */
+  const vaultOf = (familyId?: string, sent?: string) => {
+    const f = familyId ? families.find((x) => x.family_id === familyId) : undefined;
+    return f ? vaultName(f.families) : sent;
+  };
   const [query, setQuery] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [categories, setCategories] = useState<DocumentCategory[]>([]);
@@ -304,7 +342,7 @@ export default function SearchScreen() {
   }, []);
 
   const handleAsk = async (q: string, opts: { spoken?: boolean } = {}) => {
-    if (!q.trim() || !currentFamily || isAsking) return;
+    if (!q.trim() || !askFamily || isAsking) return;
     const question = q.trim();
     setQuery('');
     setIsAsking(true);
@@ -336,9 +374,10 @@ export default function SearchScreen() {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
 
     try {
-      const result = await ragSearch(currentFamily.id, question, history, {
+      const result = await ragSearch(askFamily.id, question, history, {
         language: voiceMode ? voiceLanguage : undefined,
         voice: wantVoice,
+        ...(askAll ? { vaults: 'all' as const } : {}),
       });
       setMessages((prev) =>
         prev.map((m) =>
@@ -349,7 +388,7 @@ export default function SearchScreen() {
       );
       if (wantVoice) readAnswer(aiPlaceholder.id, result.answer, result.answer_language);
       else if (voiceWanted) sayNoVoiceLeft();
-      if (result.debug?.index_rebuilding && currentFamily) repairIndex(currentFamily.id);
+      if (result.debug?.index_rebuilding) repairIndex(result.debug.rebuilding_family_ids?.[0] ?? askFamily.id);
     } catch (err) {
       console.error('RAG error:', err);
       const failed = t('failed');
@@ -475,6 +514,18 @@ export default function SearchScreen() {
           )}
         />
 
+        {/* Where to search (046): all vaults, or one, which answers sooner */}
+        {severalVaults && (
+          <View style={styles.searchInBar}>
+            <VaultPill
+              label="Search in"
+              value={pickedVault ? vaultName(pickedVault.families) : 'All my vaults'}
+              icon={pickedVault ? (isPersonalVault(pickedVault.families) ? 'lock' : 'users') : 'layers'}
+              onPress={() => setSearchInOpen(true)}
+            />
+          </View>
+        )}
+
         {/* Chat Area */}
         <ScrollView
           ref={scrollRef}
@@ -500,7 +551,13 @@ export default function SearchScreen() {
                   {voiceMode ? t(noVoiceLeft ? 'empty_title_typed' : 'empty_title') : 'Ask anything about your documents'}
                 </Text>
                 <Text style={styles.emptySub}>
-                  {voiceMode ? t('empty_sub') : "I can find information across all your family's uploaded documents."}
+                  {voiceMode
+                    ? t('empty_sub')
+                    : askAll
+                      ? 'I can find information across all your vaults: your personal vault and your families.'
+                      : pickedVault
+                        ? `I can find information in ${vaultName(pickedVault.families)}.`
+                        : "I can find information across all your family's uploaded documents."}
                 </Text>
               </View>
 
@@ -600,10 +657,18 @@ export default function SearchScreen() {
                               <TouchableOpacity
                                 key={s.id}
                                 style={styles.sourceChip}
-                                onPress={() => router.push(`/document/${s.id}` as any)}
+                                // Opened in the vault it is in, which may not be the open one.
+                                onPress={() => router.push({
+                                  pathname: '/document/[id]',
+                                  params: { id: s.id, ...(s.family_id ? { family: s.family_id } : {}) },
+                                } as any)}
+                                accessibilityLabel={[s.file_name, severalVaults ? vaultOf(s.family_id, s.family_name) : null].filter(Boolean).join(', in ')}
                               >
                                 <Feather name="file-text" size={12} color="#2A3D66" />
                                 <Text style={styles.sourceText} numberOfLines={1}>{s.file_name}</Text>
+                                {severalVaults && !!vaultOf(s.family_id, s.family_name) && (
+                                  <Text style={styles.sourceVault} numberOfLines={1}>· {vaultOf(s.family_id, s.family_name)}</Text>
+                                )}
                               </TouchableOpacity>
                             ))}
                           </View>
@@ -802,6 +867,16 @@ export default function SearchScreen() {
           </View>
         </View>
       </KeyboardAvoidingView>
+
+      <VaultSheet
+        visible={searchInOpen}
+        title="Search in"
+        intro="All my vaults searches every document you can see. Pick one vault and the answer comes sooner."
+        choices={searchInChoices}
+        selected={pickedVault ? pickedVault.family_id : 'all'}
+        onSelect={chooseSearchIn}
+        onClose={() => setSearchInOpen(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -890,8 +965,18 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 8,
     paddingVertical: 4,
+    // Never wider than the answer: the file name gives way first, then the vault.
+    maxWidth: '100%',
   },
-  sourceText: { fontSize: 12, lineHeight: 16, color: color.primary, fontWeight: '500', maxWidth: 160 },
+  sourceText: { fontSize: 12, lineHeight: 16, color: color.primary, fontWeight: '500', maxWidth: 160, flexShrink: 1 },
+  sourceVault: { fontSize: 12, lineHeight: 16, color: color.textMuted, maxWidth: 120, flexShrink: 0 },
+  searchInBar: {
+    paddingHorizontal: space.lg,
+    paddingVertical: space.sm,
+    backgroundColor: color.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: color.border,
+  },
   searchedFor: { fontSize: 12, lineHeight: 16, color: '#9CA3AF', marginTop: space.sm, fontStyle: 'italic' },
   indexStrip: {
     flexDirection: 'row',

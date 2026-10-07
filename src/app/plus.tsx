@@ -13,6 +13,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFamily } from '../lib/family-context';
+import { vaultName } from '../lib/vaults';
 import { useFamilyPlan, usePaymentsStatus, type PlusFeature } from '../lib/family-plan';
 import { PaymentError, createPlusOrder, fetchPlanLimits, verifyPlusPayment } from '../lib/api';
 import { checkoutSupported, openCheckout } from '../lib/razorpay';
@@ -89,7 +90,7 @@ export default function PlusScreen() {
     return () => { cancelled = true; };
   }, [refresh]));
 
-  const familyName = currentFamily?.name;
+  const familyName = currentFamily ? vaultName(currentFamily) : undefined;
 
   // ─── Paying (044) ───────────────────────────────────────
   const payments = usePaymentsStatus();

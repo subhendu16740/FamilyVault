@@ -20,15 +20,22 @@ export interface Owner {
   isMe: boolean;
 }
 
-export function useDocumentOwners(): Owner[] {
+/**
+ * The people of one vault's tree: the vault a document is going to on Upload
+ * (046: the person chooses), or the one a document is in. The open vault
+ * when none is given.
+ */
+export function useDocumentOwners(familyId?: string | null): Owner[] {
   const { user } = useAuth();
   const { currentFamily, members } = useFamily();
-  const [owners, setOwners] = useState<Owner[] | null>(null);
+  const target = familyId ?? currentFamily?.id ?? null;
+  // Kept with the vault it is for, so a change of vault never shows the last one's people.
+  const [owners, setOwners] = useState<{ familyId: string; list: Owner[] } | null>(null);
 
   useFocusEffect(useCallback(() => {
     let cancelled = false;
-    if (!currentFamily) return;
-    fetchFamilyTree(currentFamily.id)
+    if (!target) return;
+    fetchFamilyTree(target)
       .then(({ people, links }) => {
         if (cancelled || !people.length) return;
         const graph = buildGraph(people, links);
@@ -39,13 +46,15 @@ export function useDocumentOwners(): Owner[] {
           const label = [p.id === me?.id ? 'Me' : rel?.en, p.nickname ? `"${p.nickname}"` : null].filter(Boolean).join(' · ');
           return { id: p.id, name: p.name, label: label || null, isMe: p.id === me?.id };
         });
-        setOwners([...list.filter((o) => o.isMe), ...list.filter((o) => !o.isMe)]);
+        setOwners({ familyId: target, list: [...list.filter((o) => o.isMe), ...list.filter((o) => !o.isMe)] });
       })
       .catch(() => undefined);           // before 031: the members below
     return () => { cancelled = true; };
-  }, [currentFamily?.id, user?.id]));
+  }, [target, user?.id]));
 
-  if (owners) return owners;
+  if (owners && owners.familyId === target) return owners.list;
+  // Members are known only for the open vault.
+  if (target !== currentFamily?.id) return [];
   const fromMembers = members.map((m) => ({
     id: m.id,
     name: m.alias || m.users.display_name,

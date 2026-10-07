@@ -12,6 +12,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../lib/auth';
 import { useFamily } from '../../lib/family-context';
+import { vaultName } from '../../lib/vaults';
 import {
   fetchPlanLimits, fetchStorageStatus, fetchStorageUsage, type FamilyPlanStatus, type FamilyStorage,
 } from '../../lib/api';
@@ -49,7 +50,7 @@ export default function StorageScreen() {
     if (!user) return;
     let cancelled = false;
     setError(null);
-    const list = families.map((f) => ({ id: f.families.id, name: f.families.name }));
+    const list = families.map((f) => ({ id: f.families.id, name: vaultName(f.families) }));
     Promise.all([
       fetchStorageUsage(list, user.id),
       Promise.all(list.map((f) => fetchStorageStatus(f.id).catch(() => null))),

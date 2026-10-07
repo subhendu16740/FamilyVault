@@ -19,6 +19,7 @@ import { extractMetadata, parseFlexibleDate } from '../../supabase/functions/_sh
 import { cleanText } from '../../supabase/functions/_shared/text.ts';
 import { ticketCodeNotes, ticketSearchTerms } from '../../supabase/functions/_shared/tickets.ts';
 import { digitsFromWords, restoreCodes } from '../../supabase/functions/_shared/numbers.ts';
+import { takeInTurn, uniqueRelatives } from '../../supabase/functions/_shared/vaults.ts';
 import { toSpeech } from '../../src/lib/speech-text.ts';
 import { acceptedCurrencies, hmacSha256Hex, paymentSignatureOk, plusOrderAmount, plusOrderDescription, sameText, webhookSignatureOk, ORDER_ID, PAYMENT_ID } from '../../supabase/functions/_shared/razorpay.ts';
 import { createHmac } from 'node:crypto';
@@ -46,6 +47,24 @@ function test(name, fn) {
     .then(() => { passed++; })
     .catch((err) => failures.push(`${name}: ${err.message}`));
 }
+
+await test('asking across vaults: each vault\'s best first, in turn (046)', () => {
+  assert.deepEqual(takeInTurn([[1, 2, 3], ['a'], ['x', 'y']]), [1, 'a', 'x', 2, 'y', 3]);
+  assert.deepEqual(takeInTurn([[], [1, 2]]), [1, 2]);
+  assert.deepEqual(takeInTurn([]), []);
+  // A family's long tax return cannot push a personal vault's one passage
+  // out of the judge's fifteen places: it comes second, not sixteenth.
+  const taxReturn = Array.from({ length: 40 }, (_, i) => `tax-${i}`);
+  const merged = takeInTurn([taxReturn, ['passport']]);
+  assert.equal(merged[1], 'passport');
+  assert.equal(merged.length, 41);
+});
+
+await test('the same relative named in two vaults\' trees is one note (046)', () => {
+  const said = (term, name) => ({ term, name, label: 'Mother', personId: `${name}-id` });
+  const notes = uniqueRelatives([said('mom', 'Meena Rao'), said('mom', 'Meena Rao'), said('mom', 'Meena R.'), said('nani', 'Kamala Verma')]);
+  assert.deepEqual(notes.map((n) => `${n.term}=${n.name}`), ['mom=Meena Rao', 'mom=Meena R.', 'nani=Kamala Verma']);
+});
 
 await test('dates in every common form', () => {
   for (const s of ['on 19/07/2033', 'on 19-07-2033', '19.7.2033', 'expires 19 July 2033.', '19th July, 2033', 'July 19, 2033', '2033-07-19', '19 जुलाई 2033 को', '१९/०७/२०३३']) {
