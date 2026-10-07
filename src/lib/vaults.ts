@@ -33,6 +33,6 @@ export function splitVaults(vaults: FamilyWithMembership[]): {
 
 /** Who sees what is in it, for the line under a vault's name. */
 export function vaultSubtitle(v: FamilyWithMembership): string {
-  if (isPersonalVault(v.families)) return 'Only you can see it';
+  if (isPersonalVault(v.families)) return 'Just for you';
   return v.role === 'admin' ? 'Family · you are an admin' : 'Family';
 }

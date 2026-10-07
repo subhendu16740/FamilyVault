@@ -629,6 +629,7 @@ src/
       storage.tsx  help.tsx  feedback.tsx  about.tsx   # storage: each family's plan, and how much of its space is used (038, 039)
       delete-account.tsx     # Security › Delete account: shows what goes, asks for DELETE (029)
     document/[id].tsx        # document viewer; Share opens the share sheet (036, web only)
+    documents.tsx            # All documents (Home's document count, See all): every vault's documents, a vault filter, Delete one or several (Select)
     gmail-import.tsx         # connect Gmail, review what it found, import (web only, ★ Family Plus)
     plus.tsx                 # Family Plus: what Plus gives, side by side with Free; every ★ opens it for a free family; pay for a month or a year (044, web only)
     s.tsx                    # what a share link opens: one document, for anyone with the link, no account (036)
@@ -919,7 +920,11 @@ so storage policies live only in `019`.
   account-deletion policy, which also wants a web link — the web app's
   `/settings/delete-account` is that page). Settings › Security › Delete
   account shows, family by family, what goes and what stays, and asks for
-  DELETE to be typed. There is no waiting period and no copy kept.
+  DELETE to be typed. There is no waiting period and the app keeps no
+  copy. Short-lived copies in Supabase's backups and logs expire on their
+  own, and what went to HuggingFace, Groq or OCR.space is under their
+  policies, so the screens never say "nothing is kept" (see
+  [Conventions](#conventions)).
 - **A family goes with the account when nobody would be left to manage it**:
   the person is its last admin, or its last member. It goes whole — rows,
   schema, index state, files — and its other members lose it; the screen
@@ -1501,6 +1506,18 @@ so storage policies live only in `019`.
   (documents, members or "Only you", categories); with several, the
   documents in all of them and how many vaults — categories are counted per
   vault, so a sum would count one twice.
+- **The document count opens All documents** (`src/app/documents.tsx`; so
+  does See all beside Recent Documents): every document in every vault,
+  newest first, with a vault filter (`VaultDropdown`, All vaults first), and
+  Delete — the bin on a row, or Select to tick several. Delete is offered
+  only where it will work: anything in a vault where the person's
+  membership has `can_delete` (an admin's), elsewhere the documents they
+  added (`fetchDeleteRights()`). `delete_family_document` (023) keeps the
+  same rule on the server, and `deleteDocument()` then removes the file, so
+  the vault's space is freed. One confirmation for one or many, in the app's
+  own dialog; a document already gone counts as deleted; what was refused
+  is said in words. It is in the AuthGate's list of signed-in routes — a
+  route missing there sends a signed-in person Home.
 
 ## Edge Functions
 
@@ -1968,6 +1985,25 @@ rule again once pinned chunks are mixed in.
 - **A row or button that opens nothing is not shown.** Settings once listed
   six rows with an arrow that went nowhere, and the document viewer had a
   menu button with no menu. Add the control when its screen exists.
+- **Never promise more privacy than AskLocker gives.** Documents are not
+  end-to-end encrypted:
+  - Anyone with the Supabase dashboard or the service role key — the people
+    who run AskLocker — can open every file and read every document's text.
+  - The servers read that text to search it.
+  - Parts of it go to outside services: HuggingFace (every passage, and
+    every question, for search), Groq (the passages an answer is written
+    from, and the chat) and OCR.space (scanned PDFs, photos imported from
+    Gmail).
+
+  So no screen, notification, README or store listing says "secure",
+  "safe", "private and isolated", "100% private", "only you can see it" or
+  "nothing is kept". Say what the app does instead: "in AskLocker, only your
+  family can open…", "nobody else using AskLocker can open it", "just for
+  you". Settings › Privacy says all of this plainly and names the outside
+  services. It must stay true of the code and of the people who run
+  AskLocker, so change it with any change to sharing, search, OCR,
+  embeddings, voice or Gmail import. The app made such claims until
+  7 October 2026.
 - **★ Family Plus marks what only Plus families get** (`<PlusTag />`):
   10 GB instead of 1 GB, voice chats with no limit (on Free, each person
   has 10), the Reminders page (in the drawer) and Import from

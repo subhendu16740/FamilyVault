@@ -117,8 +117,8 @@ export default function DeleteAccountScreen() {
             <Card>
               <CardTitle icon="alert-triangle">This cannot be undone</CardTitle>
               <Body>
-                Your account is deleted straight away and for good. AskLocker keeps no copy, and there is no
-                waiting period.
+                Your account is deleted straight away; there is no waiting period.
+                Short-term copies in our providers' backups and logs expire on their own.
               </Body>
               <Muted>
                 Also deleted: your profile, saved chats and notifications, and your Gmail connection if you made one.

@@ -205,7 +205,18 @@ export default function HomeScreen() {
         {/* Stats Bar */}
         <View style={styles.section}>
           <View style={[styles.statsBar, isDark && styles.statsBarDark]}>
-            <Text style={[styles.statText, isDark && styles.statTextDark]}>{count(stats.docs, 'Document', 'Documents')}</Text>
+            {/* Opens All documents: every vault's documents, a vault filter, and Delete */}
+            <TouchableOpacity
+              style={styles.statLink}
+              onPress={() => router.push('/documents' as any)}
+              hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={`${count(stats.docs, 'document', 'documents')}. See all documents`}
+            >
+              <Text style={[styles.statText, styles.statLinkText, isDark && styles.statTextDark]}>{count(stats.docs, 'Document', 'Documents')}</Text>
+              <Feather name="chevron-right" size={14} color={isDark ? '#4A6491' : color.primary} />
+            </TouchableOpacity>
             <Text style={styles.statDivider}>|</Text>
             {families.length > 1 ? (
               // Several vaults: what they hold together, and in how many.
@@ -224,7 +235,19 @@ export default function HomeScreen() {
 
         {/* Recent Documents */}
         <View style={[styles.section, styles.sectionBottom]}>
-          <Text style={[styles.sectionTitle, isDark && styles.textLight]}>Recent Documents</Text>
+          <View style={styles.sectionHead}>
+            <Text style={[styles.sectionTitle, styles.sectionTitleInRow, isDark && styles.textLight]}>Recent Documents</Text>
+            {recentDocs.length > 0 && (
+              <TouchableOpacity
+                onPress={() => router.push('/documents' as any)}
+                style={styles.seeAll}
+                accessibilityRole="button"
+                accessibilityLabel="See all documents"
+              >
+                <Text style={styles.seeAllText}>See all</Text>
+              </TouchableOpacity>
+            )}
+          </View>
 
           {loading ? (
             <ActivityIndicator size="small" color="#2A3D66" style={{ marginTop: 20 }} />
@@ -380,6 +403,12 @@ const styles = StyleSheet.create({
   },
   statsBarDark: { backgroundColor: '#161B22', borderWidth: 1, borderColor: '#30363D' },
   statText: { ...type.caption, color: color.primary, fontWeight: '500' },
+  statLink: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  statLinkText: { textDecorationLine: 'underline' },
+  sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: space.sm },
+  sectionTitleInRow: { marginBottom: 0 },
+  seeAll: { minHeight: size.control, justifyContent: 'center', paddingHorizontal: space.xs },
+  seeAllText: { ...type.button, color: color.primary },
   statTextDark: { color: '#4A6491' },
   statDivider: { color: '#9CA3AF' },
   emptyState: {

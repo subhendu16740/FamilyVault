@@ -139,8 +139,8 @@ export default function SecurityScreen() {
         <Card>
           <CardTitle icon="user-x">Delete your account</CardTitle>
           <Body>
-            Deletes your account straight away and for good, with your saved chats and any family nobody else looks
-            after. The next screen shows exactly what goes before anything happens.
+            Deletes your account straight away, with your saved chats, your personal vault and any family nobody else
+            looks after. The next screen shows exactly what goes before anything happens.
           </Body>
           <DangerButton
             label="Delete account"

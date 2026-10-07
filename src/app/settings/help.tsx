@@ -24,11 +24,15 @@ function faq(payments: PaymentsStatus | null): { q: string; a: string }[] {
   return [
     {
       q: 'How do I add a document?',
-      a: 'Open Upload at the bottom of the screen. Take a photo with Scan, pick a file with Browse Files, or choose a picture from your Gallery. AskLocker reads the text, so you can find it later. If you are in a family, it asks where the document goes: your personal vault, which only you see, or one of your families. On a computer you can also bring documents in From Gmail.',
+      a: 'Open Upload at the bottom of the screen. Take a photo with Scan, pick a file with Browse Files, or choose a picture from your Gallery. AskLocker reads the text, so you can find it later. If you are in a family, it asks where the document goes: your personal vault, which is just for you, or one of your families. On a computer you can also bring documents in From Gmail.',
     },
     {
       q: 'What is my personal vault?',
-      a: 'Everyone has one: a vault only you can see, which nobody can be invited to. If you are not in a family, everything you upload goes there. To share documents, create a family from Manage Family and invite the people you want, or accept an invitation from one. Home shows your newest documents from all your vaults together, each marked with the vault it is in.',
+      a: 'Everyone has one: a vault just for you. Nobody else using AskLocker can open it, and nobody can be invited to it. If you are not in a family, everything you upload goes there. To share documents, create a family from Manage Family and invite the people you want, or accept an invitation from one. Home shows your newest documents from all your vaults together, each marked with the vault it is in.',
+    },
+    {
+      q: 'How do I see all my documents, or delete some?',
+      a: 'On Home, tap the number of documents (or See all, beside Recent Documents). All documents lists every document, newest first; choose a vault at the top to see only its documents. Tap the bin beside a document to delete it, or tap Select to tick several and delete them together. You can also delete a document from its own page. In a family, an admin can delete any document, and everyone else the documents they added. Deleting removes the file too, frees its space, and cannot be undone.',
     },
     {
       q: 'How do I find a document or an answer?',
@@ -48,7 +52,7 @@ function faq(payments: PaymentsStatus | null): { q: string; a: string }[] {
     },
     {
       q: 'Who can see my documents?',
-      a: 'Only the people in your family — and anyone you send a share link to, for that one document, until the link stops working. An admin invites each person by the email they sign in with, and they join only if they accept; nobody can join by themselves. Settings › Privacy has more.',
+      a: 'In AskLocker, only the people in your family — and anyone you send a share link to, for that one document, until the link stops working. An admin invites each person by the email they sign in with, and they join only if they accept; nobody can join by themselves. Your documents are not end-to-end encrypted: AskLocker reads their text to search them, and the people who run AskLocker can technically open them. Settings › Privacy says where your documents\' text goes.',
     },
     {
       q: 'How do I share a document with someone outside the family?',
@@ -92,7 +96,7 @@ function faq(payments: PaymentsStatus | null): { q: string; a: string }[] {
     }] : []),
     {
       q: 'How do I delete my account?',
-      a: 'Open Settings › Security and choose Delete account. It is immediate and nothing is kept. A family nobody else looks after is deleted with it, documents and all; the screen shows which ones before you confirm. To keep a family for the others, make one of them an admin first.',
+      a: 'Open Settings › Security and choose Delete account. It is immediate: your account, saved chats and personal vault are deleted, and so is any family nobody else looks after, documents and all; the screen shows which ones before you confirm. Documents you added to a family that carries on stay with that family. To keep a family for the others, make one of them an admin first.',
     },
     {
       q: 'Why can\'t AskLocker find something that is in a document?',
