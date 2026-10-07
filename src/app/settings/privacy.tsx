@@ -29,7 +29,8 @@ export default function PrivacyScreen() {
           <Body>
             Nobody can join a family by themselves, and nobody is added without saying yes: an admin invites each
             person, by the email they sign in with, and they join only if they accept. Until then the family sees only
-            that email, as Pending approval. Viewers can look at documents but cannot delete other people's.
+            that email, as Pending approval. Only the person who added a document can delete it — not even an admin can
+            delete someone else's.
           </Body>
         </Card>
 
@@ -119,7 +120,7 @@ export default function PrivacyScreen() {
             You can leave any family from Manage Family, or delete your account from Settings › Security. Deleting is
             immediate: it removes your account, your saved chats, your personal vault and any family nobody else looks
             after, and the screen shows exactly what goes before you confirm. Documents you added to a family that
-            carries on stay with that family.
+            carries on stay with that family, and nobody else can delete them, so delete any you want gone first.
           </Body>
           <Body>
             Short-term copies in our providers' backups and logs expire on their own. What was already sent to the

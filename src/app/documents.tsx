@@ -1,10 +1,10 @@
 // All documents (Home's document count, and See all, open it): every
 // document in every vault the person is in (046), newest first, with a
-// vault filter — and Delete, one at a time or several with Select, for what
-// they may delete: in a vault where they may delete anything (can_delete,
-// an admin's), any document; elsewhere, the ones they added. The server
-// keeps the same rule (delete_family_document, 023), and deleteDocument()
-// then removes the file from Storage, so the vault's space is freed (038).
+// vault filter — and Delete, one at a time or several with Select, for the
+// documents they added. Only the person who added a document can delete it,
+// admins included: the server keeps the same rule (delete_family_document,
+// 047), and deleteDocument() then removes the file from Storage, so the
+// vault's space is freed (038).
 
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
@@ -16,7 +16,7 @@ import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../lib/auth';
 import { useFamily } from '../lib/family-context';
-import { deleteDocument, fetchAllDocuments, fetchDeleteRights } from '../lib/api';
+import { deleteDocument, fetchAllDocuments } from '../lib/api';
 import { isPersonalVault, vaultName } from '../lib/vaults';
 import type { FamilyDocumentRow } from '../lib/database.types';
 import { HeaderButton, ScreenHeader } from '../components/screen-header';
@@ -91,8 +91,6 @@ export default function DocumentsScreen() {
     setLoading(true);
     setLoadProblem(null);
     try {
-      // Unknown rights offer Delete only on what this person added: the server would refuse the rest.
-      const rights = await fetchDeleteRights(user.id).catch(() => ({} as Record<string, boolean>));
       // One vault that cannot be read leaves the others' documents listed.
       const lists = await Promise.all(families.map((v) => fetchAllDocuments(v.family_id).catch(() => null)));
       if (run !== loads.current) return;
@@ -103,7 +101,8 @@ export default function DocumentsScreen() {
             familyId: families[i].family_id,
             vault: vaultName(families[i].families),
             personalVault: isPersonalVault(families[i].families),
-            canDelete: rights[families[i].family_id] === true || d.uploaded_by === user.id,
+            // Only whoever added it, admins included (047).
+            canDelete: d.uploaded_by === user.id,
           })))
           .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
       );
@@ -225,7 +224,7 @@ export default function DocumentsScreen() {
       {selecting && (
         <View style={styles.selectBar}>
           <Text style={styles.selectHint}>
-            Tick the documents to delete.{deletable.length < shown.length ? ' Greyed-out ones only an admin, or whoever added them, can delete.' : ''}
+            Tick the documents to delete.{deletable.length < shown.length ? ' Greyed-out ones were added by someone else: only the person who added a document can delete it.' : ''}
           </Text>
           {deletable.length > 1 && (
             <TouchableOpacity onPress={pickAll} style={styles.pickAll} accessibilityRole="button">

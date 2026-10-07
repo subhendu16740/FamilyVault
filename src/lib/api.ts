@@ -115,21 +115,6 @@ export async function fetchRecentDocuments(
   return (data ?? []) as FamilyDocumentRow[];
 }
 
-/**
- * The vaults where this person may delete any document (their membership's
- * can_delete: an admin's); elsewhere only the ones they added. The same rule
- * delete_family_document (023) keeps on the server — this only decides
- * where All documents offers Delete.
- */
-export async function fetchDeleteRights(userId: string): Promise<Record<string, boolean>> {
-  const { data, error } = await supabase
-    .from('family_members')
-    .select('family_id, can_delete')
-    .eq('user_id', userId);
-  if (error) throw error;
-  return Object.fromEntries((data ?? []).map((m) => [m.family_id, m.can_delete === true]));
-}
-
 export async function fetchDocumentById(
   familyId: string,
   documentId: string,

@@ -32,7 +32,7 @@ function faq(payments: PaymentsStatus | null): { q: string; a: string }[] {
     },
     {
       q: 'How do I see all my documents, or delete some?',
-      a: 'On Home, tap the number of documents (or See all, beside Recent Documents). All documents lists every document, newest first; choose a vault at the top to see only its documents. Tap the bin beside a document to delete it, or tap Select to tick several and delete them together. You can also delete a document from its own page. In a family, an admin can delete any document, and everyone else the documents they added. Deleting removes the file too, frees its space, and cannot be undone.',
+      a: 'On Home, tap the number of documents (or See all, beside Recent Documents). All documents lists every document, newest first; choose a vault at the top to see only its documents. Tap the bin beside a document to delete it, or tap Select to tick several and delete them together. You can also delete a document from its own page. Only the person who added a document can delete it, so you see the bin only on the documents you added — in a family, even an admin cannot delete someone else\'s. Deleting removes the file too, frees its space, and cannot be undone.',
     },
     {
       q: 'How do I find a document or an answer?',
@@ -96,7 +96,7 @@ function faq(payments: PaymentsStatus | null): { q: string; a: string }[] {
     }] : []),
     {
       q: 'How do I delete my account?',
-      a: 'Open Settings › Security and choose Delete account. It is immediate: your account, saved chats and personal vault are deleted, and so is any family nobody else looks after, documents and all; the screen shows which ones before you confirm. Documents you added to a family that carries on stay with that family. To keep a family for the others, make one of them an admin first.',
+      a: 'Open Settings › Security and choose Delete account. It is immediate: your account, saved chats and personal vault are deleted, and so is any family nobody else looks after, documents and all; the screen shows which ones before you confirm. Documents you added to a family that carries on stay with that family, and nobody else can delete them, so delete any you want gone first. To keep a family for the others, make one of them an admin first.',
     },
     {
       q: 'Why can\'t AskLocker find something that is in a document?',
