@@ -9,17 +9,17 @@ import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../lib/auth';
+import { GoogleSignIn } from '../components/google-sign-in';
 import { color, radius, size, space, type } from '../constants/design';
 
 export default function LoginScreen() {
-  const { signIn, signUp, signInWithGoogle } = useAuth();
+  const { signIn, signUp } = useAuth();
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
 
   const handleSubmit = async () => {
     if (!email.trim() || !password.trim()) {
@@ -153,28 +153,8 @@ export default function LoginScreen() {
                 <View style={styles.dividerLine} />
               </View>
 
-              {/* Google Sign In */}
-              <TouchableOpacity
-                style={styles.socialBtn}
-                onPress={async () => {
-                  setGoogleLoading(true);
-                  const { error } = await signInWithGoogle();
-                  setGoogleLoading(false);
-                  if (error) {
-                    Alert.alert('Google Sign In Failed', error);
-                  } else {
-                    router.replace('/home' as any);
-                  }
-                }}
-                disabled={googleLoading}
-                activeOpacity={0.85}
-              >
-                {googleLoading ? (
-                  <ActivityIndicator color="#2A3D66" />
-                ) : (
-                  <Text style={styles.socialBtnText}>Google</Text>
-                )}
-              </TouchableOpacity>
+              {/* Google: its own button on the web where it is set up, so Google names AskLocker, not Supabase */}
+              <GoogleSignIn onSignedIn={() => router.replace('/home' as any)} />
 
               {/* Biometric */}
               <View style={styles.biometricCard}>
@@ -284,17 +264,6 @@ const styles = StyleSheet.create({
   },
   dividerLine: { flex: 1, height: 1, backgroundColor: color.border },
   dividerText: type.caption,
-  socialBtn: {
-    backgroundColor: color.surface,
-    borderWidth: 1,
-    borderColor: color.inputBorder,
-    borderRadius: radius.control,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: size.control,
-    marginBottom: space.lg,
-  },
-  socialBtnText: { ...type.button, fontWeight: '500', color: color.textBody },
   biometricCard: {
     backgroundColor: color.surface,
     borderRadius: radius.card,

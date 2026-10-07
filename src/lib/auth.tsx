@@ -22,6 +22,8 @@ interface AuthState {
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signUp: (email: string, password: string, displayName: string) => Promise<{ error: string | null }>;
   signInWithGoogle: () => Promise<{ error: string | null }>;
+  /** Google's own button on the web (google-button.web.ts): the ID token it gave, and the one-time value it carries. */
+  signInWithGoogleToken: (token: string, nonce: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
 }
 
@@ -32,6 +34,7 @@ const AuthContext = createContext<AuthState>({
   signIn: async () => ({ error: null }),
   signUp: async () => ({ error: null }),
   signInWithGoogle: async () => ({ error: null }),
+  signInWithGoogleToken: async () => ({ error: null }),
   signOut: async () => {},
 });
 
@@ -120,6 +123,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Supabase checks Google's signature, that the token is for this app's
+  // client, and that it carries this nonce's hash — then signs the person in,
+  // making the account the first time, as the redirect sign-in does.
+  const signInWithGoogleToken = async (token: string, nonce: string) => {
+    const { error } = await supabase.auth.signInWithIdToken({ provider: 'google', token, nonce });
+    return { error: error?.message ?? null };
+  };
+
   const signOut = async () => {
     // Before the session goes: this device stops getting the account's notifications (034).
     await forgetPushOnThisDevice();
@@ -135,6 +146,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signIn,
         signUp,
         signInWithGoogle,
+        signInWithGoogleToken,
         signOut,
       }}
     >

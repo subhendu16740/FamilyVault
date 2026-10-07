@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView,
   StyleSheet, useColorScheme, ActivityIndicator,
@@ -13,8 +13,7 @@ import { useDrawer } from '../../lib/drawer-context';
 import { fetchRecentDocuments, fetchFamilyStats, fetchUnreadNotificationCount, checkExpiryNotifications } from '../../lib/api';
 import { usePreferences } from '../../lib/preferences';
 import { InvitationCards } from '../../components/invitation-cards';
-import { VaultPill, VaultSheet, type VaultChoice } from '../../components/vault-sheet';
-import { isPersonalVault, vaultName, vaultSubtitle } from '../../lib/vaults';
+import { isPersonalVault, vaultName } from '../../lib/vaults';
 import type { FamilyDocumentRow } from '../../lib/database.types';
 import { color, radius, shadow, size, space, type } from '../../constants/design';
 
@@ -54,28 +53,39 @@ function getRelativeTime(dateStr: string): string {
   return `${Math.floor(days / 30)} month${Math.floor(days / 30) > 1 ? 's' : ''} ago`;
 }
 
+/** "1 Document", "2 Documents". */
+function count(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+/** How many of the newest documents Home lists, from all vaults together. */
+const RECENT = 8;
+
+/** A document in the list, with the vault it is in (046). */
+interface RecentDoc extends FamilyDocumentRow {
+  familyId: string;
+  vault: string;
+  personalVault: boolean;
+}
+
 export default function HomeScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const { user } = useAuth();
-  const { currentFamily, families, refreshFamilies, switchFamily } = useFamily();
-  // Home shows one vault at a time (046): someone with a personal vault and a
-  // family, or several families, moves between them here.
-  const [vaultOpen, setVaultOpen] = useState(false);
-  const vaultChoices: VaultChoice[] = families.map((f) => ({
-    key: f.family_id,
-    name: vaultName(f.families),
-    subtitle: vaultSubtitle(f),
-    icon: isPersonalVault(f.families) ? 'lock' : 'users',
-  }));
+  // Home lists the newest documents from every vault together (046), each
+  // tagged with the vault it is in, and opens each in its own vault.
+  const { families, refreshFamilies } = useFamily();
+  const familyKey = families.map((f) => `${f.family_id}:${vaultName(f.families)}`).join('|');
   const { openDrawer } = useDrawer();
   // Settings › Notifications off: the bell stays, its count does not.
   const { notificationsEnabled } = usePreferences();
 
-  const [recentDocs, setRecentDocs] = useState<FamilyDocumentRow[]>([]);
-  const [stats, setStats] = useState({ doc_count: 0, member_count: 0, category_count: 0 });
+  const [recentDocs, setRecentDocs] = useState<RecentDoc[]>([]);
+  const [stats, setStats] = useState({ docs: 0, members: 0, categories: 0 });
   const [loading, setLoading] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  // Only the latest load is shown: one started before a vault appeared may finish after it.
+  const loads = useRef(0);
 
   const displayName =
     user?.user_metadata?.display_name ||
@@ -84,31 +94,50 @@ export default function HomeScreen() {
   const initial = displayName.charAt(0).toUpperCase();
 
   const loadData = useCallback(() => {
-    if (!currentFamily || !user) {
-      // No family yet: they may have joined one since sign-in — and the bell
-      // still counts, since an invitation to join one is a notification.
-      if (user) {
-        refreshFamilies().catch(() => {});
-        fetchUnreadNotificationCount(user.id).then(setUnreadCount).catch(() => {});
-      }
+    if (!user) return;
+    // The bell counts with or without a vault: an invitation to join a family is a notification.
+    fetchUnreadNotificationCount(user.id).then(setUnreadCount).catch(() => {});
+    if (families.length === 0) {
+      // No vault yet: the personal one is on its way (046), or they joined a family since sign-in.
+      refreshFamilies().catch(() => {});
       setLoading(false);
       return;
     }
+    const vaults = families;
+    const load = ++loads.current;
     setLoading(true);
     Promise.all([
-      fetchRecentDocuments(currentFamily.id, 5),
-      fetchFamilyStats(currentFamily.id),
-      fetchUnreadNotificationCount(user.id),
-      checkExpiryNotifications(currentFamily.id).catch(() => 0),
+      // One vault that cannot be read leaves the others' documents on the list.
+      Promise.all(vaults.map((v) => fetchRecentDocuments(v.family_id, RECENT).catch((err) => {
+        console.error('[Home] documents of', v.family_id, err);
+        return [] as FamilyDocumentRow[];
+      }))),
+      Promise.all(vaults.map((v) => fetchFamilyStats(v.family_id).catch(() => null))),
     ])
-      .then(([docs, s, unread]) => {
-        setRecentDocs(docs);
-        setStats(s);
-        setUnreadCount(unread);
+      .then(([lists, vaultStats]) => {
+        if (load !== loads.current) return;
+        setRecentDocs(
+          lists
+            .flatMap((docs, i) => docs.map((d) => ({
+              ...d,
+              familyId: vaults[i].family_id,
+              vault: vaultName(vaults[i].families),
+              personalVault: isPersonalVault(vaults[i].families),
+            })))
+            .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+            .slice(0, RECENT),
+        );
+        setStats({
+          docs: vaultStats.reduce((sum, st) => sum + Number(st?.doc_count ?? 0), 0),
+          members: Number(vaultStats[0]?.member_count ?? 0),
+          categories: Number(vaultStats[0]?.category_count ?? 0),
+        });
       })
       .catch((err) => console.error('[Home] fetch error:', err))
-      .finally(() => setLoading(false));
-  }, [currentFamily?.id, user?.id, refreshFamilies]);
+      .finally(() => { if (load === loads.current) setLoading(false); });
+    // Each vault's expiry reminders, as Home has always asked: made once, however often (034).
+    vaults.forEach((v) => { checkExpiryNotifications(v.family_id).catch(() => 0); });
+  }, [familyKey, user?.id, refreshFamilies]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Re-fetch when screen gains focus (e.g. after deleting a document)
   useFocusEffect(
@@ -163,18 +192,6 @@ export default function HomeScreen() {
               <Text style={styles.searchPlaceholder}>Search documents...</Text>
               <Feather name="mic" size={18} color="rgba(255,255,255,0.8)" />
             </TouchableOpacity>
-
-            {families.length > 1 && currentFamily && (
-              <View style={styles.vaultRow}>
-                <VaultPill
-                  label="Showing"
-                  value={vaultName(currentFamily)}
-                  icon={isPersonalVault(currentFamily) ? 'lock' : 'users'}
-                  onPress={() => setVaultOpen(true)}
-                  light
-                />
-              </View>
-            )}
           </SafeAreaView>
         </LinearGradient>
 
@@ -184,13 +201,20 @@ export default function HomeScreen() {
         {/* Stats Bar */}
         <View style={styles.section}>
           <View style={[styles.statsBar, isDark && styles.statsBarDark]}>
-            <Text style={[styles.statText, isDark && styles.statTextDark]}>{stats.doc_count} Documents</Text>
+            <Text style={[styles.statText, isDark && styles.statTextDark]}>{count(stats.docs, 'Document', 'Documents')}</Text>
             <Text style={styles.statDivider}>|</Text>
-            <Text style={[styles.statText, isDark && styles.statTextDark]}>
-              {isPersonalVault(currentFamily) ? 'Only you' : `${stats.member_count} ${stats.member_count === 1 ? 'Member' : 'Members'}`}
-            </Text>
-            <Text style={styles.statDivider}>|</Text>
-            <Text style={[styles.statText, isDark && styles.statTextDark]}>{stats.category_count} Categories</Text>
+            {families.length > 1 ? (
+              // Several vaults: what they hold together, and in how many.
+              <Text style={[styles.statText, isDark && styles.statTextDark]}>{count(families.length, 'Vault', 'Vaults')}</Text>
+            ) : (
+              <>
+                <Text style={[styles.statText, isDark && styles.statTextDark]}>
+                  {isPersonalVault(families[0]?.families) ? 'Only you' : count(stats.members, 'Member', 'Members')}
+                </Text>
+                <Text style={styles.statDivider}>|</Text>
+                <Text style={[styles.statText, isDark && styles.statTextDark]}>{count(stats.categories, 'Category', 'Categories')}</Text>
+              </>
+            )}
           </View>
         </View>
 
@@ -210,10 +234,13 @@ export default function HomeScreen() {
             <View style={styles.docList}>
               {recentDocs.map((doc) => (
                 <TouchableOpacity
-                  key={doc.id}
+                  key={`${doc.familyId}:${doc.id}`}
                   style={[styles.docCard, isDark && styles.docCardDark]}
-                  onPress={() => router.push(`/document/${doc.id}` as any)}
+                  // Opened in its own vault, whichever is open elsewhere in the app.
+                  onPress={() => router.push({ pathname: '/document/[id]', params: { id: doc.id, family: doc.familyId } } as any)}
                   activeOpacity={0.8}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${doc.file_name}, in ${doc.vault}`}
                 >
                   <LinearGradient
                     colors={['#2A3D66', '#4A6491']}
@@ -233,13 +260,18 @@ export default function HomeScreen() {
                           <Text style={styles.categoryBadgeText}>{doc.category_name}</Text>
                         </View>
                       )}
-                      {doc.member_name && (
-                        <Text style={styles.docOwner}>
-                          {doc.member_relationship ? `${doc.member_relationship} · ` : ''}{doc.member_name}
-                        </Text>
-                      )}
-                      <Text style={styles.docDot}>·</Text>
-                      <Text style={styles.docDate}>{getRelativeTime(doc.created_at)}</Text>
+                      {/* The vault it is in: a lock for the personal vault, people for a family */}
+                      <View style={[styles.vaultTag, isDark && styles.vaultTagDark]}>
+                        <Feather name={doc.personalVault ? 'lock' : 'users'} size={12} color={isDark ? '#9DB4E0' : color.primary} />
+                        <Text style={[styles.vaultTagText, isDark && styles.vaultTagTextDark]} numberOfLines={1}>{doc.vault}</Text>
+                      </View>
+                      {/* One piece of text, so it wraps whole: never a dot left at the end of a line */}
+                      <Text style={styles.docDate}>
+                        {doc.member_name
+                          ? `${doc.member_relationship ? `${doc.member_relationship} · ` : ''}${doc.member_name} · `
+                          : ''}
+                        {getRelativeTime(doc.created_at)}
+                      </Text>
                     </View>
                   </View>
                 </TouchableOpacity>
@@ -248,16 +280,6 @@ export default function HomeScreen() {
           )}
         </View>
       </ScrollView>
-
-      <VaultSheet
-        visible={vaultOpen}
-        title="Show a vault"
-        intro="Home shows one vault at a time. Ask can search all of them at once."
-        choices={vaultChoices}
-        selected={currentFamily?.id ?? null}
-        onSelect={switchFamily}
-        onClose={() => setVaultOpen(false)}
-      />
     </View>
   );
 }
@@ -340,7 +362,6 @@ const styles = StyleSheet.create({
   searchPlaceholder: { ...type.body, flex: 1, color: 'rgba(255,255,255,0.75)' },
   section: { paddingHorizontal: space.lg, marginTop: space.lg },
   invites: { paddingHorizontal: space.lg, marginTop: space.lg },
-  vaultRow: { marginTop: space.md },
   sectionBottom: { marginBottom: space.xl },
   sectionTitle: { ...type.overline, marginBottom: space.sm, marginLeft: space.xs },
   statsBar: {
@@ -393,8 +414,21 @@ const styles = StyleSheet.create({
   docMeta: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
   categoryBadge: { borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 1 },
   categoryBadgeText: { ...type.meta, color: '#FFFFFF', fontWeight: '600' },
-  docOwner: type.meta,
-  docDot: type.meta,
+  vaultTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    maxWidth: 170,
+    borderRadius: radius.pill,
+    paddingHorizontal: 8,
+    paddingVertical: 1,
+    backgroundColor: color.tint,
+    borderWidth: 1,
+    borderColor: '#D6E2F5',
+  },
+  vaultTagDark: { backgroundColor: '#1C2433', borderColor: '#30363D' },
+  vaultTagText: { ...type.meta, color: color.primary, fontWeight: '600', flexShrink: 1 },
+  vaultTagTextDark: { color: '#9DB4E0' },
   docDate: type.meta,
   textLight: { color: '#E6EDF3' },
 });
