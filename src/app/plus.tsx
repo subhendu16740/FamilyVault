@@ -13,7 +13,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFamily } from '../lib/family-context';
-import { vaultName } from '../lib/vaults';
+import { isPersonalVault, vaultName } from '../lib/vaults';
 import { useFamilyPlan, usePaymentsStatus, type PlusFeature } from '../lib/family-plan';
 import { PaymentError, createPlusOrder, fetchPlanLimits, verifyPlusPayment } from '../lib/api';
 import { checkoutSupported, openCheckout } from '../lib/razorpay';
@@ -42,24 +42,28 @@ const voiceCell = (n: number | null): Cell => (n == null ? true : `${n} each`);
 
 function rows(limits: PlanLimits): Row[] {
   return [
-    { label: 'Space for documents', free: formatBytes(limits.free), plus: formatBytes(limits.plus), feature: 'storage' },
+    { label: 'Space for a family', free: formatBytes(limits.free), plus: formatBytes(limits.plus), feature: 'storage' },
+    { label: 'Space in your personal vault', free: formatBytes(limits.freePersonal), plus: formatBytes(limits.plus) },
     { label: 'Members who sign in', free: String(limits.members.free), plus: String(limits.members.plus) },
     { label: 'Add and scan documents, read in Indian languages too', free: true, plus: true },
     { label: 'Ask about your documents', free: true, plus: true },
     { label: 'Family tree and emergency cards', free: true, plus: true },
-    { label: 'Expiry and birthday reminders', free: true, plus: true },
+    { label: 'Birthday reminders', free: true, plus: true },
     { label: 'Share a document by link', free: true, plus: true },
     {
       label: '★ Voice chats: ask by voice, hear the answer', free: voiceCell(limits.voiceAnswers.free), plus: voiceCell(limits.voiceAnswers.plus),
       feature: 'voice',
     },
-    { label: '★ Reminders page: every expiry date in one list', free: false, plus: true, feature: 'reminders' },
+    {
+      label: '★ Expiry reminders before anything runs out, and every date in one list', free: false, plus: true,
+      feature: 'reminders',
+    },
     { label: '★ Import documents from Gmail', free: false, plus: true, feature: 'gmail' },
   ];
 }
 
 const BROUGHT_BY: Record<PlusFeature, { icon: string; text: string }> = {
-  reminders: { icon: 'clock', text: 'The Reminders page is part of Family Plus.' },
+  reminders: { icon: 'clock', text: 'Expiry reminders, and the Reminders page, are part of Family Plus.' },
   gmail: { icon: 'mail', text: 'Import from Gmail is part of Family Plus.' },
   storage: { icon: 'hard-drive', text: 'More space for documents and saved chats is part of Family Plus.' },
   voice: { icon: 'mic', text: 'Asking by voice and hearing every answer, with no limit, is part of Family Plus.' },
@@ -91,6 +95,8 @@ export default function PlusScreen() {
   }, [refresh]));
 
   const familyName = currentFamily ? vaultName(currentFamily) : undefined;
+  // What this vault may keep on Free (048): a personal vault less than a family.
+  const freeHere = isPersonalVault(currentFamily) ? limits.freePersonal : limits.free;
 
   // ─── Paying (044) ───────────────────────────────────────
   const payments = usePaymentsStatus();
@@ -182,8 +188,8 @@ export default function PlusScreen() {
             <Feather name="alert-triangle" size={18} color="#B91C1C" />
             <Text style={[styles.stateText, { color: '#B91C1C' }]}>
               Family Plus has ended for {familyName ?? 'your family'}. On {longDate(new Date(removalAt))}, the newest
-              documents above {formatBytes(limits.free)} will be removed, unless Family Plus is renewed or documents are
-              deleted to get under {formatBytes(limits.free)}.
+              documents above {formatBytes(freeHere)} will be removed, unless Family Plus is renewed or documents are
+              deleted to get under {formatBytes(freeHere)}.
             </Text>
           </View>
         ) : plan === 'free' ? (
@@ -320,10 +326,10 @@ export default function PlusScreen() {
           <View style={styles.point}>
             <Feather name="clock" size={16} color={color.primary} />
             <Text style={styles.pointText}>
-              If Family Plus ends while your family holds more than the free {formatBytes(limits.free)}, it has{' '}
-              {limits.graceDays} days to renew, or to delete documents to get under {formatBytes(limits.free)}. After
-              that, the newest documents above {formatBytes(limits.free)} are removed. We remind you when it ends, a
-              week before and the day before.
+              If Family Plus ends while a vault holds more than it may keep on Free ({formatBytes(limits.free)} for a
+              family, {formatBytes(limits.freePersonal)} for a personal vault), it has {limits.graceDays} days to
+              renew, or to delete documents to get under that. After that, the newest documents above it are removed.
+              We remind you when it ends, a week before and the day before.
             </Text>
           </View>
           <View style={styles.point}>
@@ -338,7 +344,10 @@ export default function PlusScreen() {
           </View>
         </Card>
 
-        <Muted>Reminders under the bell and on your devices reach every family, Free or Plus.</Muted>
+        <Muted>
+          Expiry reminders, under the bell and on your devices, are part of Family Plus. Birthday reminders reach every
+          family, Free or Plus.
+        </Muted>
       </ScrollView>
     </SafeAreaView>
   );

@@ -1,13 +1,14 @@
 // ─── Is the family on Family Plus? ──────────────────────────────
 //
-// Starred features (★, <PlusTag />) are for Family Plus families: today the
-// Reminders page, Import from Gmail, and voice chats after each person's
-// first 10 (041–043). For a free family, tapping one opens
-// /plus, which shows Free and Plus side by side, and the screens themselves
-// send a free family there too (after a refresh, or from a link). Storage
-// beyond the free 1 GB is kept by the server (038), and Gmail import refuses
-// a free family on the server as well. The reminders themselves — under the
-// bell and on devices — reach every family.
+// Starred features (★, <PlusTag />) are for Family Plus families: today
+// expiry reminders and the Reminders page (048), Import from Gmail, and voice
+// chats after each person's first 10 (041–043). For a free family, tapping
+// one opens /plus, which shows Free and Plus side by side, and the screens
+// themselves send a free family there too (after a refresh, or from a link).
+// Storage beyond the free 200 MB (100 MB for a personal vault) is kept by the
+// server (038, 048), the server makes expiry reminders only for a vault on
+// Plus, and Gmail import refuses a free family on the server as well.
+// Birthday reminders reach every family.
 //
 // The plan comes from family_storage_status() (038, 039), kept for a minute
 // per family. When it cannot be read (before 038, or offline) nothing is

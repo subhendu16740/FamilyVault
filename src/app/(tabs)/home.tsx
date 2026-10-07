@@ -136,7 +136,8 @@ export default function HomeScreen() {
       })
       .catch((err) => console.error('[Home] fetch error:', err))
       .finally(() => { if (load === loads.current) setLoading(false); });
-    // Each vault's expiry reminders, as Home has always asked: made once, however often (034).
+    // Each vault's expiry reminders, as Home has always asked: made once, however often (034),
+    // and only for a vault on Family Plus (048) — the server decides, so Free asks too.
     vaults.forEach((v) => { checkExpiryNotifications(v.family_id).catch(() => 0); });
   }, [familyKey, user?.id, refreshFamilies]); // eslint-disable-line react-hooks/exhaustive-deps
 

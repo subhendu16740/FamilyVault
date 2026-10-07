@@ -112,7 +112,7 @@ export default function NotificationSettingsScreen() {
               </>
             ) : device === 'off' ? (
               <>
-                <Body>Get a notification on this phone or computer when a document is about to expire — even when AskLocker is closed.</Body>
+                <Body>Get AskLocker's notifications on this phone or computer, even when AskLocker is closed: invitations, birthdays and, with ★ Family Plus, documents about to expire.</Body>
                 <PrimaryButton label="Turn on" icon="bell" onPress={turnOn} busy={busy === 'on'} disabled={busy !== null} />
               </>
             ) : (

@@ -9,7 +9,7 @@ import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SUPPORT_EMAIL, SUPPORT_PHONE } from '../../lib/app-info';
 import {
-  DEFAULT_PLAN_LIMITS, FREE_STORAGE_LABEL, PLUS_FOR_SALE, formatBytes, plusPrice, plusPrices, plusYearlyOffer,
+  DEFAULT_PLAN_LIMITS, FREE_PERSONAL_STORAGE_LABEL, FREE_STORAGE_LABEL, PLUS_FOR_SALE, formatBytes, plusPrice, plusPrices, plusYearlyOffer,
   plusYearlySaving,
 } from '../../lib/plans';
 import { usePaymentsStatus } from '../../lib/family-plan';
@@ -79,16 +79,16 @@ function faq(payments: PaymentsStatus | null): { q: string; a: string }[] {
       a: 'Each person in your family tree can have one: blood group, allergies, health conditions, medicines, their doctor, health insurance and up to three people to call. Open Emergency cards from the menu, or the person\'s page, to show it to a doctor; every phone number on it is one tap from your phone. Everyone in the family can see it; an admin, or the person themselves, can change it.',
     },
     {
-      q: 'How much space does my family get?',
-      a: `Every family gets ${FREE_STORAGE_LABEL} free for its documents, in total. ★ Family Plus gives ${formatBytes(DEFAULT_PLAN_LIMITS.plus)}, for ${plusPrices('inr')} in India (${plusPrices('usd')} elsewhere). Saved chats count too. Every plan has a limit: when a family's space is full, new documents and saved chats can't be added until some are deleted${forSale ? ', or, on the free plan, the family moves to Family Plus' : ''}. If Family Plus ends while your family holds more than ${FREE_STORAGE_LABEL}, it has ${DEFAULT_PLAN_LIMITS.graceDays} days to renew or delete documents; after that, the newest documents above ${FREE_STORAGE_LABEL} are removed. You are reminded when it ends, a week before and the day before. Settings › Storage shows how much is used.`,
+      q: 'How much space do we get?',
+      a: `On the free plan, each family has ${FREE_STORAGE_LABEL} for its documents, in total, and your personal vault ${FREE_PERSONAL_STORAGE_LABEL}. ★ Family Plus gives ${formatBytes(DEFAULT_PLAN_LIMITS.plus)} to either, for ${plusPrices('inr')} in India (${plusPrices('usd')} elsewhere). Saved chats count too. Every plan has a limit: when a family's space is full, new documents and saved chats can't be added until some are deleted${forSale ? ', or, on the free plan, the family moves to Family Plus' : ''}. If Family Plus ends while a vault holds more than its free space, it has ${DEFAULT_PLAN_LIMITS.graceDays} days to renew or delete documents; after that, the newest documents above the free space are removed. You are reminded when it ends, a week before and the day before. Settings › Storage shows how much is used.`,
     },
     {
       q: 'How do reminders work?',
-      a: 'When a document with an expiry date is added, AskLocker reminds everyone in the family 90, 30 and 7 days before it expires, and on the day — under the bell on Home. To get them as notifications on your phone or computer, even when AskLocker is closed, open Settings › Notifications and turn them on for that device. On iPhone, add AskLocker to your Home Screen first. Birthdays in your family tree are reminded of on the morning of the day; switch them off in Settings › Notifications if you would rather not. It is free.',
+      a: 'With ★ Family Plus, when a document with an expiry date is added, AskLocker reminds everyone in the family 90, 30 and 7 days before it expires, and on the day — under the bell on Home — and the Reminders page lists every expiry date. To get them as notifications on your phone or computer, even when AskLocker is closed, open Settings › Notifications and turn them on for that device. On iPhone, add AskLocker to your Home Screen first. Birthdays in your family tree are reminded of on the morning of the day, on every plan; switch them off in Settings › Notifications if you would rather not.',
     },
     {
       q: 'What does ★ Family Plus mean?',
-      a: `Family Plus is the paid plan for the whole family${forSale ? '' : ', coming soon'}. In India it is ${plusPrice('inr')}, or ${plusYearlyOffer('inr')}: ${plusYearlySaving('inr')}. Elsewhere it is ${plusPrice('usd')}, or ${plusYearlyOffer('usd')}. It gives ${formatBytes(DEFAULT_PLAN_LIMITS.plus)} of space, and the things marked with ★ — voice chats with no limit (on Free, each person has ${DEFAULT_PLAN_LIMITS.voiceAnswers.free}), the Reminders page, with every expiry date in one list, and bringing documents in from Gmail. Tap any ★, or open Settings › Family Plus, to see Free and Plus side by side. The reminders themselves reach every family, Free or Plus.`,
+      a: `Family Plus is the paid plan for the whole family${forSale ? '' : ', coming soon'}. In India it is ${plusPrice('inr')}, or ${plusYearlyOffer('inr')}: ${plusYearlySaving('inr')}. Elsewhere it is ${plusPrice('usd')}, or ${plusYearlyOffer('usd')}. It gives ${formatBytes(DEFAULT_PLAN_LIMITS.plus)} of space, and the things marked with ★ — voice chats with no limit (on Free, each person has ${DEFAULT_PLAN_LIMITS.voiceAnswers.free}), expiry reminders before a document runs out, with every expiry date in one list on the Reminders page, and bringing documents in from Gmail. Tap any ★, or open Settings › Family Plus, to see Free and Plus side by side. Birthday reminders reach every family, Free or Plus.`,
     },
     ...(forSale ? [{
       q: 'How do I pay for Family Plus?',

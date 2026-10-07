@@ -88,7 +88,9 @@ Four things will mislead you if you assume otherwise:
    owner's alone — made only by `ensure_personal_vault()`, one per person,
    and triggers refuse any other membership or invitation, on every path;
    047's documents, and their files in Storage, are deleted only by whoever
-   added them, admins included).
+   added them, admins included; 048's free space differs by vault, 200 MB a
+   family and 100 MB a personal vault, and expiry reminders are made only
+   for vaults on Plus, both kept by the server).
    **A new writable
    column needs its own `GRANT` in a migration.** Nobody joins a family
    without saying yes: only an admin asks a person in, through the
@@ -159,7 +161,7 @@ tree, writes only its own emergency card and nickname, must be able to leave, an
 linked to an entry in the tree both ways: merged at once while a member,
 invited back as it after leaving),
 a question asked by relation ("my mother's passport"), and the full upload → ingest →
-expiry-notification pipeline, the reminder made once however often Home asks. By hand only, suite `languages` asks 12
+expiry-notification pipeline, the reminder made once however often Home asks (on Family Plus; QA Vault A is on Free, where 048 makes none, and that is checked). By hand only, suite `languages` asks 12
 questions about documents in eight more Indian languages — two of them
 photos OCR'd the way the web app does it, with Tesseract — which is about
 43% of the free Groq day on its own. See `qa/README.md`.
@@ -679,7 +681,7 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `dates.ts` | `parseDocumentDate()`: expiry dates exactly as ingest stores them (DD/MM/YYYY and kin, YYYY-MM-DD, "19 October 2026") |
 | `emergency.ts` | The emergency card's shape, blood groups (`bloodGroupLabel()`: "A−", "Bombay (hh)"), `telHref()`, and `cardProblem()` — the same checks and messages as `save_emergency_card()`, so the form can say what is wrong before saving |
 | `family-people.ts` | Whose a document can be: everyone in the tree, you first (`useDocumentOwners()`, members only before 031), and a person's expiry badge (`badgeFromExpiries()`) |
-| `plans.ts` | What each plan allows (038–043): the limits as 039–043 set them — storage, 4 members, and 10 voice chats for each person on Free (`DEFAULT_PLAN_LIMITS`, used only when the database cannot be asked), Family Plus's prices, monthly and yearly (`PLUS_PRICE`; `localPlusPrice()` / `localPlusPrices()` show rupees in India, dollars elsewhere, by the device's time zone; the yearly one against twelve months, crossed out, and the months it saves: `plusTwelveMonths()`, `plusYearlySaving()`), `storageLevel()`, and the words for a full vault (`storageFullMessage()`; for a chat, `chatStorageFullMessage()`), which live in `supabase/functions/_shared/plan-text.ts` so Gmail import says the same. Whether Plus can be bought is the payments function's answer (044: `usePaymentsStatus()`, `plusForSale()`); `PLUS_FOR_SALE` (false) is only what the words assume before it answers |
+| `plans.ts` | What each plan allows (038–048): the limits as 039–048 set them — storage (on Free 200 MB for a family and 100 MB for a personal vault, `freePersonal`; 10 GB on Plus), 4 members, and 10 voice chats for each person on Free (`DEFAULT_PLAN_LIMITS`, used only when the database cannot be asked), Family Plus's prices, monthly and yearly (`PLUS_PRICE`; `localPlusPrice()` / `localPlusPrices()` show rupees in India, dollars elsewhere, by the device's time zone; the yearly one against twelve months, crossed out, and the months it saves: `plusTwelveMonths()`, `plusYearlySaving()`), `storageLevel()`, and the words for a full vault (`storageFullMessage()`; for a chat, `chatStorageFullMessage()`), which live in `supabase/functions/_shared/plan-text.ts` so Gmail import says the same. Whether Plus can be bought is the payments function's answer (044: `usePaymentsStatus()`, `plusForSale()`); `PLUS_FOR_SALE` (false) is only what the words assume before it answers |
 | `family-plan.ts` | Is the current family on Family Plus? `useFamilyPlan()` (from `family_storage_status()`, kept a minute per family): `isFree`, and `routeFor(feature, route)`, which sends a free family to `/plus?feature=…` instead of a starred feature. Unknown (before 038, offline) gates nothing. `usePaymentsStatus()`: can Family Plus be bought here (044) |
 | `file-types.ts` | What a picked file is (`detectFileType()`: MIME type, then name, never a web `blob:` uri) and whether the vault can keep it (PDF, JPG, PNG) |
 | `app-info.ts` | Version, release date and commit (stamped into `extra` by `app.config.ts` at build time), and the support contact Help shows |
@@ -693,7 +695,7 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `speech-text.ts` | `toSpeech()`: strips markdown and spells out ID numbers before they are read aloud — and a number named as one ("train number 16782", "PNR: 4512", "PIN 751001", "नंबर 16782") digit by digit, from its digits; the screen keeps the digits |
 | `voice-languages.ts` | The language picker list and the few phrases the app itself says, per language |
 | `storage.ts` | Key-value cache: localStorage on web, AsyncStorage on native |
-| `database.types.ts` | Generated Supabase types, current to 047 (030 changed nothing in them). Regenerate after every migration and re-append the hand-written block at the bottom (see the typecheck note) |
+| `database.types.ts` | Generated Supabase types, current to 048 (030 changed nothing in them). Regenerate after every migration and re-append the hand-written block at the bottom (see the typecheck note) |
 
 ---
 
@@ -872,11 +874,12 @@ so storage policies live only in `019`.
   limit, which **the server enforces** — see
   [Plans and storage limits](#plans-and-storage-limits--every-plan-has-a-limit-038-039).
   Before 038 it adds up `file_size_bytes` from `get_family_documents` and
-  shows the free 1 GB, unenforced. Mind the platform underneath: the
+  shows the free limit, unenforced. Mind the platform underneath: the
   Supabase organisation is on the **Free plan, which holds 1 GB of files per
-  project in total**, all families together — PROD needs Pro (100 GB
-  included, then about $0.02/GB a month) before 1 GB a family can hold for
-  more than one family, and before anyone is given Plus. **Reminders** reads each document's
+  project in total**, all vaults together — about five full families or ten
+  full personal vaults at 048's free limits. PROD needs Pro (100 GB
+  included, then about $0.02/GB a month) past that, and before anyone is
+  given Plus's 10 GB. **Reminders** reads each document's
   details for its `expiry_date` — one call per document, fine for a family's
   papers; a large vault would want one query for it.
 - **About**'s release date is stamped by `app.config.ts` when the bundle is
@@ -1177,7 +1180,9 @@ so storage policies live only in `019`.
   each day that someone did. Now the database's own clock does it: `pg_cron`
   (free on every plan) runs `run_reminders()` at five past every hour. From
   9 in the morning, India time, `queue_expiry_reminders()` makes each
-  document's reminders for every member: 90, 30 and 7 days before (each
+  document's reminders for every member of a vault on **Family Plus** (048;
+  a vault on Free gets none, and nothing is recorded, so moving to Plus
+  brings each document's current stage at the next run): 90, 30 and 7 days before (each
   expiry alert's `alert_days_before`) and on the day, until three days after.
   `reminders_sent` remembers each (document, expiry date, stage), so each
   goes once, the runs after the first find nothing, and a renewed date
@@ -1269,8 +1274,9 @@ so storage policies live only in `019`.
 
 ### Plans and storage limits — every plan has a limit (038, 039)
 
-- **What a family may keep, never unlimited**: Free 1 GB in total (not a
-  monthly allowance), Family Plus 10 GB — in India ₹100 a month or ₹1,100 a
+- **What a vault may keep, never unlimited**: on Free, a family 200 MB and a
+  personal vault 100 MB, in total (048; 1 GB for every vault before it; not
+  a monthly allowance), Family Plus 10 GB for either — in India ₹100 a month or ₹1,100 a
   year, elsewhere $10 a month or $110 a year. A year costs eleven months,
   and ₹1,100 stays under the ₹2,000 above which UPI charges merchants 0.4%.
   The yearly price is shown as a discount on twelve months at the monthly
@@ -1354,14 +1360,15 @@ so storage policies live only in `019`.
 - **Starred features are for Plus families, and each one leads to the Plus
   page.** `/plus` (`src/app/plus.tsx`) shows what Plus gives side by side
   with Free, the price where the person is, and the family's own plan. For a
-  free family, tapping a ★ feature — the Reminders page in the drawer, From
+  free family, tapping a ★ feature — Reminders in the drawer, From
   Gmail on Upload, the voice-chat strip on Ask — opens `/plus?feature=…`, which says which feature brought
   them there and marks its row; the screens redirect there too, after a
   refresh or from a link (Gmail import not while Google is handing back a
   connection). A ★ tag drawn on its own (`<PlusTag link />`), Settings ›
   Family Plus, Storage and a full vault's dialog open it as well. Gmail
-  import also refuses a free family on the server. The reminders themselves
-  — under the bell and on devices — reach every family. Where Plus cannot be
+  import also refuses a free family on the server, and the server makes
+  expiry reminders only for a vault on Plus (048). Birthday reminders reach
+  every family. Where Plus cannot be
   bought (no Razorpay keys on the project, 044), the page says "Coming soon"
   rather than showing a button that does nothing.
 - **Voice chats: 10 for each person on Free, then Family Plus** (041–043;
@@ -1466,7 +1473,7 @@ so storage policies live only in `019`.
   refused first. Manage Family shows a personal vault its own page (no Add,
   no members), and a person's page there offers no account to link.
 - **Otherwise it is a family like any other**: its own schema, storage limit
-  (Free 1 GB) and plan, its own family tree (a document can still be marked
+  (Free 100 MB, half a family's, 048) and plan, its own family tree (a document can still be marked
   as Mom's), and it goes with the account (029: its last admin and only member).
   "Personal vault" is its name on every screen (`vaultName()`, `src/lib/vaults.ts`),
   whatever its row says.
@@ -1546,6 +1553,38 @@ so storage policies live only in `019`.
 - Before 047 is applied the app already hides Delete on other people's
   documents, but an admin's call would still go through: apply it to both
   projects before the release that carries this.
+
+### Free space by vault, and expiry reminders on Plus (048)
+
+- **Free is 200 MB for a family and 100 MB for a personal vault**; Family
+  Plus is 10 GB for either. Before 048 Free was 1 GB for every vault, which
+  Supabase's Free plan (1 GB per project, all vaults together) could not
+  hold past the first full one. `plan_limits.personal_storage_bytes` is a
+  personal vault's own number on a plan (NULL: the family number), and
+  `vault_storage_bytes(family, plan)` is the one place a vault's limit is
+  read: `family_storage_status()` (so the upload policy, Settings › Storage
+  and Gmail import), the saved-chat trigger, and 040's countdown and
+  removal. Both numbers are rows to change in the Table editor.
+- **Lowering it deletes nothing.** A vault that was always free and holds
+  more than its new limit keeps everything and adds nothing — no document,
+  no saved chat — until it is under it. Only a vault whose Plus ends is ever
+  cleaned up (040), and now down to its own free limit.
+- **`family_storage_status()` says `personal`**, so the words say "your
+  personal vault", never "your family", for one (`StorageRoom.personal` in
+  `_shared/plan-text.ts`). Notices write sizes with `size_text()`: "200 MB",
+  "1.5 GB".
+- **Expiry reminders are part of Family Plus.** `queue_family_expiry_reminders()`
+  — which the hourly clock and Home's call both use — makes nothing for a
+  vault on Free and records nothing, so moving to Plus brings each
+  document's current stage at the next run; when Plus ends they stop.
+  Birthday reminders (035) stay for every family, and so do invitations and
+  plan notices on devices. The Plus page has one ★ row for expiry
+  reminders and the Reminders page; its expiry notice now names AskLocker.
+- **Every client path works either side of it**: `fetchPlanLimits()` asks for
+  `personal_storage_bytes` and falls back without it (one limit for every
+  vault, as the server then keeps), and a status without `personal` reads as
+  a family. QA's upload check expects no reminder on a free vault once
+  `family_storage_status()` has `personal`, and one before.
 
 ## Edge Functions
 
@@ -2033,8 +2072,9 @@ rule again once pinned chunks are mixed in.
   embeddings, voice or Gmail import. The app made such claims until
   7 October 2026.
 - **★ Family Plus marks what only Plus families get** (`<PlusTag />`):
-  10 GB instead of 1 GB, voice chats with no limit (on Free, each person
-  has 10), the Reminders page (in the drawer) and Import from
+  10 GB instead of 200 MB (100 MB for a personal vault), voice chats with
+  no limit (on Free, each person has 10), expiry reminders and the
+  Reminders page (in the drawer, 048) and Import from
   Gmail (on Upload) — ₹100 a month or ₹1,100 a year in India, $10 or $110
   elsewhere, paid for on the Plus page with Razorpay (044), or given by
   hand. For a free family a starred feature opens the
