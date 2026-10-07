@@ -9,6 +9,10 @@
 // left open, not someone with the browser's developer tools, because the
 // sign-in itself is in the browser's storage.
 
+import type { LockSupport } from './app-lock-types';
+
+export type { LockSupport } from './app-lock-types';
+
 const SIGNING_IN = 'fv:signing-in';
 /** A redirect sign-in that comes back later than this is not fresh any more. */
 const FRESH_MS = 15 * 60 * 1000;
@@ -51,15 +55,18 @@ function plainError(err: unknown, turningOn: boolean): Error {
   return new Error((err as Error | null)?.message || 'The fingerprint or face check did not work.');
 }
 
-/** This device can check a fingerprint, a face or its PIN for this page. */
-export async function lockSupported(): Promise<boolean> {
+/** Whether this device can check a fingerprint, a face or its PIN for this page, and if not, why. */
+export async function lockSupport(): Promise<LockSupport> {
+  if (typeof window === 'undefined') return 'no-webauthn';
+  if (!window.isSecureContext) return 'insecure';
+  const PKC = (window as any).PublicKeyCredential;
+  if (!PKC || typeof PKC.isUserVerifyingPlatformAuthenticatorAvailable !== 'function' || !navigator.credentials) {
+    return 'no-webauthn';
+  }
   try {
-    if (typeof window === 'undefined' || !window.isSecureContext) return false;
-    const PKC = (window as any).PublicKeyCredential;
-    if (!PKC || typeof PKC.isUserVerifyingPlatformAuthenticatorAvailable !== 'function') return false;
-    return !!(await PKC.isUserVerifyingPlatformAuthenticatorAvailable());
+    return (await PKC.isUserVerifyingPlatformAuthenticatorAvailable()) ? 'ok' : 'no-device-check';
   } catch {
-    return false;
+    return 'no-device-check';
   }
 }
 

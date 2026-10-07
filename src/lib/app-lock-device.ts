@@ -4,8 +4,12 @@
 // be tried in Expo Go — so until then the lock is not offered here, and
 // Settings › Security does not show it.
 
-export async function lockSupported(): Promise<boolean> {
-  return false;
+import type { LockSupport } from './app-lock-types';
+
+export type { LockSupport } from './app-lock-types';
+
+export async function lockSupport(): Promise<LockSupport> {
+  return 'phone-app';
 }
 
 export async function createLockKey(_owner: { userId: string; email: string }): Promise<string> {
