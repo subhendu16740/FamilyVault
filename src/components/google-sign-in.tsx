@@ -11,8 +11,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, ActivityIndicator, StyleSheet } from 'react-native';
 import { useAuth } from '../lib/auth';
-import { googleButtonAvailable, renderGoogleButton } from '../lib/google-button';
+import { googleButtonAvailable, googleButtonReason, renderGoogleButton } from '../lib/google-button';
 import { color, radius, size, space, type } from '../constants/design';
+
+let reasonTold = false;
 
 export function GoogleSignIn({ onSignedIn }: { onSignedIn: () => void }) {
   const { signInWithGoogle, signInWithGoogleToken } = useAuth();
@@ -23,6 +25,13 @@ export function GoogleSignIn({ onSignedIn }: { onSignedIn: () => void }) {
   const [round, setRound] = useState(0);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+
+  // Says in the browser's console which sign-in this page uses, and why — once a page load.
+  useEffect(() => {
+    if (reasonTold) return;
+    reasonTold = true;
+    console.info('[Google sign-in]', googleButtonReason());
+  }, []);
 
   useEffect(() => {
     if (!ownButton || !width || !box.current) return;

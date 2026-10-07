@@ -7,7 +7,7 @@
   },
   "scripts": {
     "start": "expo start",
-    "build": "expo export --platform web",
+    "build": "expo export --platform web --clear",
     "typecheck": "tsc --noEmit",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo run:android",
