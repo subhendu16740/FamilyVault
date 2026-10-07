@@ -27,8 +27,8 @@ Documents are not end-to-end encrypted. They travel over https and are stored on
 - **Upload Flow** — Multi-step upload with source selection, metadata tagging, and owner assignment
 - **Import from Gmail** ★ (web) — Connect your own Gmail; AskLocker lists the attachments that look like documents, and imports the ones you tick. What it finds is shown to you, not your family; disconnecting makes it forget
 - **Menu Drawer** — Slides in from the left from the name button on Home: Home, Manage Family, Reminders ★ and Settings, with Sign Out
-- **Reminders** ★ — Every document with an expiry date, soonest first. ★ Family Plus marks what the coming paid plan will add (reminders 90, 30 and 7 days ahead)
-- **Settings** — Profile (name and phone), Security (password, sign out everywhere), Notifications on/off, Storage (each family's use of its free 1 GB, and what you added; more space ★), Privacy, Help & FAQ with feedback, and About (version and release date)
+- **Reminders** ★ — Every document with an expiry date, soonest first, and reminders 90, 30 and 7 days ahead and on the day, under the bell and on your devices. Both are part of ★ Family Plus
+- **Settings** — Profile (name and phone), Security (password, sign out everywhere), Notifications on/off, Storage (each vault's use of its free space — 200 MB for a family, 100 MB for your personal vault — and what you added; more space ★), Privacy, Help & FAQ with feedback, and About (version and release date)
 - **One Top Bar Everywhere** — A back arrow at the top left of every screen, with the title beside it, that works even after a refresh; one compact type and size scale (`src/constants/design.ts`) across the app
 - **23 Document Categories** — Pre-configured categories including Passport, Driving License, Health Insurance, Property Deed, Tax Return, Birth Certificate, and more
 - **In-App Confirmation Dialogs** — Custom modal dialogs for destructive actions

@@ -1,10 +1,11 @@
-// ─── What each plan may keep (migrations 038, 039) ──────────────
+// ─── What each plan may keep (migrations 038, 039, 048) ─────────
 //
 // Every plan has a storage limit; none is unlimited:
 //
-//   Free           1 GB, in total — not a monthly allowance
-//   Family Plus   10 GB — in India ₹100 a month or ₹1,100 a year,
-//                 elsewhere $10 a month or $110 a year
+//   Free          a family 200 MB, a personal vault 100 MB, in total —
+//                 not a monthly allowance
+//   Family Plus   10 GB, either kind of vault — in India ₹100 a month or
+//                 ₹1,100 a year, elsewhere $10 a month or $110 a year
 //
 // The yearly price is shown as a discount on twelve months at the monthly
 // price, crossed out (<YearlyPrice />, src/components/plus-price.tsx).
@@ -20,8 +21,9 @@
 // documents' file sizes instead and shows the free limit, unenforced.
 //
 // The Supabase project behind the app is on Supabase's Free plan, which holds
-// 1 GB of files in total, for every family together. Before these limits are
-// promised to more than one family, PROD needs Supabase Pro (100 GB included).
+// 1 GB of files in total, for every vault together: about five full families,
+// or ten full personal vaults, at the free limits. Past that, and before
+// anyone is given Family Plus's 10 GB, PROD needs Supabase Pro (100 GB included).
 // ────────────────────────────────────────────────────────────────
 
 import {
@@ -35,11 +37,17 @@ export {
   type PlanLimits, type PlanName, type PriceCurrency, type PricePeriod, type StorageRoom,
 } from '../../supabase/functions/_shared/plan-text';
 
-/** Free space per family, in bytes, when the database cannot be asked. */
+/** Free space for a family, in bytes, when the database cannot be asked. */
 export const FREE_STORAGE_BYTES = DEFAULT_PLAN_LIMITS.free;
 
-/** "1 GB", for sentences. */
+/** "200 MB", for sentences. */
 export const FREE_STORAGE_LABEL = formatBytes(FREE_STORAGE_BYTES);
+
+/** Free space for a personal vault (048), in bytes, when the database cannot be asked. */
+export const FREE_PERSONAL_STORAGE_BYTES = DEFAULT_PLAN_LIMITS.freePersonal;
+
+/** "100 MB", for sentences. */
+export const FREE_PERSONAL_STORAGE_LABEL = formatBytes(FREE_PERSONAL_STORAGE_BYTES);
 
 /**
  * The currency this device should see prices in: rupees in India, dollars

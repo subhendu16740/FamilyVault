@@ -3,11 +3,11 @@
 // Shared by the app (src/lib/plans.ts) and Gmail import, so both say the same
 // thing when a family's storage is full. Pure TypeScript: no Deno, no React.
 //
-// Two plans, each with a limit (039):
+// Two plans, each with a limit (039, 048):
 //
-//   Free           1 GB, in total
-//   Family Plus   10 GB — in India ₹100 a month or ₹1,100 a year,
-//                 elsewhere $10 a month or $110 a year
+//   Free          a family 200 MB, a personal vault 100 MB, in total
+//   Family Plus   10 GB, either kind of vault — in India ₹100 a month or
+//                 ₹1,100 a year, elsewhere $10 a month or $110 a year
 //
 // On both, a family has at most 4 members — the people who sign in; anyone
 // can be in the family tree — and a free family hears its first 10 answers
@@ -19,7 +19,7 @@
 // typed in: a crossed-out price must be one a family could really pay. How a
 // family pays never changes what it may keep.
 //
-// When Family Plus ends (040), a family above the free limit has 30 days to
+// When Family Plus ends (040), a vault above its free limit has 30 days to
 // renew or delete documents; then the newest documents above it are removed.
 //
 // The limits live in the database (public.plan_limits), and the server keeps
@@ -31,15 +31,21 @@
 
 export type PlanName = 'free' | 'plus';
 
-/** A family's plan and its room, as family_storage_status() reports them. */
+/** A vault's plan and its room, as family_storage_status() reports them. */
 export interface StorageRoom {
   plan: PlanName;
   limitBytes: number;
   usedBytes: number;
+  /** A personal vault (046), which the words call "your personal vault"; a family otherwise. */
+  personal?: boolean;
 }
 
 export interface PlanLimits {
+  /** What a family may keep on Free. */
   free: number;
+  /** What a personal vault may keep on Free (048). */
+  freePersonal: number;
+  /** What a vault may keep on Family Plus, either kind. */
   plus: number;
   /** Days a family keeps what is above the free limit after Plus ends (040). */
   graceDays: number;
@@ -51,9 +57,12 @@ export interface PlanLimits {
 
 const GB = 1024 ** 3;
 
-/** What 039–041 set; plan_limits is the truth. */
+const MB = 1024 ** 2;
+
+/** What 039–048 set; plan_limits is the truth. */
 export const DEFAULT_PLAN_LIMITS: PlanLimits = {
-  free: 1 * GB,
+  free: 200 * MB,
+  freePersonal: 100 * MB,
   plus: 10 * GB,
   graceDays: 30,
   members: { free: 4, plus: 4 },
@@ -163,14 +172,14 @@ export interface StorageMessageOptions {
   forSale?: boolean;
 }
 
-/** Why a file does not fit, and what the family can do about it. */
+/** Why a file does not fit, and what the vault's people can do about it. */
 export function storageFullMessage(room: StorageRoom, fileBytes = 0, options: StorageMessageOptions = {}): string {
   const { limits = DEFAULT_PLAN_LIMITS, price, removalOn, forSale = PLUS_FOR_SALE } = options;
   const left = Math.max(0, room.limitBytes - room.usedBytes);
   const on = `${formatBytes(room.limitBytes)} on ${planLabel(room.plan)}`;
   const head = left === 0 || fileBytes === 0
-    ? `Your family's storage is full: ${formatBytes(room.usedBytes)} used of ${on}.`
-    : `This file is ${formatBytes(fileBytes)}, and your family has ${formatBytes(left)} left of ${on}.`;
+    ? `${room.personal ? 'Your personal vault is full' : "Your family's storage is full"}: ${formatBytes(room.usedBytes)} used of ${on}.`
+    : `This file is ${formatBytes(fileBytes)}, and ${room.personal ? 'your personal vault' : 'your family'} has ${formatBytes(left)} left of ${on}.`;
 
   const free = 'Delete documents you no longer need';
   const plus = `${formatBytes(limits.plus)}${price ? ` for ${price}` : ''}`;
@@ -193,7 +202,7 @@ export function storageFullMessage(room: StorageRoom, fileBytes = 0, options: St
  */
 export function chatStorageFullMessage(room: StorageRoom, options: Omit<StorageMessageOptions, 'removalOn'> = {}): string {
   const { limits = DEFAULT_PLAN_LIMITS, price, forSale = PLUS_FOR_SALE } = options;
-  const head = `There is no room to save this chat: your family has used ${formatBytes(room.usedBytes)} of its ${formatBytes(room.limitBytes)}.`;
+  const head = `There is no room to save this chat: ${room.personal ? 'your personal vault' : 'your family'} has used ${formatBytes(room.usedBytes)} of its ${formatBytes(room.limitBytes)}.`;
   if (room.plan !== 'free') return `${head} Delete documents or saved chats you no longer need to make room.`;
   const plus = `${formatBytes(limits.plus)}${price ? ` for ${price}` : ''}`;
   return forSale

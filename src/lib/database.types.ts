@@ -920,6 +920,7 @@ export type Database = {
         Row: {
           grace_days: number | null
           max_members: number
+          personal_storage_bytes: number | null
           plan: string
           storage_bytes: number
           voice_answers: number | null
@@ -927,6 +928,7 @@ export type Database = {
         Insert: {
           grace_days?: number | null
           max_members?: number
+          personal_storage_bytes?: number | null
           plan: string
           storage_bytes: number
           voice_answers?: number | null
@@ -934,6 +936,7 @@ export type Database = {
         Update: {
           grace_days?: number | null
           max_members?: number
+          personal_storage_bytes?: number | null
           plan?: string
           storage_bytes?: number
           voice_answers?: number | null
@@ -1315,6 +1318,7 @@ export type Database = {
           chats_bytes: number
           limit_bytes: number
           paid_until: string
+          personal: boolean
           plan: string
           removal_at: string
           used_bytes: number
@@ -1703,6 +1707,7 @@ export type Database = {
         Returns: undefined
       }
       shares_family: { Args: { p_user: string }; Returns: boolean }
+      size_text: { Args: { p_bytes: number }; Returns: string }
       tree_add_pair: {
         Args: { p_a: string; p_b: string; p_family_id: string; p_kind: string }
         Returns: undefined
@@ -1748,6 +1753,10 @@ export type Database = {
       upgrade_family_schema_for_search: {
         Args: { p_family_id: string }
         Returns: undefined
+      }
+      vault_storage_bytes: {
+        Args: { p_family_id: string; p_plan: string }
+        Returns: number
       }
     }
     Enums: {
