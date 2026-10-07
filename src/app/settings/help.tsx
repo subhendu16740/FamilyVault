@@ -43,8 +43,8 @@ function faq(payments: PaymentsStatus | null): { q: string; a: string }[] {
       a: 'With your Google account: open AskLocker and choose Continue with Google. The first time, that makes your AskLocker account; after that it opens the same account on any phone or computer. There is no AskLocker password to remember.',
     },
     {
-      q: 'Can I lock AskLocker with my fingerprint or face?',
-      a: `Yes, on the web app, on each phone or computer you use: Home offers it after you sign in, and Settings › Security › Fingerprint or face lock turns it on or off. AskLocker then asks for your fingerprint or face (or the device's PIN) when it opens, and after ${lockAfterText} away. Your fingerprint and face never leave your device. If it is not offered, Settings › Security says why — usually the phone has no screen lock, or AskLocker is open inside another app instead of in Chrome or Safari. If it ever does not work, choose Use Google instead on the lock screen and sign in again with Google.`,
+      q: 'Can I sign in with my fingerprint or face?',
+      a: `Yes, on the web app, on each phone or computer you use: sign in with Google once, then turn on Fingerprint sign-in — Home offers it, and Settings › Security turns it on or off. After that, choose Sign in with fingerprint and your fingerprint or face (or the device's PIN) signs you in, with no Google and no password. AskLocker also locks itself when it opens and after ${lockAfterText} away, and your fingerprint opens it. Your fingerprint and face never leave your device. If it is not offered, Settings › Security says why — usually the phone has no screen lock, or AskLocker is open inside another app instead of in Chrome or Safari. Google sign-in always works too.`,
     },
     {
       q: 'Who can see my documents?',

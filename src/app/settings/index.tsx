@@ -120,7 +120,7 @@ export default function SettingsScreen() {
     {
       icon: 'shield', label: 'Security', route: '/settings/security',
       sub: Platform.OS === 'web'
-        ? 'How you sign in, fingerprint lock, signing out, deleting your account'
+        ? 'How you sign in, fingerprint sign-in, signing out, deleting your account'
         : 'How you sign in, signing out, deleting your account',
     },
     {
