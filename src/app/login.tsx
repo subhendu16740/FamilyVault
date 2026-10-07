@@ -1,19 +1,24 @@
 // The way in: Google, and nothing else. Signing in with Google the first time
 // makes the account, so there is no sign-up form, no password to forget and
 // no email to confirm. On the web, where it is set up, the button is Google's
-// own; elsewhere it is the redirect sign-in (google-sign-in.tsx).
+// own; elsewhere it is the redirect sign-in (google-sign-in.tsx). Test
+// builds — DEV and previews — also take an email and password, for test
+// accounts (password-sign-in.tsx); production never shows that.
 
-import { View, Text, StyleSheet, ScrollView, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Image, KeyboardAvoidingView, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { GoogleSignIn } from '../components/google-sign-in';
+import { PasswordSignIn } from '../components/password-sign-in';
+import { isProduction } from '../lib/environment';
 import { color, radius, space, type } from '../constants/design';
 
 export default function LoginScreen() {
   return (
     <SafeAreaView style={styles.safe}>
-      <ScrollView contentContainerStyle={styles.container}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
+      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <View style={styles.logoSection}>
           <LinearGradient
             colors={['#2A3D66', '#4A6491']}
@@ -32,13 +37,17 @@ export default function LoginScreen() {
         <Text style={styles.note}>
           New to AskLocker? The same button makes your account. There is no password to remember.
         </Text>
+
+        {!isProduction && <PasswordSignIn onSignedIn={() => router.replace('/home' as any)} />}
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: color.background },
+  flex: { flex: 1 },
   container: {
     flexGrow: 1,
     justifyContent: 'center',

@@ -13,6 +13,7 @@ import {
   plusYearlySaving,
 } from '../../lib/plans';
 import { usePaymentsStatus } from '../../lib/family-plan';
+import { lockAfterText } from '../../lib/app-lock';
 import type { PaymentsStatus } from '../../lib/api';
 import { ScreenHeader } from '../../components/screen-header';
 import { Card, CardTitle, Body, PrimaryButton, screenStyles } from '../../components/settings-ui';
@@ -40,6 +41,10 @@ function faq(payments: PaymentsStatus | null): { q: string; a: string }[] {
     {
       q: 'How do I sign in?',
       a: 'With your Google account: open AskLocker and choose Continue with Google. The first time, that makes your AskLocker account; after that it opens the same account on any phone or computer. There is no AskLocker password to remember.',
+    },
+    {
+      q: 'Can I lock AskLocker with my fingerprint or face?',
+      a: `Yes, on the web app. Open Settings › Security and turn on Fingerprint or face lock, on each phone or computer you use. AskLocker then asks for your fingerprint or face (or the device's PIN) when it opens, and after ${lockAfterText} away. Your fingerprint and face never leave your device. If it ever does not work, choose Use Google instead on the lock screen and sign in again with Google.`,
     },
     {
       q: 'Who can see my documents?',

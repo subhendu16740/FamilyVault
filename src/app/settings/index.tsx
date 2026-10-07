@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, StyleSheet, Switch, Modal, Pressable,
-  ActivityIndicator,
+  ActivityIndicator, Platform,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -117,7 +117,12 @@ export default function SettingsScreen() {
 
   const accountItems: LinkItem[] = [
     { icon: 'user', label: 'Profile', sub: 'Your name and phone number', route: '/settings/profile' },
-    { icon: 'shield', label: 'Security', sub: 'How you sign in, signing out, deleting your account', route: '/settings/security' },
+    {
+      icon: 'shield', label: 'Security', route: '/settings/security',
+      sub: Platform.OS === 'web'
+        ? 'How you sign in, fingerprint lock, signing out, deleting your account'
+        : 'How you sign in, signing out, deleting your account',
+    },
     {
       icon: 'bell', label: 'Notifications', sub: 'Expiry alerts and family news',
       route: '/settings/notifications', value: notificationsEnabled ? 'On' : 'Off',

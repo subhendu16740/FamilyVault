@@ -415,9 +415,15 @@ copies, so DEV needs its own secrets and its own `documents` storage bucket.
 
 - **Google is the only way in** (since 7 October 2026). The login screen is
   one button: signing in with Google the first time makes the account, so
-  there is no sign-up form, no password and no email to confirm. The app
-  has no password sign-in or sign-up (`auth.tsx`), and Settings › Security
-  sets no password.
+  there is no sign-up form, no password and no email to confirm, and
+  Settings › Security sets no password.
+- **Test builds also take an email and password.** Wherever `isProduction`
+  is false — DEV, previews, an unknown project, the same builds that show
+  the badge — the login screen has a "Test builds only" form under Google
+  (`password-sign-in.tsx`: sign in, or create a test account), for QA's
+  accounts and for testing with several accounts. `signInWithPassword` and
+  `signUpWithPassword` in `auth.tsx` exist for it alone. Production never
+  shows it.
 - **An account made earlier with email and password opens with Google, same
   email.** Supabase links a new Google identity to the existing account with
   the same verified email (automatic identity linking), so its families and
@@ -426,8 +432,8 @@ copies, so DEV needs its own secrets and its own `documents` storage bucket.
   anyone make an account with their own email), or the account is deleted
   by hand (see [Deleting your account](#deleting-your-account--at-once-nothing-kept-029-030)).
 - **Keep the Email provider on in DEV.** QA signs its test accounts in with
-  passwords through the API (`qa/lib/supabase.mjs`), never through the login
-  screen. On PROD nothing uses it: switching it off (Authentication › Sign In
+  passwords through the API (`qa/lib/supabase.mjs`), and the test form needs
+  it. On PROD nothing uses it: switching it off (Authentication › Sign In
   / Providers › Email) stops anyone making a password account through the
   API — once Authentication › Users shows nobody who signs in with one.
 - **There is always a way in.** A spinner holds the place of Google's button
@@ -483,6 +489,48 @@ copies, so DEV needs its own secrets and its own `documents` storage bucket.
   verification, free — a public home page and privacy policy on a domain
   verified in Search Console, both linked from the OAuth consent screen.
 
+### Fingerprint or face lock — on this device, after Google
+
+- **Sign in with Google once; after that a fingerprint or face opens
+  AskLocker** (since 7 October 2026). Settings › Security › Fingerprint or
+  face lock, per device and per account, off until turned on. Once on,
+  AskLocker locks when it is opened already signed in, and when it comes
+  back after 5 minutes out of sight (`LOCK_AFTER_MS`, `src/lib/app-lock.tsx`).
+  The lock screen (`src/components/app-lock-screen.tsx`, a Modal over
+  everything) tries the check once by itself and keeps a big Unlock button,
+  because older iPhones start the check only from a tap.
+- **The device checks the person; nothing is sent anywhere.** On the web it
+  is WebAuthn with the device's own authenticator (`app-lock-device.web.ts`)
+  — Android's fingerprint or face, Face ID or Touch ID, Windows Hello — with
+  user verification required, so the device may take its own PIN instead,
+  as phones do. Turning it on makes a key on the device (its user handle is
+  the account id, so off and on again replaces the key rather than piling
+  them up; the device may list it as a passkey); the page keeps only the
+  key's id, in `accountKey.appLock`, which `forgetAccount()` clears.
+  Unlocking has the device sign a random challenge with that key and checks
+  the user-verified flag in its answer. Offered only where
+  `isUserVerifyingPlatformAuthenticatorAvailable()` says yes.
+- **It locks the screen, not the data.** It keeps out someone who picks up
+  an unlocked phone or a computer left open. The sign-in itself stays in
+  the browser's storage, so developer tools get past it; nothing on the
+  server knows about it, and no access rule depends on it.
+- **Google stays the way in.** "Use Google instead" on the lock screen signs
+  out; signing in again with Google opens AskLocker without the lock for
+  that visit, and the lock stays on for next time. So a lost key — a new
+  phone, a reset fingerprint, a deleted passkey — never shuts anyone out,
+  and the lock is never easier to get past than signing in with Google. A
+  sign-in in the page never locks; the redirect sign-in comes back as a new
+  page load, so `noteSignInStarted()` marks it in sessionStorage before
+  leaving and `takeFreshSignIn()` reads it on return (15 minutes at most).
+- **A shared document (`/s`) is never behind the lock.**
+- **The phone app's `app-lock-device.ts` is a stand-in** until EAS builds
+  exist; it will use `expo-local-authentication` (free; Face ID cannot be
+  tried in Expo Go). Settings does not offer the lock there meanwhile.
+- **Passkeys as a way to sign in** (Supabase Auth, beta since May 2026) were
+  weighed and not taken: experimental, a newer supabase-js (2.105+), one
+  domain per project (so no previews), extra files for the phone app, and a
+  second way in beside Google.
+
 ### Native (not yet set up)
 
 There is no `eas.json`, no `expo-updates`, and no EAS project ID. Native
@@ -523,7 +571,7 @@ src/
     _layout.tsx              # root Stack + AuthGate
     index.tsx                # redirect -> /onboarding or /home
     onboarding.tsx           # 3-slide intro
-    login.tsx                # Google only; the first sign-in makes the account (google-sign-in.tsx: Google's own button on the web where set up)
+    login.tsx                # Google only; the first sign-in makes the account (google-sign-in.tsx: Google's own button on the web where set up); test builds add email and password (password-sign-in.tsx)
     setup-family.tsx         # first-time vault creation
     notifications.tsx        # expiry alerts, uploads, invites, Family Plus
     family.tsx               # Manage Family: members, invitations (Pending approval), leaving, every vault, Create a family; the personal vault's own page (046)    (NOT a tab)
@@ -548,7 +596,7 @@ src/
     (tabs)/
       _layout.tsx            # custom tab bar (CustomTabBar): full width; the round Ask button (size.ask) sits on its bottom edge and rises above it
       home.tsx  search.tsx  upload.tsx
-  components/                # shared UI, incl. ProfileDrawer, ShareSheet (036), InvitationCards (037), the vault dropdown and sheet (vault-sheet.tsx, 046) and GoogleSignIn
+  components/                # shared UI, incl. ProfileDrawer, ShareSheet (036), InvitationCards (037), the vault dropdown and sheet (vault-sheet.tsx, 046), GoogleSignIn, PasswordSignIn (test builds) and AppLockScreen
   constants/design.ts        # the one type/size/spacing scale every screen uses
   constants/theme.ts         # create-expo-app scaffold, largely unused
   hooks/                     # use-color-scheme, use-theme
@@ -578,7 +626,8 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | File | Role |
 |---|---|
 | `supabase.ts` | Client init. AsyncStorage for session persistence on native only. |
-| `auth.tsx` | `AuthProvider`: session, signInWithGoogle (the redirect), signInWithGoogleToken (Google's own button's ID token), signOut. Google is the only way in: no password sign-in or sign-up |
+| `auth.tsx` | `AuthProvider`: session, signInWithGoogle (the redirect), signInWithGoogleToken (Google's own button's ID token), signOut. Google is the only way in; `signInWithPassword` / `signUpWithPassword` serve only the test builds' form |
+| `app-lock.tsx` | The fingerprint or face lock (`AppLockProvider`, `useAppLock()`): whether this device can check a person, whether the lock is on for this account, when it locks (opened signed in; back after `LOCK_AFTER_MS`), turning it on and off. The device check is `app-lock-device.ts` / `app-lock-device.web.ts`; the screen, `components/app-lock-screen.tsx`. See [Fingerprint or face lock](#fingerprint-or-face-lock--on-this-device-after-google) |
 | `family-context.tsx` | `FamilyProvider`: currentFamily, members, membership, needsFamily; `families` is every vault, the personal one included, which it makes the first time it sees an account without one (`ensurePersonalVault()`, 046) |
 | `vaults.ts` | Personal vault or family (046): `vaultName()` ("Personal vault" everywhere), `splitVaults()`, `vaultSubtitle()` |
 | `drawer-context.tsx` | Profile drawer open/close state |
@@ -617,6 +666,7 @@ src/lib/speech-recognition.ts      /  speech-recognition.web.ts
 src/lib/push.ts                    /  push.web.ts
 src/lib/razorpay.ts                /  razorpay.web.ts
 src/lib/google-button.ts           /  google-button.web.ts
+src/lib/app-lock-device.ts         /  app-lock-device.web.ts
 src/app/+html.tsx                     (web only — HTML shell, @font-face; NOT used by the single-page export)
 public/sw.js                          (web only — the service worker that shows notifications)
 src/global.css                        (web only)

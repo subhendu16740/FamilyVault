@@ -13,6 +13,7 @@ import { useEffect, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, ActivityIndicator, Image, StyleSheet } from 'react-native';
 import { useAuth } from '../lib/auth';
 import { googleButtonAvailable, googleButtonReason, renderGoogleButton } from '../lib/google-button';
+import { noteSignInStarted } from '../lib/app-lock-device';
 import { color, radius, size, space, type } from '../constants/design';
 
 let reasonTold = false;
@@ -69,6 +70,8 @@ export function GoogleSignIn({ onSignedIn }: { onSignedIn: () => void }) {
   const redirect = async () => {
     setBusy(true);
     setProblem(null);
+    // The page that comes back signed in has just signed in: the lock (app-lock.tsx) leaves it open.
+    noteSignInStarted();
     const { error } = await signInWithGoogle();
     setBusy(false);
     if (error) setProblem(`Google sign-in did not work: ${error}`);
