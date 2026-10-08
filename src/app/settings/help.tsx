@@ -39,6 +39,10 @@ function faq(payments: PaymentsStatus | null): { q: string; a: string }[] {
       a: 'Open Search and ask in your own words, for example "When does Mom\'s passport expire?". AskLocker searches all your vaults at once — your personal vault and every family — answers, and shows which document the answer came from. To get an answer sooner, tap Search in and pick one vault.',
     },
     {
+      q: 'How many questions can I ask?',
+      a: `On the free plan, each person can ask ${DEFAULT_PLAN_LIMITS.questions.free} questions a month, in all their vaults together; they start again on the 1st of the month. A question that finds nothing, or that AskLocker could not answer, is not counted. Search shows how many you have left once only a few remain. With ★ Family Plus there is no monthly limit for anyone in the family — only, to keep it fair, a ceiling of ${DEFAULT_PLAN_LIMITS.questionsFairUse} a month for one person, far more than anyone asks.`,
+    },
+    {
       q: 'Can I ask by speaking?',
       a: `Yes. Turn on the Voice assistant in Settings, under Accessibility. Then tap the microphone on Search and say your question, and the answer is read out loud. Said something by mistake? Tap Cancel while it is still listening, and nothing is asked. On the free plan, each person has ${DEFAULT_PLAN_LIMITS.voiceAnswers.free} free voice chats of their own — a question asked by voice or an answer read aloud, one per question — and Search shows how many you have left. After that you type, and the answer is on the screen; ★ Family Plus has no limit. Settings › Accessibility › Voice chooses who reads the answers, from the voices on your phone or computer.`,
     },
@@ -56,11 +60,11 @@ function faq(payments: PaymentsStatus | null): { q: string; a: string }[] {
     },
     {
       q: 'How do I share a document with someone outside the family?',
-      a: 'Open the document, choose Share, then Make a link, and send the link by message or email. Anyone with it can open that one document, without an account, for 1, 7 or 30 days. The same screen shows every working link and how often it was opened, and turns a link off at once. A family admin, whoever added the document, or the person it belongs to can share it. For now, Share is in AskLocker on the web.',
+      a: 'Open the document, choose Share, then Make a link, and send the link by message or email. Anyone with it can open that one document, without an account, for 1 or 7 days — or 30 days with ★ Family Plus. The same screen shows every working link and how often it was opened, and turns a link off at once. A family admin, whoever added the document, or the person it belongs to can share it. For now, Share is in AskLocker on the web.',
     },
     {
       q: 'How do I add someone to my family?',
-      a: `If you are an admin, open Manage Family and choose Add, then type the email of the Google account they sign in with. They need to have signed in to AskLocker once first. They get an invitation and join once they accept — until then they show in Manage Family as Pending approval, and you can withdraw it. A family can have up to ${DEFAULT_PLAN_LIMITS.members.free} members, and invitations waiting for an answer count too. Anyone can be in the family tree without an account.`,
+      a: `If you are an admin, open Manage Family and choose Add, then type the email of the Google account they sign in with. They need to have signed in to AskLocker once first. They get an invitation and join once they accept — until then they show in Manage Family as Pending approval, and you can withdraw it. A family can have up to ${DEFAULT_PLAN_LIMITS.members.free} members on the free plan and ${DEFAULT_PLAN_LIMITS.members.plus} with ★ Family Plus, and invitations waiting for an answer count too. Anyone can be in the family tree without an account.`,
     },
     {
       q: 'Someone invited me to their family. What do I do?',
@@ -88,7 +92,7 @@ function faq(payments: PaymentsStatus | null): { q: string; a: string }[] {
     },
     {
       q: 'What does ★ Family Plus mean?',
-      a: `Family Plus is the paid plan for the whole family${forSale ? '' : ', coming soon'}. In India it is ${plusPrice('inr')}, or ${plusYearlyOffer('inr')}: ${plusYearlySaving('inr')}. Elsewhere it is ${plusPrice('usd')}, or ${plusYearlyOffer('usd')}. It gives ${formatBytes(DEFAULT_PLAN_LIMITS.plus)} of space, and the things marked with ★ — voice chats with no limit (on Free, each person has ${DEFAULT_PLAN_LIMITS.voiceAnswers.free}), expiry reminders before a document runs out, with every expiry date in one list on the Reminders page, and bringing documents in from Gmail. Tap any ★, or open Settings › Family Plus, to see Free and Plus side by side. Birthday reminders reach every family, Free or Plus.`,
+      a: `Family Plus is the paid plan for the whole family${forSale ? '' : ', coming soon'}. In India it is ${plusPrice('inr')}, or ${plusYearlyOffer('inr')}: ${plusYearlySaving('inr')}. Elsewhere it is ${plusPrice('usd')}, or ${plusYearlyOffer('usd')}. It gives ${formatBytes(DEFAULT_PLAN_LIMITS.plus)} of space, and the things marked with ★ — questions with no monthly limit (on Free, each person has ${DEFAULT_PLAN_LIMITS.questions.free} a month), voice chats with no limit (on Free, each person has ${DEFAULT_PLAN_LIMITS.voiceAnswers.free}), up to ${DEFAULT_PLAN_LIMITS.members.plus} members who sign in (${DEFAULT_PLAN_LIMITS.members.free} on Free), share links that last 30 days, expiry reminders before a document runs out, with every expiry date in one list on the Reminders page, and bringing documents in from Gmail. Tap any ★, or open Settings › Family Plus, to see Free and Plus side by side. Birthday reminders reach every family, Free or Plus.`,
     },
     ...(forSale ? [{
       q: 'How do I pay for Family Plus?',

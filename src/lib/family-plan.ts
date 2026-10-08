@@ -1,8 +1,10 @@
 // ─── Is the family on Family Plus? ──────────────────────────────
 //
 // Starred features (★, <PlusTag />) are for Family Plus families: today
-// expiry reminders and the Reminders page (048), Import from Gmail, and voice
-// chats after each person's first 10 (041–043). For a free family, tapping
+// expiry reminders and the Reminders page (048), Import from Gmail, voice
+// chats after each person's first 10 (041–043), questions after each
+// person's 20 a month, members five to eight, and share links that last 30
+// days (049). For a free family, tapping
 // one opens /plus, which shows Free and Plus side by side, and the screens
 // themselves send a free family there too (after a refresh, or from a link).
 // Storage beyond the free 200 MB (100 MB for a personal vault) is kept by the
@@ -21,7 +23,7 @@ import { fetchPaymentsStatus, fetchStorageStatus, type PaymentsStatus } from './
 import type { PlanName } from './plans';
 
 /** What a starred feature is called in /plus?feature=… */
-export type PlusFeature = 'reminders' | 'gmail' | 'storage' | 'voice';
+export type PlusFeature = 'reminders' | 'gmail' | 'storage' | 'voice' | 'questions' | 'members' | 'links';
 
 interface KnownPlan {
   plan: PlanName | null;

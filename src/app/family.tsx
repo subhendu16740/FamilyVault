@@ -13,7 +13,7 @@ import {
   addFamilyMember, cancelInvitation, fetchFamilyInvites, fetchPlanLimits, leaveFamily, removeFamilyMember, updateMemberRole,
   type PendingInvite,
 } from '../lib/api';
-import { useFamilyPlan } from '../lib/family-plan';
+import { plusPage, useFamilyPlan } from '../lib/family-plan';
 import { DEFAULT_PLAN_LIMITS, type PlanLimits } from '../lib/plans';
 import { ScreenHeader, HeaderButton } from '../components/screen-header';
 import { InvitationCards } from '../components/invitation-cards';
@@ -337,7 +337,13 @@ export default function FamilyScreen() {
               {pending.length > 0 ? ', and invitations waiting for an answer count too' : ''}. To invite someone else,{' '}
               {pending.length > 0 ? 'withdraw an invitation or remove a member' : 'remove a member'}. Anyone can still be
               added to the family tree, without an account.
+              {plan !== 'plus' && limits.members.plus > maxMembers ? ` With Family Plus, up to ${limits.members.plus} members can sign in.` : ''}
             </Text>
+            {plan !== 'plus' && limits.members.plus > maxMembers && (
+              <TouchableOpacity onPress={() => router.push(plusPage('members') as any)} accessibilityRole="link" hitSlop={8}>
+                <Text style={styles.fullNoteLink}>Family Plus ›</Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
 
@@ -752,6 +758,7 @@ const styles = StyleSheet.create({
     borderColor: '#F5D9A0',
   },
   fullNoteText: { flex: 1, fontSize: 14, lineHeight: 20, color: '#7A5200' },
+  fullNoteLink: { fontSize: 14, lineHeight: 20, fontWeight: '600', color: '#2A3D66' },
   // Family switcher
   familyRow: {
     flexDirection: 'row',

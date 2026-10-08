@@ -33,6 +33,7 @@ import {
 import { buildGraph, relationTo, relationLabel, relativesForPrompt, relativesNamedIn, buildForest, shortName, siblingsSharingParents } from '../../supabase/functions/_shared/kinship.ts';
 import { encryptPayload, vapidAuthorization, generateVapidKeys, isPushServiceEndpoint, MAX_PLAINTEXT } from '../../supabase/functions/_shared/webpush.ts';
 import { phoneLooksRight, cardProblem, cardIsEmpty, emptyCard, bloodGroupLabel, bloodGroupSpoken, telHref } from '../../src/lib/emergency.ts';
+import { allowanceJson, givenBack, parseAllowance, questionLimitMessage, questionsLeftText, resetDay } from '../../supabase/functions/_shared/questions.ts';
 import { DEFAULT_PLAN_LIMITS, PLUS_FOR_SALE, PLUS_PRICE, chatStorageFullMessage, fits, formatBytes, plusAmount, plusPrice, plusPrices, plusTwelveMonths, plusYearlyOffer, plusYearlySaving, storageFullMessage } from '../../supabase/functions/_shared/plan-text.ts';
 import { mentionsDate, mentionsAmount, mentionsPhone, mentionsText, refuses, devanagariShare, scriptShare, hasMarkdown } from '../lib/match.mjs';
 import { judgeAnswer } from '../lib/checks/ask.mjs';
@@ -666,11 +667,15 @@ await test('plans: every limit is finite, and a full vault says why and what to 
   // What 039–048 leave in plan_limits: one row per plan; Free 200 MB for a
   // family and 100 MB for a personal vault (048), Plus 10 GB for either;
   // 30 days after Plus ends before anything above Free goes, 4 members on
-  // every plan, and 10 voice chats for each person on Free (043).
+  // Free and 8 on Plus (049), 10 voice chats for each person on Free (043),
+  // and 20 questions a month for each person on Free, none on Plus up to
+  // fair use (049).
   assert.deepEqual(DEFAULT_PLAN_LIMITS, {
     free: 200 * MB, freePersonal: 100 * MB, plus: 10 * GB, graceDays: 30,
-    members: { free: 4, plus: 4 },
+    members: { free: 4, plus: 8 },
     voiceAnswers: { free: 10, plus: null },
+    questions: { free: 20, plus: null },
+    questionsFairUse: 500,
   });
   assert.deepEqual(PLUS_PRICE, { monthly: { inr: 100, usd: 10 }, yearly: { inr: 1100, usd: 110 } });
   // The Plus page says what a year saves in months ("1 month free"): a year
@@ -797,9 +802,39 @@ await test('the languages suite: by hand only, every language, half a day at mos
   }
 });
 
+await test('questions each month: the count, and the words when they are used up (049)', () => {
+  // As claim_question() answers on Free: no `left`, worked out from the ceiling.
+  const free = parseAllowance({ allowed: false, used: 20, limit: 20, ceiling: 20, plus: false, resets_on: '2026-11-01' });
+  assert.deepEqual(free, { used: 20, limit: 20, ceiling: 20, left: 0, plus: false, resetsOn: '2026-11-01' });
+  assert.equal(questionLimitMessage(free),
+    'You have asked your 20 free questions for this month. They start again on 1 November. With Family Plus there is no monthly limit.');
+  assert.match(questionLimitMessage(free, 'hi-IN'), /20 मुफ़्त सवाल/);
+  assert.match(questionLimitMessage(free, 'hi-IN'), /1 नवंबर/);
+  assert.equal(questionsLeftText(free), 'You have used your 20 free questions this month');
+  // A few left: said, with the plan's number.
+  const few = parseAllowance({ used: 17, limit: 20, ceiling: 20, left: 3, plus: false, resets_on: '2026-11-01' });
+  assert.equal(questionsLeftText(few), '3 of 20 free questions left this month');
+  // Plus: nothing said until fair use is near; then its own words.
+  const plus = parseAllowance({ used: 12, limit: null, ceiling: 500, left: 488, plus: true, resets_on: '2026-11-01' });
+  assert.equal(questionsLeftText(plus), null);
+  const plusFull = parseAllowance({ allowed: false, used: 500, limit: null, ceiling: 500, plus: true, resets_on: '2026-12-01' });
+  assert.equal(questionLimitMessage(plusFull),
+    'You have asked 500 questions this month, the most one person can ask. They start again on 1 December.');
+  // A question given back: one fewer used, one more left; never below zero.
+  assert.deepEqual(givenBack(few), { ...few, used: 16, left: 4 });
+  assert.equal(givenBack({ ...few, used: 0, left: 20 }).used, 0);
+  // What rag-search sends is what the app reads back.
+  assert.deepEqual(parseAllowance(allowanceJson(few)), few);
+  // Before 049, or anything else: not an allowance.
+  assert.equal(parseAllowance(null), null);
+  assert.equal(parseAllowance({ allowed: true }), null);
+  assert.equal(resetDay('2027-01-01'), '1 January');
+  assert.equal(resetDay('soon'), null);
+});
+
 if (failures.length) {
   console.error(failures.map((f) => `✗ ${f}`).join('\n'));
   console.error(`\n${failures.length} self-test(s) failed, ${passed} passed.`);
   process.exit(1);
 }
-console.log(`✓ ${passed} self-tests passed — matchers, judge, run-time PDF, metadata, ticket codes, text cleaning, Gmail rules and token sealing, kinship and the family tree, emergency card checks, web push, plan limits, Razorpay signatures, numbers in digits, sources the answer used, questions and budget.`);
+console.log(`✓ ${passed} self-tests passed — matchers, judge, run-time PDF, metadata, ticket codes, text cleaning, Gmail rules and token sealing, kinship and the family tree, emergency card checks, web push, plan limits, questions each month, Razorpay signatures, numbers in digits, sources the answer used, questions and budget.`);

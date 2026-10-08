@@ -13,6 +13,7 @@ import { ticketCodeNotes, ticketSearchTerms } from '../_shared/tickets.ts';
 import { digitsFromWords, restoreCodes } from '../_shared/numbers.ts';
 import { takeInTurn, uniqueRelatives } from '../_shared/vaults.ts';
 import { USED_PASSAGES_RULE, passagesUsed, splitUsedPassages } from '../_shared/used-passages.ts';
+import { allowanceJson, givenBack, parseAllowance, questionLimitMessage, type QuestionAllowance } from '../_shared/questions.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -128,6 +129,9 @@ Deno.serve(async (req) => {
     return new Response('ok', { headers: corsHeaders });
   }
 
+  // The question counted for this person (049), given back if no answer comes.
+  let counted: { userId: string; allowance: QuestionAllowance } | null = null;
+
   try {
     const {
       family_id, family_ids, scope, query, history: rawHistory, language: rawLanguage, voice: rawVoice,
@@ -206,6 +210,31 @@ Deno.serve(async (req) => {
         ...(language ? { answer_language: language } : {}),
       });
     }
+
+    // Each person's questions this month (049): counted before any AI step
+    // runs, so two at once cannot both take the last one, and given back
+    // below whenever no answer comes of it. A database without 049, or a
+    // count that cannot be made, answers as before: no limit.
+    const claim = await claimQuestion(userId);
+    if (claim && !claim.allowed) {
+      console.log(`[rag] Question limit reached (${claim.allowance.used}/${claim.allowance.ceiling})`);
+      return jsonResponse({
+        answer: questionLimitMessage(claim.allowance, language),
+        sources: [],
+        question_limit: true,
+        questions: allowanceJson(claim.allowance),
+        ...(language ? { answer_language: language } : {}),
+      });
+    }
+    if (claim) counted = { userId, allowance: claim.allowance };
+    // No answer came: the question is given back, once.
+    const giveBack = async () => {
+      if (!counted) return undefined;
+      const back = counted;
+      counted = null;
+      await releaseQuestion(back.userId);
+      return givenBack(back.allowance);
+    };
 
     // 2. Turn a follow-up into a standalone question, then retrieve on THAT.
     //    "latest available data?" retrieves nothing; "latest ISB placement
@@ -348,9 +377,11 @@ Deno.serve(async (req) => {
     };
 
     if (candidates.length === 0) {
+      const questions = await giveBack();
       return jsonResponse({
         answer: nothingFoundMessage(language),
         sources: [],
+        ...(questions ? { questions: allowanceJson(questions) } : {}),
         ...(language ? { answer_language: language } : {}),
         debug,
       });
@@ -360,9 +391,11 @@ Deno.serve(async (req) => {
     // considered — rather than letting the model improvise from junk.
     if (chunks.length === 0) {
       const considered = uniqNames(candidates).slice(0, 3).join(', ');
+      const questions = await giveBack();
       return jsonResponse({
         answer: nothingRelevantMessage(language, considered),
         sources: [],
+        ...(questions ? { questions: allowanceJson(questions) } : {}),
         ...(language ? { answer_language: language } : {}),
         debug,
       });
@@ -406,12 +439,17 @@ Deno.serve(async (req) => {
       family_name: c.vault,
     }])).values()];
 
+    // An answer that did not come from the model (the AI service busy or
+    // down) is no answer: the question is given back.
+    const questions = result.degraded ? await giveBack() : (counted?.allowance ?? undefined);
+
     // `degraded` tells the client the answer did NOT come from the model, so
     // the UI can say so rather than presenting a placeholder as a real answer.
     return jsonResponse({
       answer: result.answer,
       sources,
       degraded: result.degraded,
+      ...(questions ? { questions: allowanceJson(questions) } : {}),
       ...(result.retryAfterSeconds ? { retry_after_seconds: result.retryAfterSeconds } : {}),
       ...(language ? { answer_language: language } : {}),
       debug: {
@@ -424,9 +462,43 @@ Deno.serve(async (req) => {
 
   } catch (err) {
     console.error('[rag] Error:', err);
+    if (counted) await releaseQuestion(counted.userId);
     return jsonResponse({ error: String(err) }, 500);
   }
 });
+
+// ─── Questions each month (049) ──────────────────────────────────
+// Both take the caller from the session (requireVaults / requireFamilyMember
+// above), never the body: claim_question() and release_question() are
+// service role only.
+
+async function claimQuestion(userId: string): Promise<{ allowed: boolean; allowance: QuestionAllowance } | null> {
+  try {
+    const { data, error } = await supabase.rpc('claim_question', { p_user_id: userId });
+    if (error) {
+      // Before 049 there is no such function: no limit, as before.
+      if (!/claim_question|PGRST202|does not exist/i.test(`${error.code ?? ''} ${error.message ?? ''}`)) {
+        console.warn(`[rag] Could not count the question: ${error.message}`);
+      }
+      return null;
+    }
+    const allowance = parseAllowance(data);
+    if (!allowance || typeof (data as { allowed?: unknown })?.allowed !== 'boolean') return null;
+    return { allowed: (data as { allowed: boolean }).allowed, allowance };
+  } catch (err) {
+    console.warn(`[rag] Could not count the question: ${err}`);
+    return null;
+  }
+}
+
+async function releaseQuestion(userId: string): Promise<void> {
+  try {
+    const { error } = await supabase.rpc('release_question', { p_user_id: userId });
+    if (error) console.warn(`[rag] Could not give the question back: ${error.message}`);
+  } catch (err) {
+    console.warn(`[rag] Could not give the question back: ${err}`);
+  }
+}
 
 // ─── One vault ─────────────────────────────────────────────────
 

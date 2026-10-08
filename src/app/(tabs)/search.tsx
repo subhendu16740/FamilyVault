@@ -13,10 +13,11 @@ import { accountKey, storageGet, storageSet } from '../../lib/storage';
 import { isPersonalVault, vaultName } from '../../lib/vaults';
 import {
   fetchCategories, ragSearch, indexStatus, saveChat, getSavedChat, isMissingMigration, claimVoiceAnswer,
-  fetchVoiceStatus, ChatStorageFullError,
+  fetchVoiceStatus, ChatStorageFullError, fetchQuestionStatus,
   type RagSearchResult, type RagHistoryTurn, type IndexStatus, type SavedChatMessage,
 } from '../../lib/api';
 import { plusPage } from '../../lib/family-plan';
+import { parseAllowance, questionsLeftText, resetDay, type QuestionAllowance } from '../../lib/plans';
 import type { Database } from '../../lib/database.types';
 import { usePreferences } from '../../lib/preferences';
 import { phrase } from '../../lib/voice-languages';
@@ -294,6 +295,19 @@ export default function SearchScreen() {
   }, [familyId]));
   useEffect(() => { setVoiceQuota(null); limitSaid.current = false; }, [familyId]);
 
+  // Questions this month (049): each person's own, across every vault. Shown
+  // once few are left; each answer brings the count up to date.
+  const [questions, setQuestions] = useState<QuestionAllowance | null>(null);
+  useFocusEffect(useCallback(() => {
+    let cancelled = false;
+    fetchQuestionStatus().then((status) => {
+      if (!cancelled && status) setQuestions(status);   // unknown (before 049, offline): say nothing
+    });
+    return () => { cancelled = true; };
+  }, []));
+  const questionsLine = questions ? questionsLeftText(questions) : null;
+  const showQuestions = !!questions && !!questionsLine && (questions.limit == null || (questions.left ?? 0) <= 5);
+
   const readAnswer = useCallback(async (id: string, text: string, lang?: string) => {
     if (!heardIds.current.has(id) && currentFamily) {
       // None left, as far as this screen knows: no need to ask again.
@@ -386,7 +400,16 @@ export default function SearchScreen() {
             : m
         )
       );
-      if (wantVoice) readAnswer(aiPlaceholder.id, result.answer, result.answer_language);
+      const allowance = parseAllowance(result.questions);
+      if (allowance) setQuestions(allowance);
+      if (result.question_limit) {
+        // This month's questions are used up: said aloud in voice mode, and,
+        // like an apology, never counted as a voice chat.
+        if (voiceWanted) {
+          heardIds.current.add(aiPlaceholder.id);
+          speakMessage(aiPlaceholder.id, result.answer, result.answer_language);
+        }
+      } else if (wantVoice) readAnswer(aiPlaceholder.id, result.answer, result.answer_language);
       else if (voiceWanted) sayNoVoiceLeft();
       if (result.debug?.index_rebuilding) repairIndex(result.debug.rebuilding_family_ids?.[0] ?? askFamily.id);
     } catch (err) {
@@ -737,6 +760,25 @@ export default function SearchScreen() {
             <TouchableOpacity onPress={() => router.push(plusPage('voice') as any)} accessibilityRole="link" hitSlop={8}>
               <Text style={styles.voiceStripLink}>Family Plus ›</Text>
             </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Questions this month (049): once few are left, how many, and what Family Plus changes. */}
+        {showQuestions && questions && (
+          <View
+            style={[styles.indexStrip, questions.left === 0 ? styles.indexStripError : styles.voiceStrip]}
+            accessibilityLiveRegion="polite"
+          >
+            <Feather name="message-circle" size={14} color={questions.left === 0 ? '#9A6200' : color.primary} />
+            <Text style={[styles.indexStripText, questions.left === 0 && styles.indexStripErrorText]}>
+              {questionsLine}
+              {questions.left === 0 && resetDay(questions.resetsOn) ? `. They start again on ${resetDay(questions.resetsOn)}.` : '.'}
+            </Text>
+            {!questions.plus && (
+              <TouchableOpacity onPress={() => router.push(plusPage('questions') as any)} accessibilityRole="link" hitSlop={8}>
+                <Text style={styles.voiceStripLink}>Family Plus ›</Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
 

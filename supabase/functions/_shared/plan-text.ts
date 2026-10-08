@@ -9,9 +9,12 @@
 //   Family Plus   10 GB, either kind of vault — in India ₹100 a month or
 //                 ₹1,100 a year, elsewhere $10 a month or $110 a year
 //
-// On both, a family has at most 4 members — the people who sign in; anyone
-// can be in the family tree — and a free family hears its first 10 answers
-// read aloud, Family Plus every answer (041).
+// A family has at most 4 members on Free and 8 on Family Plus (041, 049) —
+// the people who sign in; anyone can be in the family tree. Each person on
+// Free has 10 voice chats (041–043) and 20 questions a month (049); on Family
+// Plus, voice without a limit and questions without a monthly limit (fair
+// use: 500 a month each). A share link lasts 1 or 7 days on Free, and up to
+// 30 days on Family Plus (049).
 //
 // A year costs eleven months: one month free. The yearly price is shown
 // against twelve months at the monthly price, crossed out (₹1,200 → ₹1,100,
@@ -53,20 +56,26 @@ export interface PlanLimits {
   members: { free: number; plus: number };
   /** Voice chats each person gets, per plan; null: no limit (041; per person since 043). */
   voiceAnswers: { free: number | null; plus: number | null };
+  /** Questions each person may ask a month, per plan; null: no monthly limit (049). */
+  questions: { free: number | null; plus: number | null };
+  /** The most one person may ask in a month where there is no monthly limit (049). */
+  questionsFairUse: number;
 }
 
 const GB = 1024 ** 3;
 
 const MB = 1024 ** 2;
 
-/** What 039–048 set; plan_limits is the truth. */
+/** What 039–049 set; plan_limits is the truth. */
 export const DEFAULT_PLAN_LIMITS: PlanLimits = {
   free: 200 * MB,
   freePersonal: 100 * MB,
   plus: 10 * GB,
   graceDays: 30,
-  members: { free: 4, plus: 4 },
+  members: { free: 4, plus: 8 },
   voiceAnswers: { free: 10, plus: null },
+  questions: { free: 20, plus: null },
+  questionsFairUse: 500,
 };
 
 /** What Family Plus costs, by the month or by the year (one month free). */

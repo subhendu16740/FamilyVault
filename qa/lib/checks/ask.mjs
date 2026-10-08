@@ -10,6 +10,7 @@
 // ────────────────────────────────────────────────────────────────
 
 import { invokeFunction } from '../supabase.mjs';
+import { DEV_REF } from '../config.mjs';
 import { Budget } from '../budget.mjs';
 import { condenses } from '../questions.mjs';
 import {
@@ -77,10 +78,40 @@ async function ensureFamily(a, vaultA, family) {
   return null;
 }
 
+// Each person asks 20 questions a month on Free (migration 049), and a QA run
+// asks up to about 16 as account A. So before asking, QA starts account A's
+// count for the month again — on DEV only, through the Management API, and
+// only account A's row. Without SUPABASE_ACCESS_TOKEN it cannot, and once the
+// month's questions are used up the rest are deferred, not failed.
+async function startQuestionCount(cfg, a) {
+  if (!cfg.managementToken) return 'no SUPABASE_ACCESS_TOKEN, so account A\'s monthly count was not started again';
+  const id = String(a.user?.id ?? '');
+  if (!/^[0-9a-f-]{36}$/.test(id)) return 'account A has no user id';
+  try {
+    const res = await fetch(`https://api.supabase.com/v1/projects/${DEV_REF}/database/query`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${cfg.managementToken}`, 'Content-Type': 'application/json' },
+      // Before 049 there is no such table: nothing to start again.
+      body: JSON.stringify({ query: `do $$ begin if to_regclass('public.question_usage') is not null then delete from public.question_usage where user_id = '${id}'; end if; end $$;` }),
+    });
+    return res.ok ? null : `the Management API answered ${res.status}`;
+  } catch (err) {
+    return String(err?.message ?? err);
+  }
+}
+
 export async function runQuestions(cfg, { a, vaultA, notIndexed = new Map() }, results, questions) {
   const budget = new Budget(cfg.spacingSeconds);
   const answered = new Map();
   const transcript = [];
+  let lastCount = null;
+  let asked = 0;
+  let countStarted = false;
+  if (questions.length) {
+    const why = await startQuestionCount(cfg, a);
+    countStarted = !why;
+    if (why) console.log(`    … ${why}`);
+  }
 
   for (const q of questions) {
     const title = `${q.id}: ${q.ask}`;
@@ -139,6 +170,15 @@ export async function runQuestions(cfg, { a, vaultA, notIndexed = new Map() }, r
     const d = r.data ?? {};
     const record = { ask: q.ask, answer: String(d.answer ?? ''), sources: d.sources ?? [], answer_language: d.answer_language, debug: d.debug, ms: r.ms };
     transcript.push({ id: q.id, status: r.status, ...record });
+    asked++;
+    if (d.questions && typeof d.questions === 'object') lastCount = d.questions;
+
+    // This month's questions are used up (049): a limit kept, not a defect.
+    if (r.status === 200 && d.question_limit) {
+      budget.stop("account A's questions for this month are used up (migration 049); the rest wait for its count to start again");
+      results.add('questions', q.id, title, 'deferred', { why: budget.reason, ...record });
+      continue;
+    }
 
     if (r.status !== 200) {
       results.add('questions', q.id, title, 'fail', { why: `rag-search answered HTTP ${r.status}: ${d.error ?? JSON.stringify(d).slice(0, 160)}`, ...record });
@@ -162,6 +202,17 @@ export async function runQuestions(cfg, { a, vaultA, notIndexed = new Map() }, r
       why: reasons.length ? reasons.join('; ') + (rerankLimited ? ' (the relevance judge was rate-limited, so this is retried later)' : '') : `${(r.ms / 1000).toFixed(1)}s`,
       ...record,
     });
+  }
+
+  // Each question counted once on the server, never more than were asked,
+  // and what the last answer said is what question_status() says now.
+  if (lastCount) {
+    const { data: now, error } = await a.client.rpc('question_status');
+    const used = Number(now?.used);
+    // Started again before asking, the count cannot pass the number asked.
+    const ok = !error && Number.isFinite(used) && used === Number(lastCount.used) && (!countStarted || used <= asked);
+    results.add('questions', 'question-count', 'Each question is counted once on the server, and an unanswered one given back (049)', ok ? 'pass' : 'fail',
+      { why: error ? String(error.message).slice(0, 120) : `${used} counted${countStarted ? ` for ${asked} asked` : ''}; the last answer said ${lastCount.used}` });
   }
 
   return { budget: budget.estimate(), transcript };

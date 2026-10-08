@@ -39,17 +39,31 @@ interface Row {
 
 // "10 each" (per person, 043), or ✓ for a plan with no limit on voice chats.
 const voiceCell = (n: number | null): Cell => (n == null ? true : `${n} each`);
+// "20 a month each" (049), or ✓ for a plan with no monthly limit.
+const questionsCell = (n: number | null): Cell => (n == null ? true : `${n} a month each`);
 
 function rows(limits: PlanLimits): Row[] {
   return [
     { label: 'Space for a family', free: formatBytes(limits.free), plus: formatBytes(limits.plus), feature: 'storage' },
     { label: 'Space in your personal vault', free: formatBytes(limits.freePersonal), plus: formatBytes(limits.plus) },
-    { label: 'Members who sign in', free: String(limits.members.free), plus: String(limits.members.plus) },
+    {
+      label: limits.members.plus > limits.members.free ? '★ Members who sign in' : 'Members who sign in',
+      free: String(limits.members.free), plus: String(limits.members.plus), feature: 'members',
+    },
     { label: 'Add and scan documents, read in Indian languages too', free: true, plus: true },
-    { label: 'Ask about your documents', free: true, plus: true },
+    // Before 049 nobody's questions are counted, on either plan.
+    limits.questions.free == null
+      ? { label: 'Ask about your documents', free: true, plus: true }
+      : {
+        label: '★ Questions about your documents', free: questionsCell(limits.questions.free),
+        plus: questionsCell(limits.questions.plus), feature: 'questions',
+      },
     { label: 'Family tree and emergency cards', free: true, plus: true },
     { label: 'Birthday reminders', free: true, plus: true },
-    { label: 'Share a document by link', free: true, plus: true },
+    // 049 also makes a 30-day link part of Plus; before it, every plan has them.
+    limits.questions.free == null
+      ? { label: 'Share a document by link', free: true, plus: true }
+      : { label: '★ Share a document by link', free: 'Up to 7 days', plus: 'Up to 30 days', feature: 'links' },
     {
       label: '★ Voice chats: ask by voice, hear the answer', free: voiceCell(limits.voiceAnswers.free), plus: voiceCell(limits.voiceAnswers.plus),
       feature: 'voice',
@@ -67,6 +81,9 @@ const BROUGHT_BY: Record<PlusFeature, { icon: string; text: string }> = {
   gmail: { icon: 'mail', text: 'Import from Gmail is part of Family Plus.' },
   storage: { icon: 'hard-drive', text: 'More space for documents and saved chats is part of Family Plus.' },
   voice: { icon: 'mic', text: 'Asking by voice and hearing every answer, with no limit, is part of Family Plus.' },
+  questions: { icon: 'message-circle', text: 'Asking questions with no monthly limit is part of Family Plus.' },
+  members: { icon: 'users', text: 'More members who sign in are part of Family Plus.' },
+  links: { icon: 'link', text: 'Share links that last 30 days are part of Family Plus.' },
 };
 
 const said = (cell: Cell) => (cell === true ? 'yes' : cell === false ? 'no' : cell);
@@ -323,6 +340,16 @@ export default function PlusScreen() {
               the family tree, with or without an account.
             </Text>
           </View>
+          {limits.questions.free != null && (
+            <View style={styles.point}>
+              <Feather name="message-circle" size={16} color={color.primary} />
+              <Text style={styles.pointText}>
+                Everyone in a Family Plus family asks with no monthly limit, in every vault they ask in. To keep it
+                fair, one person can ask up to {limits.questionsFairUse} questions a month, far more than anyone asks.
+                On Free, each person has {limits.questions.free} a month, starting again on the 1st.
+              </Text>
+            </View>
+          )}
           <View style={styles.point}>
             <Feather name="clock" size={16} color={color.primary} />
             <Text style={styles.pointText}>

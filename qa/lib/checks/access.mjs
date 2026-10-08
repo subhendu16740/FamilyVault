@@ -257,6 +257,17 @@ const webhookJudge = (forged) => ({ status, data }) => {
   }
   return ['fail', `HTTP ${status}${status >= 200 && status < 300 ? ` — it ACCEPTED ${forged ? 'a forged' : 'an unsigned'} payment report` : ''}: ${JSON.stringify(data).slice(0, 160)}`];
 };
+// What Family Plus adds (049): each person's questions this month are counted
+// on the server — nobody reads or changes anyone's count, and only the server
+// counts one or gives one back — and nobody raises a plan's question limit.
+// Skipped until 049 is on DEV (PGRST202: no such function; the table, or the
+// column, missing).
+const questionsJudge = (expect) => (outcome) => {
+  if (outcome.missing || missingTable(outcome.error) || ['PGRST202', 'PGRST204', '42703'].includes(String(outcome.error?.code))) {
+    return ['skipped', 'migration 049 is not applied to DEV yet'];
+  }
+  return judge(expect, outcome);
+};
 // A well-formed device key and secret: RFC 8291's own example.
 const PROBE_P256DH = 'BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4';
 const PROBE_AUTH = 'BTBZMqHH6r4Tts7J_aSIgg';
@@ -642,6 +653,51 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     }
   }
 
+  // ── Questions this month (049): account A reads its own count, using none —
+  // the positive control for the probes below — and plan_limits says each
+  // plan's monthly number. Account A's vault is on Free, so a 30-day share
+  // link is refused it (a 1-day one is the share control above).
+  let questionsMissing = false;
+  {
+    const title = 'Control — account A reads how many questions it has left this month, using none';
+    const { data: first, error } = await a.client.rpc('question_status');
+    if (String(error?.code) === 'PGRST202') {
+      questionsMissing = true;
+      results.add('access', 'control:questions', title, 'skipped', { why: 'migration 049 is not applied to DEV yet' });
+      results.add('access', 'control:link-30', 'Control — a vault on Free cannot make a 30-day share link (049)', 'skipped', { why: 'migration 049 is not applied to DEV yet' });
+    } else {
+      const { data: again } = error ? { data: null } : await a.client.rpc('question_status');
+      const { data: rows, error: limErr } = await a.client.from('plan_limits').select('plan, max_members, questions_per_month, questions_fair_use');
+      const plans = Object.fromEntries((rows ?? []).map((r) => [r.plan, r]));
+      const n = (v) => (v == null ? null : Number(v));
+      const expected = first?.plus ? plans.plus : plans.free;
+      const ceiling = expected ? n(expected.questions_per_month ?? expected.questions_fair_use) : null;
+      const ok = !error && !limErr && first && n(first.ceiling) === ceiling
+        && n(first.limit) === n(expected?.questions_per_month)
+        && n(first.left) === Math.max(ceiling - n(first.used), 0)
+        && n(again?.used) === n(first.used)
+        && n(plans.plus?.max_members) >= n(plans.free?.max_members);
+      results.add('access', 'control:questions', title, ok ? 'pass' : 'fail', {
+        why: error ? short(error) : limErr ? short(limErr)
+          : `${first.used} asked, ${first.left} left of ${first.ceiling}${first.plus ? ' (Plus)' : ''}; members ${plans.free?.max_members}/${plans.plus?.max_members}`,
+      });
+      if (planOfA === 'plus') {
+        results.add('access', 'control:link-30', 'Control — a vault on Free cannot make a 30-day share link (049)', 'skipped', { why: 'QA Vault A is on Plus' });
+      } else if (!passport) {
+        results.add('access', 'control:link-30', 'Control — a vault on Free cannot make a 30-day share link (049)', 'skipped', { why: 'no passport to share' });
+      } else {
+        const { data: made, error: linkErr } = await a.client.rpc('create_document_share', {
+          p_family_id: A.family, p_document_id: passport.id, p_days: 30, p_note: `QA probe ${cfg.runId}`,
+        });
+        if (made?.id) await a.client.rpc('revoke_document_share', { p_share_id: made.id });
+        const refused = linkErr && linkErr.hint === 'plus_only';
+        results.add('access', 'control:link-30', 'Control — a vault on Free cannot make a 30-day share link (049)', refused ? 'pass' : 'fail',
+          { why: linkErr ? `${short(linkErr)}${linkErr.hint ? ` (${linkErr.hint})` : ''}` : 'a 30-day link was MADE on Free (and turned off again)' });
+      }
+    }
+  }
+  const onQuestions = (run) => async () => (questionsMissing ? { missing: true } : run());
+
   // ── Paying for Family Plus (044): the payments function says whether DEV
   // takes payments — the control for the probes below. DEV may only ever
   // hold Razorpay's TEST keys: a live key there would charge real money from
@@ -978,6 +1034,13 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     ['anon', "read how many voice chats QA Vault A has left", chatsVoiceJudge('refused'), rpc(anon, 'family_voice_status', { p_family_id: A.family })],
     ['B', "read how many voice chats QA Vault A has left", chatsVoiceJudge('refused'), rpc(b, 'family_voice_status', { p_family_id: A.family })],
     ['B', "add up QA Vault A's saved chats (server-only)", chatsVoiceJudge('refused'), rpc(b, 'family_chats_bytes', { p_family_id: A.family })],
+    // Questions each month (049): each person's count is the server's.
+    ['anon', 'read how many questions anyone has left', questionsJudge('refused'), onQuestions(rpc(anon, 'question_status', {}))],
+    ['B', 'count a question for account A (server-only)', questionsJudge('refused'), onQuestions(rpc(b, 'claim_question', { p_user_id: A.user }))],
+    ['B', "give account A's questions back (server-only)", questionsJudge('refused'), onQuestions(rpc(b, 'release_question', { p_user_id: A.user }))],
+    ['B', 'ask whether account A is on Family Plus (server-only)', questionsJudge('refused'), onQuestions(rpc(b, 'person_on_plus', { p_user_id: A.user }))],
+    ['B', "read everyone's question counts", questionsJudge('refused-or-empty'), onQuestions(() => b.client.from('question_usage').select('questions').limit(5))],
+    ['B', "raise every plan's question limit", questionsJudge('refused'), onQuestions(() => b.client.from('plan_limits').update({ questions_per_month: 100000 }).eq('plan', 'free'))],
     // Paying for Family Plus (044): an order only for your own family, Plus
     // only for a payment Razorpay signed, and the ledger is the server's.
     ['anon', 'start paying for QA Vault A', paymentsFnJudge(http401), fn(anon, 'payments', { action: 'order', family_id: A.family, period: 'monthly', currency: 'INR' })],
