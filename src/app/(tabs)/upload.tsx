@@ -12,7 +12,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { useFamily } from '../../lib/family-context';
 import { useDocumentOwners } from '../../lib/family-people';
 import { useAuth } from '../../lib/auth';
-import { StorageFullError, fetchCategories, uploadDocument } from '../../lib/api';
+import { StorageFullError, fetchCategories, fetchDocumentExpiry, fetchStorageStatus, uploadDocument } from '../../lib/api';
+import { longDate } from '../../lib/dates';
 import { plusPage, useFamilyPlan } from '../../lib/family-plan';
 import type { PlanName } from '../../lib/plans';
 import {
@@ -78,7 +79,11 @@ export default function UploadScreen() {
   const [selectedCategory, setSelectedCategory] = useState('');
   const [categories, setCategories] = useState<DocumentCategory[]>([]);
   const [uploading, setUploading] = useState(false);
-  const [uploadResult, setUploadResult] = useState<{ docId: string; familyId: string; vault: string } | null>(null);
+  // `expiresOn`: a date ingest found in a document saved to a vault on Free —
+  // the moment to offer Family Plus's expiry reminders (049).
+  const [uploadResult, setUploadResult] = useState<
+    { docId: string; familyId: string; vault: string; expiresOn: Date | null } | null
+  >(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   // Which wall was hit: the family's storage limit (038) on this plan, or
   // anything else (null). A free family is offered the Family Plus page.
@@ -241,7 +246,14 @@ export default function UploadScreen() {
         ocrText: ocrText || undefined,
       });
 
-      setUploadResult({ docId, familyId: targetFamily.id, vault: vaultName(targetFamily) });
+      // A future expiry date in a vault on Free: offer the reminders for it.
+      // Neither question may hold the "Uploaded!" back if it fails.
+      const [expiry, room] = await Promise.all([
+        fetchDocumentExpiry(targetFamily.id, docId).catch(() => null),
+        fetchStorageStatus(targetFamily.id).catch(() => null),
+      ]);
+      const expiresOn = expiry && expiry.getTime() > Date.now() && room?.plan === 'free' ? expiry : null;
+      setUploadResult({ docId, familyId: targetFamily.id, vault: vaultName(targetFamily), expiresOn });
     } catch (err: any) {
       console.error('Upload error:', err);
       setFullPlan(err instanceof StorageFullError ? err.room.plan : null);
@@ -514,6 +526,29 @@ export default function UploadScreen() {
             </View>
             <Text style={styles.dialogTitle}>Uploaded!</Text>
             <Text style={styles.dialogMsg}>Document saved to {uploadResult?.vault ?? 'your vault'}.</Text>
+            {uploadResult?.expiresOn && (
+              <View style={styles.offer}>
+                <Text style={styles.offerText}>
+                  It expires on {longDate(uploadResult.expiresOn)}. ★ With Family Plus, everyone in the family gets a
+                  reminder 90, 30 and 7 days before, and on the day.
+                </Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    const done = uploadResult;
+                    setUploadResult(null);
+                    setPickedFile(null);
+                    setDestination(person ? currentFamily?.id ?? null : null);
+                    // The Plus page is about the open vault: open the one it went to first.
+                    if (done.familyId !== currentFamily?.id) switchFamily(done.familyId);
+                    router.push(plusPage('reminders') as any);
+                  }}
+                  accessibilityRole="link"
+                  hitSlop={8}
+                >
+                  <Text style={styles.offerLink}>See Family Plus ›</Text>
+                </TouchableOpacity>
+              </View>
+            )}
             <View style={styles.dialogBtns}>
               <TouchableOpacity
                 style={styles.dialogBtnOutline}
@@ -787,6 +822,12 @@ const styles = StyleSheet.create({
   dialogTitle: { ...type.title, color: color.text, marginBottom: space.xs },
   dialogMsg: { ...type.body, color: color.textMuted, textAlign: 'center', marginBottom: space.xl },
   dialogBtns: { flexDirection: 'row', gap: space.md, width: '100%' },
+  offer: {
+    width: '100%', gap: space.xs, padding: space.md, marginTop: -space.md, marginBottom: space.lg,
+    borderRadius: radius.control, backgroundColor: '#FBEDEB',
+  },
+  offerText: { ...type.caption, color: color.text },
+  offerLink: { ...type.label, color: color.primary, fontWeight: '600' },
   dialogBtnOutline: {
     flex: 1,
     borderRadius: radius.control,

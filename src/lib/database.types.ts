@@ -922,6 +922,8 @@ export type Database = {
           max_members: number
           personal_storage_bytes: number | null
           plan: string
+          questions_fair_use: number
+          questions_per_month: number | null
           storage_bytes: number
           voice_answers: number | null
         }
@@ -930,6 +932,8 @@ export type Database = {
           max_members?: number
           personal_storage_bytes?: number | null
           plan: string
+          questions_fair_use?: number
+          questions_per_month?: number | null
           storage_bytes: number
           voice_answers?: number | null
         }
@@ -938,6 +942,8 @@ export type Database = {
           max_members?: number
           personal_storage_bytes?: number | null
           plan?: string
+          questions_fair_use?: number
+          questions_per_month?: number | null
           storage_bytes?: number
           voice_answers?: number | null
         }
@@ -1069,6 +1075,27 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      question_usage: {
+        Row: {
+          month: string
+          questions: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          month: string
+          questions?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          month?: string
+          questions?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       reminders_sent: {
         Row: {
@@ -1257,6 +1284,7 @@ export type Database = {
         Args: { p_family_id: string }
         Returns: number
       }
+      claim_question: { Args: { p_user_id: string }; Returns: Json }
       claim_voice_answer: { Args: { p_family_id: string }; Returns: Json }
       complete_document_ingestion: {
         Args: {
@@ -1486,6 +1514,7 @@ export type Database = {
         Args: { p_notification_id: string; p_user_id: string }
         Returns: undefined
       }
+      person_on_plus: { Args: { p_user_id: string }; Returns: boolean }
       purge_family: { Args: { p_family_id: string }; Returns: string }
       rag_chunk_total: { Args: { p_schema: string }; Returns: number }
       open_document_share: {
@@ -1551,6 +1580,16 @@ export type Database = {
         Args: { p_family_id: string; p_today?: string }
         Returns: number
       }
+      question_allowance: {
+        Args: { p_user_id: string }
+        Returns: {
+          ceiling: number
+          monthly: number
+          plus: boolean
+        }[]
+      }
+      question_month: { Args: never; Returns: string }
+      question_status: { Args: never; Returns: Json }
       rag_chunks_to_embed: {
         Args: { p_after?: string; p_limit?: number; p_schema: string }
         Returns: {
@@ -1633,6 +1672,7 @@ export type Database = {
           ingestion_status: string
         }[]
       }
+      release_question: { Args: { p_user_id: string }; Returns: undefined }
       remove_family_person: {
         Args: { p_person_id: string }
         Returns: undefined

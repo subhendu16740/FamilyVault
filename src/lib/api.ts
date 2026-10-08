@@ -2,6 +2,7 @@ import { supabase } from './supabase';
 import { longDate, parseDocumentDate } from './dates';
 import { isSaveable, mimeTypeFor, unsupportedFileMessage } from './file-types';
 import type { Gender, KinLink, KinPerson } from '../../supabase/functions/_shared/kinship';
+import { parseAllowance, type QuestionAllowance } from '../../supabase/functions/_shared/questions';
 import { isBloodGroup, type EmergencyCard, type EmergencyCardInput, type EmergencyContact } from './emergency';
 import {
   DEFAULT_PLAN_LIMITS, PLUS_FOR_SALE, chatStorageFullMessage, fits, localPlusPrices, storageFullMessage,
@@ -193,6 +194,10 @@ export interface RagSearchResult {
   answer_language?: string;
   /** true when `answer` did not come from the model (rate limit, outage). */
   degraded?: boolean;
+  /** This month's questions are used up (049): `answer` says so, and nothing was searched. */
+  question_limit?: boolean;
+  /** Where the asker's questions stand this month (049), as question_status() says; read with parseAllowance(). */
+  questions?: unknown;
   retry_after_seconds?: number;
   /** What the server actually did — shown under follow-up answers. */
   debug?: {
@@ -964,6 +969,8 @@ export type MakeShareOutcome =
   | { status: 'made'; link: ShareLink; token: string }
   /** Not theirs to share, or the document is gone, in the database's own words. */
   | { status: 'refused'; message: string }
+  /** A 30-day link from a vault on Free (049), in the database's own words. */
+  | { status: 'plus_only'; message: string }
   /** Migration 036 is not applied here. */
   | { status: 'unavailable' };
 
@@ -986,6 +993,7 @@ export async function createShareLink(
   });
   if (error) {
     if (isMissingMigration(error)) return { status: 'unavailable' };
+    if ((error as { hint?: string }).hint === 'plus_only') return { status: 'plus_only', message: error.message };
     if (error.code === '42501' || error.code === '22023') return { status: 'refused', message: error.message };
     throw error;
   }
@@ -1288,10 +1296,12 @@ export async function fetchStorageStatus(familyId: string): Promise<FamilyPlanSt
 }
 
 // Each set of columns arrived with a migration (040: grace_days; 041:
-// max_members and voice_answers; 048: personal_storage_bytes). A column that
-// is not there yet fails the whole select, so each one missing asks again
-// with the set before it.
+// max_members and voice_answers; 048: personal_storage_bytes; 049:
+// questions_per_month and questions_fair_use). A column that is not there
+// yet fails the whole select, so each one missing asks again with the set
+// before it.
 const PLAN_LIMIT_COLUMNS = [
+  'plan, storage_bytes, grace_days, max_members, voice_answers, personal_storage_bytes, questions_per_month, questions_fair_use',
   'plan, storage_bytes, grace_days, max_members, voice_answers, personal_storage_bytes',
   'plan, storage_bytes, grace_days, max_members, voice_answers',
   'plan, storage_bytes, grace_days',
@@ -1304,11 +1314,12 @@ export async function fetchPlanLimits(): Promise<PlanLimits> {
     plan: string; storage_bytes: number; grace_days?: number | null;
     max_members?: number | null; voice_answers?: number | null;
     personal_storage_bytes?: number | null;
+    questions_per_month?: number | null; questions_fair_use?: number | null;
   };
   let answer: { data: unknown; error: { message?: string } | null } = { data: null, error: null };
   for (const columns of PLAN_LIMIT_COLUMNS) {
     answer = await supabase.from('plan_limits').select(columns);
-    if (!answer.error || !/grace_days|max_members|voice_answers|personal_storage_bytes/.test(answer.error.message ?? '')) break;
+    if (!answer.error || !/grace_days|max_members|voice_answers|personal_storage_bytes|questions_per_month|questions_fair_use/.test(answer.error.message ?? '')) break;
   }
   const rows = (answer.data ?? []) as Row[];
   if (answer.error || !rows.length) return DEFAULT_PLAN_LIMITS;
@@ -1329,6 +1340,14 @@ export async function fetchPlanLimits(): Promise<PlanLimits> {
     if (!row || !('voice_answers' in row)) return DEFAULT_PLAN_LIMITS.voiceAnswers[plan];
     return row.voice_answers == null ? null : Number(row.voice_answers);
   };
+  // Questions a month (049): NULL is a real answer (no monthly limit); a row
+  // without the column is a database before 049, which keeps no limit at all.
+  const questions = (plan: 'free' | 'plus') => {
+    const row = rows.find((r) => r.plan === plan);
+    if (!row || !('questions_per_month' in row)) return null;
+    return row.questions_per_month == null ? null : Number(row.questions_per_month);
+  };
+  const fairUse = rows.find((r) => r.plan === 'plus')?.questions_fair_use;
   const free = of('free', DEFAULT_PLAN_LIMITS.free);
   // A personal vault's own number (048), where the plan has one; before 048
   // the server keeps one limit for every vault, so that one.
@@ -1341,6 +1360,8 @@ export async function fetchPlanLimits(): Promise<PlanLimits> {
     graceDays: grace ? Number(grace) : DEFAULT_PLAN_LIMITS.graceDays,
     members: { free: members('free'), plus: members('plus') },
     voiceAnswers: { free: voice('free'), plus: voice('plus') },
+    questions: { free: questions('free'), plus: questions('plus') },
+    questionsFairUse: fairUse ? Number(fairUse) : DEFAULT_PLAN_LIMITS.questionsFairUse,
   };
 }
 
@@ -1490,6 +1511,22 @@ export async function fetchVoiceStatus(familyId: string): Promise<VoiceStatus | 
   return { limit: n(r.limit), used: n(r.used), left: n(r.left) };
 }
 
+// ─── Questions each month (049) ──────────────────────────────────
+//
+// On the free plan each person asks 20 questions a month; on Family Plus
+// there is no monthly limit (fair use: 500 a month each). rag-search counts
+// each question before it answers, gives it back when no answer came, and
+// says where the count stands in its response; question_status() says the
+// same without asking anything. Before 049, or offline, nothing is counted
+// and Ask says nothing about it.
+
+/** How many questions the person asking has this month, or null when that cannot be told. */
+export async function fetchQuestionStatus(): Promise<QuestionAllowance | null> {
+  const { data, error } = await supabase.rpc('question_status');
+  if (error) return null;
+  return parseAllowance(data);
+}
+
 /** The family's storage is full, in words the person can act on. */
 export class StorageFullError extends Error {
   room: StorageRoom;
@@ -1546,6 +1583,18 @@ export async function fetchExpiringDocuments(familyId: string): Promise<Expiring
     });
   }
   return found.sort((a, b) => a.expiry.getTime() - b.expiry.getTime());
+}
+
+/**
+ * The expiry date read from one document, once ingest has extracted it, or
+ * null. Upload uses it to offer Family Plus's reminders for that date (049).
+ */
+export async function fetchDocumentExpiry(familyId: string, documentId: string): Promise<Date | null> {
+  const doc = await fetchDocumentById(familyId, documentId);
+  return (doc?.metadata ?? [])
+    .filter((m) => m.key === 'expiry_date')
+    .map((m) => parseDocumentDate(m.value))
+    .find((d): d is Date => d !== null) ?? null;
 }
 
 export type FeedbackTopic = 'problem' | 'idea' | 'question' | 'other';
