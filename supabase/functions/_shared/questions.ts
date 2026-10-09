@@ -7,6 +7,8 @@
 //
 // rag-search counts one through claim_question() before it answers, and
 // gives it back when no answer came; Ask shows what question_status() says.
+// Since 050 each try is counted for the day too (10 a day on Free, 100 on
+// Plus), answered or not, and a try is never given back.
 // Shared by both, so the app and the answer say the same thing. Pure
 // TypeScript: no Deno, no React, so the QA self-test pins it in Node.
 // ────────────────────────────────────────────────────────────────
@@ -25,6 +27,11 @@ export interface QuestionAllowance {
   plus: boolean;
   /** The day the count starts again, YYYY-MM-DD. */
   resetsOn: string | null;
+  /** Why a question was refused (050): the month's answers, or the day's tries. */
+  reason?: 'month' | 'tries' | null;
+  /** Questions tried today, and the most a day (050). */
+  tries?: number | null;
+  triesLimit?: number | null;
 }
 
 const num = (v: unknown): number | null => (v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v));
@@ -44,6 +51,10 @@ export function parseAllowance(raw: unknown): QuestionAllowance | null {
     left,
     plus: r.plus === true,
     resetsOn: typeof r.resets_on === 'string' ? r.resets_on.slice(0, 10) : null,
+    // 050's, only when the database said them.
+    ...(r.reason === 'tries' || r.reason === 'month' ? { reason: r.reason } : {}),
+    ...(num(r.tries) != null ? { tries: num(r.tries) } : {}),
+    ...(num(r.tries_limit) != null ? { triesLimit: num(r.tries_limit) } : {}),
   };
 }
 
@@ -70,6 +81,19 @@ const isHindi = (language?: string) => (language ?? 'en').split('-')[0].toLowerC
  */
 export function questionLimitMessage(a: QuestionAllowance, language?: string): string {
   const hi = isHindi(language);
+  if (a.reason === 'tries') {
+    // The day's tries (050): answered or not, so asking again and again
+    // cannot spend the AI service's day for everyone.
+    const t = a.triesLimit ?? a.tries ?? 0;
+    if (hi) {
+      return a.plus
+        ? `आपने आज ${t} सवाल पूछ लिए हैं, जो एक व्यक्ति के लिए एक दिन में सबसे ज़्यादा हैं। कल फिर से पूछ सकते हैं।`
+        : `आपने आज ${t} सवाल पूछ लिए हैं, जो Free में एक दिन में सबसे ज़्यादा हैं। हर सवाल गिना जाता है, जवाब मिले या नहीं। कल फिर से पूछ सकते हैं।`;
+    }
+    return a.plus
+      ? `You have asked ${t} questions today, the most one person can ask in a day. You can ask again tomorrow.`
+      : `You have asked ${t} questions today, the most on Free in a day. Every question counts here, answered or not. You can ask again tomorrow.`;
+  }
   const day = resetDay(a.resetsOn, hi ? 'hi' : 'en');
   const n = a.ceiling ?? a.used;
   if (hi) {
@@ -109,5 +133,10 @@ export function givenBack(a: QuestionAllowance): QuestionAllowance {
 
 /** As the database writes it, for a response the app reads with parseAllowance(). */
 export function allowanceJson(a: QuestionAllowance): Record<string, unknown> {
-  return { used: a.used, limit: a.limit, ceiling: a.ceiling, left: a.left, plus: a.plus, resets_on: a.resetsOn };
+  return {
+    used: a.used, limit: a.limit, ceiling: a.ceiling, left: a.left, plus: a.plus, resets_on: a.resetsOn,
+    ...(a.reason ? { reason: a.reason } : {}),
+    ...(a.tries != null ? { tries: a.tries } : {}),
+    ...(a.triesLimit != null ? { tries_limit: a.triesLimit } : {}),
+  };
 }

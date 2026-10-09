@@ -15,7 +15,7 @@ import { useAuth } from '../../lib/auth';
 import { StorageFullError, fetchCategories, fetchDocumentExpiry, fetchStorageStatus, uploadDocument } from '../../lib/api';
 import { longDate } from '../../lib/dates';
 import { plusPage, useFamilyPlan } from '../../lib/family-plan';
-import type { PlanName } from '../../lib/plans';
+import { MAX_FILE_BYTES, fileTooLargeMessage, type PlanName } from '../../lib/plans';
 import {
   extractTextFromImage, isImageFile, ocrLanguageGapOnThisDevice, type OcrProgress,
 } from '../../lib/ocr';
@@ -126,6 +126,13 @@ export default function UploadScreen() {
     if (!isSaveable(kind)) {
       setFullPlan(null);
       setErrorMsg(unsupportedFileMessage(kind));
+      return;
+    }
+    // Over the bucket's 10 MB (050): said now, before it is read. A picker
+    // that cannot say the size is checked again at Save.
+    if ((picked.size ?? 0) > MAX_FILE_BYTES) {
+      setFullPlan(null);
+      setErrorMsg(fileTooLargeMessage(picked.size ?? 0));
       return;
     }
     const file: PickedFile = {

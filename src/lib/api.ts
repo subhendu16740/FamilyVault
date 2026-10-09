@@ -5,8 +5,8 @@ import type { Gender, KinLink, KinPerson } from '../../supabase/functions/_share
 import { parseAllowance, type QuestionAllowance } from '../../supabase/functions/_shared/questions';
 import { isBloodGroup, type EmergencyCard, type EmergencyCardInput, type EmergencyContact } from './emergency';
 import {
-  DEFAULT_PLAN_LIMITS, PLUS_FOR_SALE, chatStorageFullMessage, fits, localPlusPrices, storageFullMessage,
-  type PlanLimits, type PlanName, type StorageRoom,
+  DEFAULT_PLAN_LIMITS, MAX_FILE_BYTES, PLUS_FOR_SALE, chatStorageFullMessage, fileTooLargeMessage, fits, limitHint,
+  localPlusPrices, storageFullMessage, type PlanLimits, type PlanName, type StorageRoom,
 } from './plans';
 import type {
   FamilyWithMembership,
@@ -453,6 +453,8 @@ export async function addFamilyMember(
       return { status: 'full', message: body.error ?? 'This family has no room for another member.' };
     case 'personal_vault':
       return { status: 'unavailable', message: body.error ?? 'Nobody can be invited to a personal vault.' };
+    case 'invite_limit':   // 20 a day from a family, 3 to one person (050)
+      return { status: 'unavailable', message: body.error ?? 'This family has sent as many invitations as it can today.' };
     case 'needs_migration':
       return { status: 'unavailable', message: body.error ?? 'Adding members is not available yet.' };
   }
@@ -516,6 +518,7 @@ export async function linkPersonToAccount(familyId: string, personId: string, em
     case 'no_person':
     case 'family_full':
     case 'personal_vault':
+    case 'invite_limit':
       return { status: 'refused', message: body.error ?? 'This person could not be linked.' };
   }
   // The gateway's own 404: this project does not have link-account yet.
@@ -827,6 +830,8 @@ export async function uploadDocument(params: UploadDocumentParams): Promise<stri
   // Refused before anything is stored. The bucket takes only these types, and
   // a type the database cannot hold used to fail AFTER the file was uploaded.
   if (!isSaveable(fileType)) throw new Error(unsupportedFileMessage(fileType));
+  // And only files up to 10 MB (050): said in words, before the upload.
+  if (fileSizeBytes > MAX_FILE_BYTES) throw new Error(fileTooLargeMessage(fileSizeBytes));
 
   // Every plan has a storage limit (038). Asked first, with this file's size,
   // so the person hears why; the bucket refuses a full family either way.
@@ -872,6 +877,8 @@ export async function uploadDocument(params: UploadDocumentParams): Promise<stri
     // The file is in Storage already. With no document pointing at it, nobody
     // would ever see it, count it or delete it, so take it back out.
     await supabase.storage.from('documents').remove([storagePath]).catch(() => undefined);
+    // A limit (050: the day's documents, say) is written for the person.
+    if (limitHint(insertErr)) throw new Error(insertErr.message);
     throw new Error(`Document insert failed: ${insertErr.message}`);
   }
 
@@ -994,6 +1001,8 @@ export async function createShareLink(
   if (error) {
     if (isMissingMigration(error)) return { status: 'unavailable' };
     if ((error as { hint?: string }).hint === 'plus_only') return { status: 'plus_only', message: error.message };
+    // 20 links that still work, for one document (050).
+    if ((error as { hint?: string }).hint === 'share_limit') return { status: 'refused', message: error.message };
     if (error.code === '42501' || error.code === '22023') return { status: 'refused', message: error.message };
     throw error;
   }
@@ -1297,10 +1306,11 @@ export async function fetchStorageStatus(familyId: string): Promise<FamilyPlanSt
 
 // Each set of columns arrived with a migration (040: grace_days; 041:
 // max_members and voice_answers; 048: personal_storage_bytes; 049:
-// questions_per_month and questions_fair_use). A column that is not there
-// yet fails the whole select, so each one missing asks again with the set
-// before it.
+// questions_per_month and questions_fair_use; 050: question_tries_per_day,
+// uploads_per_day and families_per_person). A column that is not there yet
+// fails the whole select, so each one missing asks again with the set before it.
 const PLAN_LIMIT_COLUMNS = [
+  'plan, storage_bytes, grace_days, max_members, voice_answers, personal_storage_bytes, questions_per_month, questions_fair_use, question_tries_per_day, uploads_per_day, families_per_person',
   'plan, storage_bytes, grace_days, max_members, voice_answers, personal_storage_bytes, questions_per_month, questions_fair_use',
   'plan, storage_bytes, grace_days, max_members, voice_answers, personal_storage_bytes',
   'plan, storage_bytes, grace_days, max_members, voice_answers',
@@ -1315,11 +1325,12 @@ export async function fetchPlanLimits(): Promise<PlanLimits> {
     max_members?: number | null; voice_answers?: number | null;
     personal_storage_bytes?: number | null;
     questions_per_month?: number | null; questions_fair_use?: number | null;
+    question_tries_per_day?: number | null; uploads_per_day?: number | null; families_per_person?: number | null;
   };
   let answer: { data: unknown; error: { message?: string } | null } = { data: null, error: null };
   for (const columns of PLAN_LIMIT_COLUMNS) {
     answer = await supabase.from('plan_limits').select(columns);
-    if (!answer.error || !/grace_days|max_members|voice_answers|personal_storage_bytes|questions_per_month|questions_fair_use/.test(answer.error.message ?? '')) break;
+    if (!answer.error || !/grace_days|max_members|voice_answers|personal_storage_bytes|questions_per_month|questions_fair_use|question_tries_per_day|uploads_per_day|families_per_person/.test(answer.error.message ?? '')) break;
   }
   const rows = (answer.data ?? []) as Row[];
   if (answer.error || !rows.length) return DEFAULT_PLAN_LIMITS;
@@ -1348,6 +1359,13 @@ export async function fetchPlanLimits(): Promise<PlanLimits> {
     return row.questions_per_month == null ? null : Number(row.questions_per_month);
   };
   const fairUse = rows.find((r) => r.plan === 'plus')?.questions_fair_use;
+  // The day's numbers (050): NULL is a real answer (no limit); a row without
+  // the column is a database before 050, which keeps none.
+  const perDay = (plan: 'free' | 'plus', column: 'question_tries_per_day' | 'uploads_per_day') => {
+    const row = rows.find((r) => r.plan === plan);
+    if (!row || !(column in row)) return null;
+    return row[column] == null ? null : Number(row[column]);
+  };
   const free = of('free', DEFAULT_PLAN_LIMITS.free);
   // A personal vault's own number (048), where the plan has one; before 048
   // the server keeps one limit for every vault, so that one.
@@ -1362,6 +1380,11 @@ export async function fetchPlanLimits(): Promise<PlanLimits> {
     voiceAnswers: { free: voice('free'), plus: voice('plus') },
     questions: { free: questions('free'), plus: questions('plus') },
     questionsFairUse: fairUse ? Number(fairUse) : DEFAULT_PLAN_LIMITS.questionsFairUse,
+    questionTriesPerDay: { free: perDay('free', 'question_tries_per_day'), plus: perDay('plus', 'question_tries_per_day') },
+    uploadsPerDay: { free: perDay('free', 'uploads_per_day'), plus: perDay('plus', 'uploads_per_day') },
+    familiesPerPerson: freeRow && 'families_per_person' in freeRow
+      ? (freeRow.families_per_person == null ? null : Number(freeRow.families_per_person))
+      : null,
   };
 }
 

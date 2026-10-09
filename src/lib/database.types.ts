@@ -100,6 +100,33 @@ export type Database = {
           },
         ]
       }
+      daily_usage: {
+        Row: {
+          day: string
+          question_tries: number
+          reads: number
+          updated_at: string
+          uploads: number
+          user_id: string
+        }
+        Insert: {
+          day: string
+          question_tries?: number
+          reads?: number
+          updated_at?: string
+          uploads?: number
+          user_id: string
+        }
+        Update: {
+          day?: string
+          question_tries?: number
+          reads?: number
+          updated_at?: string
+          uploads?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
       document_shares: {
         Row: {
           created_at: string
@@ -918,33 +945,42 @@ export type Database = {
       }
       plan_limits: {
         Row: {
+          families_per_person: number | null
           grace_days: number | null
           max_members: number
           personal_storage_bytes: number | null
           plan: string
+          question_tries_per_day: number | null
           questions_fair_use: number
           questions_per_month: number | null
           storage_bytes: number
+          uploads_per_day: number | null
           voice_answers: number | null
         }
         Insert: {
+          families_per_person?: number | null
           grace_days?: number | null
           max_members?: number
           personal_storage_bytes?: number | null
           plan: string
+          question_tries_per_day?: number | null
           questions_fair_use?: number
           questions_per_month?: number | null
           storage_bytes: number
+          uploads_per_day?: number | null
           voice_answers?: number | null
         }
         Update: {
+          families_per_person?: number | null
           grace_days?: number | null
           max_members?: number
           personal_storage_bytes?: number | null
           plan?: string
+          question_tries_per_day?: number | null
           questions_fair_use?: number
           questions_per_month?: number | null
           storage_bytes?: number
+          uploads_per_day?: number | null
           voice_answers?: number | null
         }
         Relationships: []
@@ -1284,6 +1320,7 @@ export type Database = {
         Args: { p_family_id: string }
         Returns: number
       }
+      claim_daily: { Args: { p_user_id: string; p_what: string }; Returns: Json }
       claim_question: { Args: { p_user_id: string }; Returns: Json }
       claim_voice_answer: { Args: { p_family_id: string }; Returns: Json }
       complete_document_ingestion: {
@@ -1514,6 +1551,7 @@ export type Database = {
         Args: { p_notification_id: string; p_user_id: string }
         Returns: undefined
       }
+      person_daily_limit: { Args: { p_user_id: string; p_what: string }; Returns: number }
       person_on_plus: { Args: { p_user_id: string }; Returns: boolean }
       purge_family: { Args: { p_family_id: string }; Returns: string }
       rag_chunk_total: { Args: { p_schema: string }; Returns: number }
@@ -1748,6 +1786,10 @@ export type Database = {
       }
       shares_family: { Args: { p_user: string }; Returns: boolean }
       size_text: { Args: { p_bytes: number }; Returns: string }
+      start_document_read: {
+        Args: { p_document_id: string; p_family_id: string; p_user_id: string }
+        Returns: Json
+      }
       tree_add_pair: {
         Args: { p_a: string; p_b: string; p_family_id: string; p_kind: string }
         Returns: undefined
@@ -1794,6 +1836,7 @@ export type Database = {
         Args: { p_family_id: string }
         Returns: undefined
       }
+      usage_day: { Args: never; Returns: string }
       vault_storage_bytes: {
         Args: { p_family_id: string; p_plan: string }
         Returns: number

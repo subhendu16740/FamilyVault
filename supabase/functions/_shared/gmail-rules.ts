@@ -23,8 +23,8 @@
 export const SCAN_QUERY =
   'has:attachment -category:promotions -category:social -in:chats (filename:pdf OR filename:jpg OR filename:jpeg OR filename:png)';
 
-/** Larger attachments are listed but not imported. */
-export const MAX_IMPORT_BYTES = 15 * 1024 * 1024;
+/** Larger attachments are listed but not imported: the documents bucket's limit (050; 15 MB here before). */
+export const MAX_IMPORT_BYTES = 10 * 1024 * 1024;
 
 export type Suggestion = 'suggested' | 'maybe' | 'unlikely';
 

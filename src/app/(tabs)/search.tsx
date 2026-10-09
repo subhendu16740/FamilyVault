@@ -17,7 +17,7 @@ import {
   type RagSearchResult, type RagHistoryTurn, type IndexStatus, type SavedChatMessage,
 } from '../../lib/api';
 import { plusPage } from '../../lib/family-plan';
-import { parseAllowance, questionsLeftText, resetDay, type QuestionAllowance } from '../../lib/plans';
+import { QUESTION_INPUT_MAX, limitHint, parseAllowance, questionsLeftText, resetDay, type QuestionAllowance } from '../../lib/plans';
 import type { Database } from '../../lib/database.types';
 import { usePreferences } from '../../lib/preferences';
 import { phrase } from '../../lib/voice-languages';
@@ -124,7 +124,9 @@ export default function SearchScreen() {
     }
     showSaveNotice('error', isMissingMigration(err)
       ? 'Saving chats is not switched on yet.'
-      : 'Could not save this chat. Please try again.', 7000);
+      : limitHint(err) === 'chat_limit'
+        ? (err as Error).message      // 50 a person in a vault (050), in the database's words
+        : 'Could not save this chat. Please try again.', 7000);
   };
 
   const startNewChat = () => {
@@ -403,8 +405,8 @@ export default function SearchScreen() {
       const allowance = parseAllowance(result.questions);
       if (allowance) setQuestions(allowance);
       if (result.question_limit) {
-        // This month's questions are used up: said aloud in voice mode, and,
-        // like an apology, never counted as a voice chat.
+        // This month's questions, or today's tries (050), are used up: said
+        // aloud in voice mode, and, like an apology, never counted as a voice chat.
         if (voiceWanted) {
           heardIds.current.add(aiPlaceholder.id);
           speakMessage(aiPlaceholder.id, result.answer, result.answer_language);
@@ -852,6 +854,7 @@ export default function SearchScreen() {
               placeholder={voiceMode ? voicePlaceholder() : 'Ask about your documents...'}
               placeholderTextColor={voiceNotice ? '#B45309' : '#9CA3AF'}
               returnKeyType="send"
+              maxLength={QUESTION_INPUT_MAX}
               style={[styles.input, voiceMode && styles.inputLarge]}
               editable={!isAsking && voiceState !== 'listening'}
             />

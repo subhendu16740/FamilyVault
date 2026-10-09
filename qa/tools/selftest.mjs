@@ -34,6 +34,8 @@ import { buildGraph, relationTo, relationLabel, relativesForPrompt, relativesNam
 import { encryptPayload, vapidAuthorization, generateVapidKeys, isPushServiceEndpoint, MAX_PLAINTEXT } from '../../supabase/functions/_shared/webpush.ts';
 import { phoneLooksRight, cardProblem, cardIsEmpty, emptyCard, bloodGroupLabel, bloodGroupSpoken, telHref } from '../../src/lib/emergency.ts';
 import { allowanceJson, givenBack, parseAllowance, questionLimitMessage, questionsLeftText, resetDay } from '../../supabase/functions/_shared/questions.ts';
+import { MAX_DOCUMENT_TEXT, MAX_FILE_BYTES, QUESTION_INPUT_MAX, MAX_QUESTION_CHARS, fileTooLargeMessage, inVaultFolder, limitHint, providedTextLimit } from '../../supabase/functions/_shared/limits.ts';
+import { MAX_IMPORT_BYTES } from '../../supabase/functions/_shared/gmail-rules.ts';
 import { DEFAULT_PLAN_LIMITS, PLUS_FOR_SALE, PLUS_PRICE, chatStorageFullMessage, fits, formatBytes, plusAmount, plusPrice, plusPrices, plusTwelveMonths, plusYearlyOffer, plusYearlySaving, storageFullMessage } from '../../supabase/functions/_shared/plan-text.ts';
 import { mentionsDate, mentionsAmount, mentionsPhone, mentionsText, refuses, devanagariShare, scriptShare, hasMarkdown } from '../lib/match.mjs';
 import { judgeAnswer } from '../lib/checks/ask.mjs';
@@ -676,6 +678,9 @@ await test('plans: every limit is finite, and a full vault says why and what to 
     voiceAnswers: { free: 10, plus: null },
     questions: { free: 20, plus: null },
     questionsFairUse: 500,
+    questionTriesPerDay: { free: 10, plus: 100 },
+    uploadsPerDay: { free: 50, plus: 500 },
+    familiesPerPerson: 1,
   });
   assert.deepEqual(PLUS_PRICE, { monthly: { inr: 100, usd: 10 }, yearly: { inr: 1100, usd: 110 } });
   // The Plus page says what a year saves in months ("1 month free"): a year
@@ -832,9 +837,52 @@ await test('questions each month: the count, and the words when they are used up
   assert.equal(resetDay('soon'), null);
 });
 
+await test('limits against abuse (050): a vault reads only its own folder, and the words for each limit', () => {
+  const ns = 'family_4f673322';
+  // Inside the vault's own folder: "<namespace>/<file>", as the app and Gmail import write it.
+  assert.ok(inVaultFolder(`${ns}/1790715383718_passport.pdf`, ns));
+  // Anywhere else is another family's file, or nobody's.
+  for (const path of [
+    'family_5fbc8888/1790715383718_passport.pdf',           // another vault's
+    `${ns}x/a.pdf`, `${ns}`, `${ns}/`, `/${ns}/a.pdf`,       // not quite inside
+    `${ns}/../family_5fbc8888/a.pdf`, `${ns}/./a.pdf`, `${ns}//a.pdf`, `${ns}/a\\b.pdf`,
+    `${ns}/${'x'.repeat(1100)}`, null, 42,
+  ]) assert.equal(inVaultFolder(path, ns), false, String(path));
+  // A namespace that is not one cannot vouch for anything.
+  assert.equal(inVaultFolder('public/a.pdf', 'public'), false);
+  assert.equal(inVaultFolder('family_%/a.pdf', 'family_%'), false);
+  // Text the app sends: a few thousand characters a page, never more than the file has bytes.
+  assert.equal(providedTextLimit(100), 20_100);
+  assert.equal(providedTextLimit(null), 20_000);
+  assert.equal(providedTextLimit(NaN), 20_000);
+  assert.equal(providedTextLimit(50 * 1024 * 1024), MAX_DOCUMENT_TEXT);
+  // 10 MB a file, in the bucket, the app and Gmail import alike.
+  assert.equal(MAX_FILE_BYTES, 10 * 1024 * 1024);
+  assert.equal(MAX_IMPORT_BYTES, MAX_FILE_BYTES);
+  assert.equal(fileTooLargeMessage(14.2 * 1024 * 1024),
+    'This file is 14.2 MB. AskLocker takes files up to 10 MB. Scan it again at a lower quality, or save it in parts.');
+  assert.ok(QUESTION_INPUT_MAX < MAX_QUESTION_CHARS);
+  // The refusals the app shows in the database's own words, and nothing else.
+  assert.equal(limitHint({ hint: 'upload_limit', message: 'x' }), 'upload_limit');
+  assert.equal(limitHint({ hint: 'storage_full' }), null);
+  assert.equal(limitHint(null), null);
+  // The day's tries: answered or not, and the words say so.
+  const tried = parseAllowance({ allowed: false, reason: 'tries', tries: 10, tries_limit: 10, used: 4, limit: 20, ceiling: 20, plus: false, resets_on: '2026-11-01' });
+  assert.equal(tried.reason, 'tries');
+  assert.equal(questionLimitMessage(tried),
+    'You have asked 10 questions today, the most on Free in a day. Every question counts here, answered or not. You can ask again tomorrow.');
+  assert.equal(questionLimitMessage({ ...tried, plus: true, triesLimit: 100 }),
+    'You have asked 100 questions today, the most one person can ask in a day. You can ask again tomorrow.');
+  assert.ok(questionLimitMessage(tried, 'hi-IN').includes('कल फिर से'));
+  // The month's limit is said as before, and a reply without 050's fields has none of them.
+  assert.ok(questionLimitMessage({ ...tried, reason: 'month', used: 20 }).startsWith('You have asked your 20 free questions'));
+  assert.deepEqual(parseAllowance(allowanceJson(tried)), tried);
+  assert.equal('reason' in parseAllowance({ used: 1, limit: 20, ceiling: 20 }), false);
+});
+
 if (failures.length) {
   console.error(failures.map((f) => `✗ ${f}`).join('\n'));
   console.error(`\n${failures.length} self-test(s) failed, ${passed} passed.`);
   process.exit(1);
 }
-console.log(`✓ ${passed} self-tests passed — matchers, judge, run-time PDF, metadata, ticket codes, text cleaning, Gmail rules and token sealing, kinship and the family tree, emergency card checks, web push, plan limits, questions each month, Razorpay signatures, numbers in digits, sources the answer used, questions and budget.`);
+console.log(`✓ ${passed} self-tests passed — matchers, judge, run-time PDF, metadata, ticket codes, text cleaning, Gmail rules and token sealing, kinship and the family tree, emergency card checks, web push, plan limits, questions each month, limits against abuse, Razorpay signatures, numbers in digits, sources the answer used, questions and budget.`);

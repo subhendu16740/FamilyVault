@@ -30,6 +30,7 @@
 //                                      (two parents at most, nobody their own ancestor)
 //   409 { status: 'family_full' }      no room for another member (041), with the reason
 //   409 { status: 'personal_vault' }   a personal vault is for its owner alone (046)
+//   429 { status: 'invite_limit' }     20 invitations a day from a family, 3 to one person (050)
 //   403 caller is not an admin         503 { status: 'needs_migration' } 037 is not applied
 // ────────────────────────────────────────────────────────────────
 
@@ -94,6 +95,10 @@ Deno.serve(async (req) => {
       // A personal vault is for its owner alone (046), in the database's words.
       if (error.hint === "personal_vault") {
         return json(409, { status: "personal_vault", error: error.message });
+      }
+      // 20 invitations a day from a family, 3 to the same person (050).
+      if (error.hint === "invite_limit") {
+        return json(429, { status: "invite_limit", error: error.message });
       }
       // The tree's own rules, in the words the database uses for them:
       // "Someone can have at most two parents in the tree." and the like.

@@ -91,32 +91,53 @@ Deno.serve(async (req) => {
       }
 
       const amount = plusOrderAmount(period, cur);
-      const created = await razorpay('/orders', {
-        method: 'POST',
-        body: {
-          amount,
-          currency: cur,
-          receipt: `fv_${familyId.slice(0, 8)}_${Date.now().toString(36)}`,
-          notes: { family_id: familyId, period, user_id: auth.member.userId },
-        },
-      });
-      if (!created.ok || !ORDER_ID.test(String(created.data.id ?? ''))) {
-        console.error('[payments] order refused:', created.status, JSON.stringify(created.data).slice(0, 300));
+
+      const userId = auth.member.userId;
+      const newOrder = async (): Promise<string | null> => {
+        const created = await razorpay('/orders', {
+          method: 'POST',
+          body: {
+            amount,
+            currency: cur,
+            receipt: `fv_${familyId.slice(0, 8)}_${Date.now().toString(36)}`,
+            notes: { family_id: familyId, period, user_id: userId },
+          },
+        });
+        if (!created.ok || !ORDER_ID.test(String(created.data.id ?? ''))) {
+          console.error('[payments] order refused:', created.status, JSON.stringify(created.data).slice(0, 300));
+          return null;
+        }
+
+        const { error: saveErr } = await supabase.from('plan_payments').insert({
+          order_id: created.data.id, family_id: familyId, user_id: userId, period, currency: cur, amount,
+        });
+        if (saveErr) throw saveErr;
+        return String(created.data.id);
+      };
+
+      // Tapping Pay again within the hour reuses the order not yet paid, for
+      // the same person, family and price, rather than making another order
+      // at Razorpay and another row here each time (050). Razorpay takes a
+      // new attempt on an order until one is paid.
+      const { data: open, error: openErr } = await supabase
+        .from('plan_payments')
+        .select('order_id')
+        .eq('family_id', familyId).eq('user_id', userId)
+        .eq('period', period).eq('currency', cur).eq('amount', amount).eq('status', 'created')
+        .gt('created_at', new Date(Date.now() - 60 * 60 * 1000).toISOString())
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (openErr && missingTable(openErr)) return json(503, NEEDS_MIGRATION);
+      const orderId = open?.order_id ? String(open.order_id) : await newOrder();
+      if (!orderId) {
         return json(502, { status: 'razorpay', error: 'Razorpay could not start the payment. Please try again.' });
       }
 
-      const { error: saveErr } = await supabase.from('plan_payments').insert({
-        order_id: created.data.id, family_id: familyId, user_id: auth.member.userId, period, currency: cur, amount,
-      });
-      if (saveErr) {
-        if (missingTable(saveErr)) return json(503, NEEDS_MIGRATION);
-        throw saveErr;
-      }
-
       // For the checkout's form and Razorpay's receipt email.
-      const { data: who } = await supabase.auth.admin.getUserById(auth.member.userId);
+      const { data: who } = await supabase.auth.admin.getUserById(userId);
       return json(200, {
-        order_id: created.data.id,
+        order_id: orderId,
         amount,
         currency: cur,
         key_id: KEY_ID,

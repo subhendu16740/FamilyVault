@@ -34,6 +34,7 @@ import { runAccessChecks } from './lib/checks/access.mjs';
 import { runMemberChecks } from './lib/checks/members.mjs';
 import { runUploadChecks, checkIndex } from './lib/checks/upload.mjs';
 import { runQuestions } from './lib/checks/ask.mjs';
+import { startQaDay } from './lib/dev-day.mjs';
 import { writeReport, annotate } from './lib/report.mjs';
 
 const QUESTIONS = fileURLToPath(new URL('./questions.yaml', import.meta.url));
@@ -93,6 +94,8 @@ async function main() {
       const vaultA = await ensureVault(a, VAULT_A);
       const vaultB = await ensureVault(b, VAULT_B);
       for (const v of [vaultA, vaultB]) if (v.created) results.note('setup', `created ${v.name} (${v.namespace})`);
+      const dayWhy = await startQaDay(cfg, { a, b, vaultA });
+      if (dayWhy) results.note('setup', dayWhy);
       const { docs: docsA, notIndexed } = await syncFixtures(cfg, a, vaultA, results);
 
       if (want('access')) {

@@ -173,9 +173,12 @@ export async function runQuestions(cfg, { a, vaultA, notIndexed = new Map() }, r
     asked++;
     if (d.questions && typeof d.questions === 'object') lastCount = d.questions;
 
-    // This month's questions are used up (049): a limit kept, not a defect.
+    // This month's questions (049), or today's tries (050), are used up: a
+    // limit kept, not a defect.
     if (r.status === 200 && d.question_limit) {
-      budget.stop("account A's questions for this month are used up (migration 049); the rest wait for its count to start again");
+      budget.stop(d.questions?.reason === 'tries'
+        ? "account A has tried as many questions as it can today (migration 050); the rest wait for tomorrow"
+        : "account A's questions for this month are used up (migration 049); the rest wait for its count to start again");
       results.add('questions', q.id, title, 'deferred', { why: budget.reason, ...record });
       continue;
     }

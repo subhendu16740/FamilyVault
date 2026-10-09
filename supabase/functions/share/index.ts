@@ -4,9 +4,10 @@
 // this with the project's public key and the link's secret, which is the
 // only thing that matters: it is never stored, only its SHA-256, which
 // open_document_share() — service role only, as it hands out a storage path
-// — looks up. A link that has expired, been turned off, or lost its document
-// or its maker gets the same 404 as one that never existed, so the answer
-// tells a guesser nothing.
+// — looks up. A link that has expired, been turned off, been opened 100
+// times (050: each open hands out download addresses, and downloads are the
+// organisation's 5 GB a month), or lost its document or its maker gets the
+// same 404 as one that never existed, so the answer tells a guesser nothing.
 //
 // Answers:
 //   200 { file_name, file_type, expires_at, shared_by, url, download_url }
@@ -25,7 +26,7 @@ const json = (status: number, body: Record<string, unknown>) =>
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 
-const GONE = { status: "gone", error: "This link has expired or was turned off. Ask whoever sent it for a new one." };
+const GONE = { status: "gone", error: "This link has expired, was turned off, or has been opened too many times. Ask whoever sent it for a new one." };
 const SECRET = /^[0-9a-f]{64}$/;
 const FIVE_MINUTES = 300;
 

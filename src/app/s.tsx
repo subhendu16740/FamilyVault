@@ -58,12 +58,12 @@ export default function SharedDocumentScreen() {
               <Feather name={state === 'gone' ? 'link-2' : 'alert-circle'} size={24} color="#9CA3AF" />
             </View>
             <Text style={styles.heading}>
-              {state === 'gone' ? 'This link has expired or was turned off'
+              {state === 'gone' ? 'This link no longer opens'
                 : state === 'unavailable' ? 'Share links are not switched on yet'
                 : 'Could not open this link'}
             </Text>
             <Text style={styles.muted}>
-              {state === 'gone' ? 'Ask whoever sent it for a new one.'
+              {state === 'gone' ? 'It has expired, was turned off, or was opened too many times. Ask whoever sent it for a new one.'
                 : state === 'unavailable' ? 'Try again later, or ask whoever sent it.'
                 : 'Check your connection and try again.'}
             </Text>

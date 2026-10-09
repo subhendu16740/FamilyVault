@@ -60,13 +60,19 @@ export interface PlanLimits {
   questions: { free: number | null; plus: number | null };
   /** The most one person may ask in a month where there is no monthly limit (049). */
   questionsFairUse: number;
+  /** Questions each person may try in a day, answered or not, per plan; null: no limit (050). */
+  questionTriesPerDay: { free: number | null; plus: number | null };
+  /** Documents each person may add in a day, per plan; null: no limit (050). */
+  uploadsPerDay: { free: number | null; plus: number | null };
+  /** Families one person may create on Free, besides their personal vault (050); null: no limit. */
+  familiesPerPerson: number | null;
 }
 
 const GB = 1024 ** 3;
 
 const MB = 1024 ** 2;
 
-/** What 039–049 set; plan_limits is the truth. */
+/** What 039–050 set; plan_limits is the truth. */
 export const DEFAULT_PLAN_LIMITS: PlanLimits = {
   free: 200 * MB,
   freePersonal: 100 * MB,
@@ -76,6 +82,9 @@ export const DEFAULT_PLAN_LIMITS: PlanLimits = {
   voiceAnswers: { free: 10, plus: null },
   questions: { free: 20, plus: null },
   questionsFairUse: 500,
+  questionTriesPerDay: { free: 10, plus: 100 },
+  uploadsPerDay: { free: 50, plus: 500 },
+  familiesPerPerson: 1,
 };
 
 /** What Family Plus costs, by the month or by the year (one month free). */

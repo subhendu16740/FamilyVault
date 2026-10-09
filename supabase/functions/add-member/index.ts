@@ -20,6 +20,7 @@
 //   409 { status: 'family_full' }      members and waiting invitations are at
 //                                      the plan's limit (041), with the reason
 //   409 { status: 'personal_vault' }   a personal vault is for its owner alone (046)
+//   429 { status: 'invite_limit' }     20 invitations a day from a family, 3 to one person (050)
 //   503 { status: 'needs_migration' }  037 is not applied to this project
 // ────────────────────────────────────────────────────────────────
 
@@ -88,6 +89,10 @@ Deno.serve(async (req) => {
       // A personal vault is for its owner alone (046), in the database's words.
       if (error.hint === "personal_vault") {
         return json(409, { status: "personal_vault", error: error.message });
+      }
+      // 20 invitations a day from a family, 3 to the same person (050).
+      if (error.hint === "invite_limit") {
+        return json(429, { status: "invite_limit", error: error.message });
       }
       console.error("[add-member] invite_family_member failed:", error.code, error.message);
       return json(500, { error: "Could not add this member. Please try again." });

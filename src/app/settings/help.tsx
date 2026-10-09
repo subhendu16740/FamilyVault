@@ -9,8 +9,8 @@ import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SUPPORT_EMAIL, SUPPORT_PHONE } from '../../lib/app-info';
 import {
-  DEFAULT_PLAN_LIMITS, FREE_PERSONAL_STORAGE_LABEL, FREE_STORAGE_LABEL, PLUS_FOR_SALE, formatBytes, plusPrice, plusPrices, plusYearlyOffer,
-  plusYearlySaving,
+  DEFAULT_PLAN_LIMITS, FREE_PERSONAL_STORAGE_LABEL, FREE_STORAGE_LABEL, MAX_FILE_BYTES, PLUS_FOR_SALE, formatBytes, plusPrice, plusPrices,
+  plusYearlyOffer, plusYearlySaving,
 } from '../../lib/plans';
 import { usePaymentsStatus } from '../../lib/family-plan';
 import { lockAfterText } from '../../lib/app-lock';
@@ -40,7 +40,11 @@ function faq(payments: PaymentsStatus | null): { q: string; a: string }[] {
     },
     {
       q: 'How many questions can I ask?',
-      a: `On the free plan, each person can ask ${DEFAULT_PLAN_LIMITS.questions.free} questions a month, in all their vaults together; they start again on the 1st of the month. A question that finds nothing, or that AskLocker could not answer, is not counted. Search shows how many you have left once only a few remain. With ★ Family Plus there is no monthly limit for anyone in the family — only, to keep it fair, a ceiling of ${DEFAULT_PLAN_LIMITS.questionsFairUse} a month for one person, far more than anyone asks.`,
+      a: `On the free plan, each person can ask ${DEFAULT_PLAN_LIMITS.questions.free} questions a month, in all their vaults together; they start again on the 1st of the month. A question that finds nothing, or that AskLocker could not answer, is not counted. Search shows how many you have left once only a few remain. To keep AskLocker free for every family, each person can also try ${DEFAULT_PLAN_LIMITS.questionTriesPerDay.free} questions a day, answered or not. With ★ Family Plus there is no monthly limit for anyone in the family — only, to keep it fair, a ceiling of ${DEFAULT_PLAN_LIMITS.questionsFairUse} a month and ${DEFAULT_PLAN_LIMITS.questionTriesPerDay.plus} a day for one person, far more than anyone asks.`,
+    },
+    {
+      q: 'Are there other limits?',
+      a: `A few, the same for everyone, so that one person cannot use up what every family shares: files up to ${MAX_FILE_BYTES / (1024 * 1024)} MB; ${DEFAULT_PLAN_LIMITS.uploadsPerDay.free} documents added a day by each person on the free plan (${DEFAULT_PLAN_LIMITS.uploadsPerDay.plus} with ★ Family Plus); on the free plan, one family that you create, besides your personal vault; 50 saved chats for each person in a vault; 300 people in a family tree; 20 working share links for one document, each opening up to 100 times; and 20 invitations a day from a family, 3 of them to the same person. If you meet one, AskLocker says which, and what to do.`,
     },
     {
       q: 'Can I ask by speaking?',
