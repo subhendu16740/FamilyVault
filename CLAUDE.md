@@ -447,7 +447,11 @@ copies, so DEV needs its own secrets and its own `documents` storage bucket.
   passwords through the API (`qa/lib/supabase.mjs`), and the test form needs
   it. On PROD nothing uses it: switching it off (Authentication › Sign In
   / Providers › Email) stops anyone making a password account through the
-  API — once Authentication › Users shows nobody who signs in with one.
+  API — once nobody signs in with a password alone (an `email` identity and
+  no `google` one in `auth.identities`). Checked on PROD on 9 October 2026:
+  nobody did, anonymous sign-ins were off and Confirm email on. Keep "Allow
+  new users to sign up" on in both: a first Google sign-in makes the
+  account, so turning it off would shut out every new family.
 - **There is always a way in.** A spinner holds the place of Google's button
   until Google draws it; if Google's script cannot be loaded — blocked,
   unreachable, or not there after 10 seconds — the login falls back to the
