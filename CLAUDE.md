@@ -366,11 +366,13 @@ button (see [Signing in](#signing-in--google-only-with-googles-own-button-where-
   Authorized JavaScript origins, comma-separated
 
 and, optional, by `src/lib/analytics.ts` — usage counts (see Usage counts
-under [Conventions](#conventions)), **for Vercel's Production environment
-only**, so DEV and previews send nothing:
+under [Conventions](#conventions)). Production builds send to AskLocker's
+own PostHog project (EU Cloud, project 300863) without them: its key is
+public by design and lives in `analytics.ts`, used only where
+`isProduction`. Set these only to send elsewhere or from a test build:
 
-- `EXPO_PUBLIC_POSTHOG_KEY` — the PostHog project's API key (`phc_…`; public,
-  like the anon key). Unset, nothing is sent.
+- `EXPO_PUBLIC_POSTHOG_KEY` — a PostHog project's API key (`phc_…`; public,
+  like the anon key). Wins over the built-in one.
 - `EXPO_PUBLIC_POSTHOG_HOST` — `https://eu.i.posthog.com` unless set
 
 The `EXPO_PUBLIC_` prefix means *publicly visible in the shipped bundle*.
@@ -714,7 +716,7 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `app-info.ts` | Version, release date and commit (stamped into `extra` by `app.config.ts` at build time), and the support contact Help shows |
 | `ocr.ts` | Platform-split OCR with progress callback; reads the person's chosen languages |
 | `ocr-languages.ts` | The document-language picker list, and `resolveOcrLanguages()` which always appends English |
-| `analytics.ts` | Usage counts with PostHog: `track(event, props)`, typed by `AnalyticsEvents` so only named events and properties can be sent; a random id per device (`deviceKey.analyticsId`), the Privacy switch (`analyticsOn`, `setAnalyticsOn`), `categoryForAnalytics()` (built-in names only), `screenName()` (the route, never an id). Screen views come from `components/analytics-tracker.tsx` in the root layout. Off without `EXPO_PUBLIC_POSTHOG_KEY` |
+| `analytics.ts` | Usage counts with PostHog (production builds only): `track(event, props)`, typed by `AnalyticsEvents` so only named events and properties can be sent; a random id per device (`deviceKey.analyticsId`), the Privacy switch (`analyticsOn`, `setAnalyticsOn`), `categoryForAnalytics()` (built-in names only), `screenName()` (the route, never an id). Screen views come from `components/analytics-tracker.tsx` in the root layout. Off in every build but production |
 | `razorpay.ts` / `razorpay.web.ts` | Paying for Family Plus (044): on the web, Razorpay's own checkout window (`openCheckout`; checkout.js is loaded the first time someone pays, and card and UPI details go to Razorpay, never to us); the phone app's file is a stand-in until EAS builds exist. Types in `razorpay-types.ts` |
 | `google-button.ts` / `google-button.web.ts` | Google's own sign-in button on the web (Google Identity Services): `googleButtonAvailable()` (a client id is set and this origin is in `EXPO_PUBLIC_GOOGLE_WEB_ORIGINS`), `renderGoogleButton()` (loads Google's script once, a fresh nonce each time). The phone app's file says no, so it keeps the redirect sign-in. Types in `google-button-types.ts`; see [Signing in](#signing-in--google-only-with-googles-own-button-where-it-is-set-up) |
 | `push.ts` / `push.web.ts` | Notifications on this device (034): on the web, Web Push through `public/sw.js` (`loadPushStatus`, `turnOnPush`, `turnOffPush`, `sendTestPush`, and `forgetPushOnThisDevice` on sign-out); the phone app's file is a stand-in until EAS builds exist. Types in `push-types.ts` |
@@ -2361,8 +2363,12 @@ rule again once pinned chunks are mixed in.
   which would show document names — with a random id per device (not the
   account), `$process_person_profile: false` and `$geoip_disable: true`;
   the PostHog project discards the internet address (a project setting).
-  Off without `EXPO_PUBLIC_POSTHOG_KEY` (set for Production only) and on a
-  device where Settings › Privacy's switch is off. Settings › Privacy names
+  On in production builds only (`isProduction`, from the Supabase URL; the
+  project's key is in `analytics.ts`, `EXPO_PUBLIC_POSTHOG_KEY` overrides
+  it) and off on a device where Settings › Privacy's switch is off. The
+  PostHog project (AskLocker, EU Cloud) discards IP addresses and has
+  autocapture, recordings, heatmaps and surveys off; its time zone is
+  India's. Settings › Privacy names
   PostHog in builds that send. How many documents each category has is a
   query, not an event: `supabase/queries/document-categories.sql` counts
   category ids across every vault and reads nothing else.

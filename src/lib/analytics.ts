@@ -12,12 +12,14 @@
 // device, never the account's. No location is looked up ($geoip_disable),
 // and the PostHog project is set to discard the internet address.
 //
-// Off where EXPO_PUBLIC_POSTHOG_KEY is not set — every build but production —
-// and on a device where the person turned it off (Settings › Privacy).
+// On in production builds only (the Supabase URL says which, environment.ts)
+// and off on a device where the person turned it off (Settings › Privacy).
+// DEV, previews and the phone app's test builds send nothing.
 // ────────────────────────────────────────────────────────────────
 
 import { Platform } from 'react-native';
 import { appVersion } from './app-info';
+import { isProduction } from './environment';
 import { deviceKey, storageGet, storageRemove, storageSet } from './storage';
 
 /** What each event may carry. Nothing outside this list is sent. */
@@ -36,8 +38,14 @@ export interface AnalyticsEvents {
   person_added: Record<string, never>;
 }
 
+// AskLocker's PostHog project, on EU Cloud. A project API key is public by
+// design — it can only send events, and it ships in every page that uses it,
+// like Supabase's anon key — so it lives here. EXPO_PUBLIC_POSTHOG_KEY, when
+// set, wins (another project, or a test build that should send).
+const ASKLOCKER_POSTHOG_KEY = 'phc_wUjEvMCJSmt4JaXwPudmg7WGcyQBpVt8Uwh9C7rTmUB7';
+
 const unquote = (v: string | undefined) => (v ?? '').trim().replace(/^["']|["']$/g, '').trim();
-const KEY = unquote(process.env.EXPO_PUBLIC_POSTHOG_KEY);
+const KEY = unquote(process.env.EXPO_PUBLIC_POSTHOG_KEY) || (isProduction ? ASKLOCKER_POSTHOG_KEY : '');
 const HOST = (unquote(process.env.EXPO_PUBLIC_POSTHOG_HOST) || 'https://eu.i.posthog.com').replace(/\/+$/, '');
 
 /** Whether this build sends anything at all (a key was set when it was built). */
