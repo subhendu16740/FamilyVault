@@ -42,13 +42,13 @@ export const lockAfterText = `${LOCK_AFTER_MS / 60_000} minutes`;
 export function lockUnavailableText(support: LockSupport): string {
   switch (support) {
     case 'no-webauthn':
-      return 'This browser cannot check a fingerprint or face. Open AskLocker in Chrome, Safari or Edge itself — not inside another app such as WhatsApp or Gmail — and look here again.';
+      return "This browser can't check a fingerprint or face. Open AskLocker in Chrome, Safari or Edge, not inside an app like WhatsApp or Gmail.";
     case 'no-device-check':
-      return 'This phone or computer has nothing the browser can check you with: no screen lock, fingerprint or face. On a phone, set a screen lock and add your fingerprint in the phone\'s settings; on a computer, set up Windows Hello or Touch ID. Then look here again.';
+      return 'This device has no screen lock or fingerprint set up. Add one in your phone\'s settings, or set up Windows Hello or Touch ID on a computer. Then come back here.';
     case 'insecure':
-      return 'Fingerprint sign-in works only on a secure (https) address.';
+      return 'Fingerprint sign-in needs an https:// address.';
     case 'phone-app':
-      return 'Fingerprint sign-in is on the web app for now; the phone app gets it with its first release.';
+      return 'For now, fingerprint sign-in works only in the web app.';
     default:
       return '';
   }
@@ -61,40 +61,40 @@ export function passkeyErrorText(error: unknown, step: PasskeyStep): string {
   const e = error as { code?: string; name?: string; message?: string; status?: number; cause?: { name?: string } } | null;
   const code = e?.code ?? '';
   const domName = e?.cause?.name ?? e?.name ?? '';
-  const notOn = 'Fingerprint sign-in is not switched on for AskLocker yet.';
+  const notOn = "Fingerprint sign-in isn't available yet.";
   if (code === 'passkey_disabled') return notOn;
   if (code === 'webauthn_credential_not_found') {
-    return 'This fingerprint sign-in was turned off. Sign in with Google, then turn it on again in Settings › Security.';
+    return 'Fingerprint sign-in was turned off. Sign in with Google, then turn it on again in Settings › Security.';
   }
   if (code === 'too_many_passkeys') {
-    return 'Your account has all the fingerprint sign-ins it can have. Turn it off on a phone or computer you no longer use, then try again.';
+    return "You've reached the limit for fingerprint sign-ins. Turn it off on a device you no longer use, then try again.";
   }
   if (code === 'webauthn_challenge_expired' || code === 'webauthn_challenge_not_found') {
-    return 'That took too long. Please try again.';
+    return 'That took too long. Try again.';
   }
   if (code === 'ERROR_CEREMONY_ABORTED') {
-    return 'That was stopped. Please try again.';
+    return 'That was stopped. Try again.';
   }
   if (code === 'webauthn_verification_failed') {
-    return 'The fingerprint check could not be confirmed. Please try again.';
+    return "We couldn't confirm it was you. Try again.";
   }
   if (code === 'ERROR_INVALID_DOMAIN' || code === 'ERROR_INVALID_RP_ID' || domName === 'SecurityError') {
-    return `Fingerprint sign-in is not set up for this address (${typeof window !== 'undefined' ? window.location.host : 'here'}).`;
+    return `Fingerprint sign-in isn't set up for this address (${typeof window !== 'undefined' ? window.location.host : 'here'}).`;
   }
   // A sign-in service with no passkeys at all: no such address.
   if (e?.status === 404 || /page not found|not valid JSON/i.test(e?.message ?? '')) return notOn;
   if (e?.name === 'AuthRetryableFetchError' || /fetch|network/i.test(e?.message ?? '')) {
-    return 'AskLocker could not be reached. Check the internet connection and try again.';
+    return "Couldn't reach AskLocker. Check your internet and try again.";
   }
   if (/does not support WebAuthn/i.test(e?.message ?? '')) {
-    return 'This browser cannot use fingerprint sign-in.';
+    return "This browser can't use fingerprint sign-in.";
   }
   if (domName === 'NotAllowedError' || code === 'ERROR_PASSTHROUGH_SEE_CAUSE_PROPERTY') {
-    if (step === 'on') return 'Not turned on: the fingerprint or face check was cancelled or took too long.';
-    if (step === 'signin') return 'Not signed in: the check was cancelled, or this device has no fingerprint sign-in for AskLocker. Sign in with Google below.';
-    return 'Not unlocked: the check was cancelled or took too long. Please try again.';
+    if (step === 'on') return 'Not turned on. The check was cancelled or took too long.';
+    if (step === 'signin') return "Not signed in. The check was cancelled, or fingerprint sign-in isn't on for this device. Sign in with Google below.";
+    return 'Not unlocked. The check was cancelled or took too long. Try again.';
   }
-  return e?.message || 'That did not work. Please try again.';
+  return e?.message || "That didn't work. Try again.";
 }
 
 let supportTold = false;
@@ -178,7 +178,7 @@ async function passkeySignIn(step: 'signin' | 'unlock'): Promise<void> {
     // gets it back the next time it signs in (entryStillWorks).
     for (const id of await passkeysHere()) await setPasskeyHere(id, false);
   }
-  throw new Error(error ? passkeyErrorText(error, step) : 'Not signed in. Please try again.');
+  throw new Error(error ? passkeyErrorText(error, step) : 'Not signed in. Try again.');
 }
 
 /**
@@ -313,7 +313,7 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
     const kept = await readEntry(user.id);
     if (!kept || kept.passkeyId !== passkeyId) {
       if (passkeyId) await supabase.auth.passkey.delete({ passkeyId });
-      throw new Error('This browser could not keep fingerprint sign-in (a private window keeps nothing). It is still off.');
+      throw new Error("This browser couldn't keep fingerprint sign-in, so it's still off. Private windows can't keep it.");
     }
     await setPasskeyHere(user.id, true);
     setEntry(made);

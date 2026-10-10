@@ -450,17 +450,17 @@ export async function addFamilyMember(
     case 'invalid_email':
       return { status: 'invalid_email' };
     case 'family_full':
-      return { status: 'full', message: body.error ?? 'This family has no room for another member.' };
+      return { status: 'full', message: body.error ?? 'This family is full.' };
     case 'personal_vault':
-      return { status: 'unavailable', message: body.error ?? 'Nobody can be invited to a personal vault.' };
+      return { status: 'unavailable', message: body.error ?? "You can't invite anyone to a personal vault." };
     case 'invite_limit':   // 20 a day from a family, 3 to one person (050)
-      return { status: 'unavailable', message: body.error ?? 'This family has sent as many invitations as it can today.' };
+      return { status: 'unavailable', message: body.error ?? 'This family has sent all its invitations for today. Try again tomorrow.' };
     case 'needs_migration':
-      return { status: 'unavailable', message: body.error ?? 'Adding members is not available yet.' };
+      return { status: 'unavailable', message: body.error ?? "Adding members isn't available yet." };
   }
   // The gateway's own 404: this project does not have the function yet.
   if (httpStatus === 404) {
-    return { status: 'unavailable', message: 'Adding members is not available on this server yet.' };
+    return { status: 'unavailable', message: "Adding members isn't available yet." };
   }
   throw new Error(body?.error ?? error.message);
 }
@@ -506,11 +506,11 @@ export async function linkPersonToAccount(familyId: string, personId: string, em
     case 'invalid_email':
       return { status: 'invalid_email' };
     case 'needs_migration':
-      return { status: 'unavailable', message: 'Linking someone to their account is not switched on yet.' };
+      return { status: 'unavailable', message: "Linking accounts isn't available yet." };
     case 'tree_rule': {
       // The tree's own rule, as the database words it: "Someone can have at most two parents in the tree."
-      const rule = body.error ?? 'the family tree does not allow it.';
-      return { status: 'refused', message: `These two can't be joined into one: ${rule.charAt(0).toLowerCase()}${rule.slice(1)}` };
+      const rule = body.error ?? "the family tree doesn't allow it.";
+      return { status: 'refused', message: `These two can't be joined because ${rule.charAt(0).toLowerCase()}${rule.slice(1)}` };
     }
     case 'already_linked':
     case 'already_member':
@@ -519,11 +519,11 @@ export async function linkPersonToAccount(familyId: string, personId: string, em
     case 'family_full':
     case 'personal_vault':
     case 'invite_limit':
-      return { status: 'refused', message: body.error ?? 'This person could not be linked.' };
+      return { status: 'refused', message: body.error ?? "Couldn't link this person." };
   }
   // The gateway's own 404: this project does not have link-account yet.
   if (httpStatus === 404) {
-    return { status: 'unavailable', message: 'Linking someone to their account is not switched on yet.' };
+    return { status: 'unavailable', message: "Linking accounts isn't available yet." };
   }
   throw new Error(body?.error ?? error.message);
 }
@@ -714,7 +714,7 @@ async function gmailInvoke<T>(fn: string, body: Record<string, unknown>): Promis
     | null;
   // The gateway's own 404: the function is not deployed to this project.
   if (httpStatus === 404 && !payload?.status) {
-    throw new GmailApiError('unavailable', 'Gmail import is not available on this server yet.');
+    throw new GmailApiError('unavailable', "Gmail import isn't available yet.");
   }
   throw new GmailApiError(payload?.status ?? 'error', payload?.error ?? error.message, {
     retryAfter: payload?.retry_after,
@@ -803,7 +803,7 @@ export async function leaveFamily(familyId: string, userId: string): Promise<voi
     .select('id');
 
   if (error) throw error;
-  if (!data?.length) throw new Error('You are not a member of this family.');
+  if (!data?.length) throw new Error("You're not in this family.");
 }
 
 // ─── Document Upload ────────────────────────────────────────────
@@ -858,7 +858,7 @@ export async function uploadDocument(params: UploadDocumentParams): Promise<stri
         throw new StorageFullError(now, fileSizeBytes);
       }
     }
-    throw new Error(`Storage upload failed: ${storageErr.message}`);
+    throw new Error(`Couldn't upload the file. ${storageErr.message}`);
   }
 
   // 2. Insert document record via RPC (into family schema)
@@ -879,7 +879,7 @@ export async function uploadDocument(params: UploadDocumentParams): Promise<stri
     await supabase.storage.from('documents').remove([storagePath]).catch(() => undefined);
     // A limit (050: the day's documents, say) is written for the person.
     if (limitHint(insertErr)) throw new Error(insertErr.message);
-    throw new Error(`Document insert failed: ${insertErr.message}`);
+    throw new Error(`Couldn't save the document. ${insertErr.message}`);
   }
 
   const docId = data as string;
@@ -916,7 +916,7 @@ export async function deleteDocument(
     p_document_id: documentId,
     p_user_id: userId,
   });
-  if (error) throw new Error(`Delete failed: ${error.message}`);
+  if (error) throw new Error(`Couldn't delete it. ${error.message}`);
 
   // 2. Remove file from storage (best-effort)
   await supabase.storage.from('documents').remove([storagePath]);
@@ -936,7 +936,7 @@ export async function updateDocument(
     p_category_id: updates.categoryId ?? undefined,
     p_belongs_to_member: updates.belongsToMember ?? undefined,
   });
-  if (error) throw new Error(`Update failed: ${error.message}`);
+  if (error) throw new Error(`Couldn't save your changes. ${error.message}`);
 }
 
 // ─── Document Signed URLs ──────────────────────────────────────
@@ -949,7 +949,7 @@ export async function getDocumentSignedUrl(
     .from('documents')
     .createSignedUrl(storagePath, expiresIn);
 
-  if (error) throw new Error(`Signed URL failed: ${error.message}`);
+  if (error) throw new Error(`Couldn't open the file. ${error.message}`);
   return data.signedUrl;
 }
 
@@ -1075,7 +1075,7 @@ export async function openSharedDocument(token: string): Promise<SharedDocument 
     if (body?.status === 'gone') return 'gone';
     // 503: 036 not applied; a bare 404: the function is not deployed here yet.
     if (body?.status === 'needs_migration' || (httpStatus === 404 && !body?.status)) return 'unavailable';
-    throw new Error('Could not open this link. Please try again.');
+    throw new Error("Couldn't open this link. Try again.");
   }
   return {
     fileName: data.file_name,
@@ -1462,9 +1462,9 @@ async function paymentsInvoke<T>(body: Record<string, unknown>): Promise<T> {
   const httpStatus = (error as { context?: Response })?.context?.status;
   const payload = (await readFunctionError(error)) as { status?: string; error?: string } | null;
   if (httpStatus === 404 && !payload?.status) {
-    throw new PaymentError('not_configured', 'Paying for Family Plus is not switched on yet.');
+    throw new PaymentError('not_configured', "Paying for Family Plus isn't available yet.");
   }
-  throw new PaymentError(payload?.status ?? 'error', payload?.error ?? 'Something went wrong. Please try again.');
+  throw new PaymentError(payload?.status ?? 'error', payload?.error ?? 'Something went wrong. Try again.');
 }
 
 /** Starts paying for a month or a year of Family Plus for the family. */
@@ -1730,7 +1730,7 @@ export class ChatStorageFullError extends Error {
   constructor(room: FamilyPlanStatus | null, serverMessage?: string) {
     super(room
       ? chatStorageFullMessage(room, { price: localPlusPrices(), forSale: plusForSale() })
-      : serverMessage ?? 'There is no room to save this chat: your family\'s storage is full.');
+      : serverMessage ?? "No room to save this chat. Your family's storage is full.");
     this.name = 'ChatStorageFullError';
     this.room = room;
   }
@@ -1822,7 +1822,7 @@ async function deleteAccountInvoke<T>(body: Record<string, unknown>): Promise<T>
   const payload = (await readFunctionError(error)) as { status?: string; error?: string } | null;
   // The gateway's own 404 (not deployed here), or the database update missing.
   if ((httpStatus === 404 && !payload?.status) || payload?.status === 'needs_migration') {
-    throw new AccountDeletionError('unavailable', 'Deleting your account from the app is not switched on yet.');
+    throw new AccountDeletionError('unavailable', "Deleting your account in the app isn't available yet.");
   }
   throw new AccountDeletionError('error', payload?.error ?? error.message);
 }
@@ -1996,7 +1996,7 @@ export async function updateFamilyPerson(personId: string, details: PersonDetail
 export async function setFamilyPersonNickname(personId: string, nickname: string): Promise<void> {
   const { error } = await supabase.rpc('set_family_person_nickname', { p_person_id: personId, p_nickname: nickname.trim() });
   if (error) {
-    if (String(error.code) === 'PGRST202') throw new Error('Nicknames are not switched on yet.');
+    if (String(error.code) === 'PGRST202') throw new Error("Nicknames aren't available yet.");
     throw error;
   }
 }
