@@ -13,9 +13,9 @@ import {
   addFamilyMember, cancelInvitation, fetchFamilyInvites, fetchPlanLimits, leaveFamily, removeFamilyMember, updateMemberRole,
   type PendingInvite,
 } from '../lib/api';
-import { plusPage, useFamilyPlan } from '../lib/family-plan';
+import { plusPage, useFamilyPlan, useOnPlus } from '../lib/family-plan';
 import { DEFAULT_PLAN_LIMITS, type PlanLimits } from '../lib/plans';
-import { ScreenHeader, HeaderButton } from '../components/screen-header';
+import { ScreenHeader, HeaderButton, PlusStar } from '../components/screen-header';
 import { InvitationCards } from '../components/invitation-cards';
 import { longDate } from '../lib/dates';
 import { isPersonalVault, vaultName, vaultSubtitle } from '../lib/vaults';
@@ -50,6 +50,7 @@ export default function FamilyScreen() {
   const [pending, setPending] = useState<PendingInvite[]>([]);
   const [limits, setLimits] = useState<PlanLimits>(DEFAULT_PLAN_LIMITS);
   const { plan } = useFamilyPlan();
+  const onPlus = useOnPlus();
   const [confirmDialog, setConfirmDialog] = useState<{
     title: string; message: string; confirmLabel: string; destructive?: boolean; onConfirm: () => void;
   } | null>(null);
@@ -376,6 +377,8 @@ export default function FamilyScreen() {
                 const initial = name.charAt(0).toUpperCase();
                 const isCurrentUser = m.user_id === user?.id;
                 const isMemberAdmin = m.role === 'admin';
+                // Everyone in a family on Plus is on Plus; you may be through another vault.
+                const starred = plan === 'plus' || (isCurrentUser && onPlus);
                 return (
                   <View key={m.id} style={styles.memberCard}>
                     <LinearGradient
@@ -388,7 +391,9 @@ export default function FamilyScreen() {
                     </LinearGradient>
                     <View style={styles.memberInfo}>
                       <View style={styles.memberNameRow}>
-                        <Text style={styles.memberName}>{name}</Text>
+                        <Text style={styles.memberName} accessibilityLabel={starred ? `${name}, Family Plus` : undefined}>
+                          {starred && <PlusStar />}{name}
+                        </Text>
                         {isCurrentUser && (
                           <View style={styles.youBadge}>
                             <Text style={styles.youBadgeText}>You</Text>

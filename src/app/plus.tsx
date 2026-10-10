@@ -14,12 +14,12 @@ import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFamily } from '../lib/family-context';
 import { isPersonalVault, vaultName } from '../lib/vaults';
-import { useFamilyPlan, usePaymentsStatus, type PlusFeature } from '../lib/family-plan';
+import { forgetOnPlus, useFamilyPlan, usePaymentsStatus, type PlusFeature } from '../lib/family-plan';
 import { PaymentError, createPlusOrder, fetchPlanLimits, verifyPlusPayment } from '../lib/api';
 import { checkoutSupported, openCheckout } from '../lib/razorpay';
 import {
   DEFAULT_PLAN_LIMITS, formatBytes, localCurrency, localPlusAmount, localPlusPrice, localPlusYearlyOffer,
-  localPlusYearlySaving, plusPrice, plusYearlyOffer, type PlanLimits,
+  localPlusYearlySaving, type PlanLimits,
 } from '../lib/plans';
 import { longDate } from '../lib/dates';
 import { ScreenHeader } from '../components/screen-header';
@@ -138,6 +138,7 @@ export default function PlusScreen() {
       try {
         const { paidUntil } = await verifyPlusPayment(result);
         await refresh(true);
+        forgetOnPlus();
         setPayNote({
           tone: 'ok',
           text: `Thank you! ${familyName ?? 'Your family'} has Family Plus until ${longDate(new Date(paidUntil))}.`,
@@ -153,7 +154,7 @@ export default function PlusScreen() {
           tone: 'info',
           text: "We're still confirming your payment. If it went through, Family Plus turns on in a few minutes. You don't need to pay again.",
         });
-        setTimeout(() => { refresh(true); }, 30_000);
+        setTimeout(() => { refresh(true); forgetOnPlus(); }, 30_000);
       }
     } catch (err) {
       setPayNote({ tone: 'error', text: err instanceof Error ? err.message : 'Something went wrong. Please try again.' });
@@ -176,16 +177,26 @@ export default function PlusScreen() {
         <LinearGradient colors={['#2A3D66', '#4A6491']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.hero}>
           <Text style={styles.heroTag}>★ Family Plus</Text>
           <Text style={styles.heroTitle}>More space and more help for your family</Text>
-          <Text style={styles.heroPrice} accessibilityLabel={monthly}>
-            {localPlusAmount('monthly')}
-            <Text style={styles.heroPer}> a month</Text>
-          </Text>
-          <View style={styles.heroYearRow}>
-            <Text style={styles.heroYear} accessibilityLabel={`or ${yearlyOffer}`}>
-              or <YearlyPrice onDark />
-            </Text>
-            <View style={styles.heroSave}>
-              <Text style={styles.heroSaveText}>{localPlusYearlySaving()}</Text>
+          <View style={styles.heroCells}>
+            <View style={styles.heroCell} accessible accessibilityLabel={`Monthly, ${monthly}`}>
+              <Text style={styles.heroCellLabel}>Monthly</Text>
+              {/* As tall as the crossed-out price, so ₹100 sits level with ₹1,100. */}
+              <View style={styles.heroWasSpace} />
+              <Text style={styles.heroAmount}>{localPlusAmount('monthly')}</Text>
+              <Text style={styles.heroPer}>a month</Text>
+            </View>
+            <View
+              style={styles.heroCell}
+              accessible
+              accessibilityLabel={`Yearly, ${yearlyOffer}, ${localPlusYearlySaving()}`}
+            >
+              <Text style={styles.heroCellLabel}>Yearly</Text>
+              <TwelveMonthsPrice onDark style={styles.heroWas} />
+              <Text style={styles.heroAmount}>{localPlusAmount('yearly')}</Text>
+              <Text style={styles.heroPer}>a year</Text>
+              <View style={styles.heroSave}>
+                <Text style={styles.heroSaveText}>{localPlusYearlySaving()}</Text>
+              </View>
             </View>
           </View>
           <Text style={styles.heroNote}>
@@ -331,45 +342,12 @@ export default function PlusScreen() {
           )
         )}
 
-        <Card>
-          <View style={styles.point}>
-            <Feather name="users" size={16} color={color.primary} />
-            <Text style={styles.pointText}>
-              One plan covers up to {limits.members.plus} members. Anyone can be in your family tree, even without an
-              account.
-            </Text>
-          </View>
-          {limits.questions.free != null && (
-            <View style={styles.point}>
-              <Feather name="message-circle" size={16} color={color.primary} />
-              <Text style={styles.pointText}>
-                On Plus, there's no monthly limit on questions. For fair use, one person can ask up to{' '}
-                {limits.questionsFairUse} a month. On Free, each person gets {limits.questions.free} a month, starting
-                again on the 1st.
-              </Text>
-            </View>
-          )}
-          <View style={styles.point}>
-            <Feather name="clock" size={16} color={color.primary} />
-            <Text style={styles.pointText}>
-              If Plus ends and a vault is over its free space, you have {limits.graceDays} days to renew or delete
-              documents. After that, the newest documents over the limit are removed. We'll remind you before then.
-            </Text>
-          </View>
-          <View style={styles.point}>
-            <Feather name="globe" size={16} color={color.primary} />
-            <Text
-              style={styles.pointText}
-              accessibilityLabel={`In India: ${plusPrice('inr')} or ${plusYearlyOffer('inr')}. Elsewhere: ${plusPrice('usd')} or ${plusYearlyOffer('usd')}.`}
-            >
-              In India: {plusPrice('inr')} or <YearlyPrice currency="inr" />.{'\n'}
-              Elsewhere: {plusPrice('usd')} or <YearlyPrice currency="usd" />.
-            </Text>
-          </View>
-        </Card>
-
         <Muted>
-          Expiry reminders show under the bell and on your devices. Birthday reminders come on every plan.
+          {limits.questions.free != null
+            ? `Fair use on Plus: up to ${limits.questionsFairUse} questions a person each month.\n`
+            : ''}
+          If Plus ends and a vault is over its free space, the newest documents over it are removed after{' '}
+          {limits.graceDays} days.
         </Muted>
       </ScrollView>
     </SafeAreaView>
@@ -385,11 +363,20 @@ const styles = StyleSheet.create({
   hero: { borderRadius: radius.card, padding: space.lg, gap: space.xs },
   heroTag: { fontSize: 12, lineHeight: 16, fontWeight: '700', color: '#FBD5D1', letterSpacing: 0.4 },
   heroTitle: { fontSize: 17, lineHeight: 23, fontWeight: '600', color: '#FFFFFF' },
-  heroPrice: { fontSize: 28, lineHeight: 34, fontWeight: '700', color: '#FFFFFF', marginTop: space.sm },
-  heroPer: { fontSize: 15, fontWeight: '500', color: '#DCE3F0' },
-  heroYearRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: space.sm },
-  heroYear: { fontSize: 15, lineHeight: 20, fontWeight: '600', color: '#FFFFFF' },
-  heroSave: { borderRadius: radius.pill, paddingHorizontal: space.sm, paddingVertical: 2, backgroundColor: '#FBD5D1' },
+  heroCells: { flexDirection: 'row', gap: space.sm, marginTop: space.sm },
+  heroCell: {
+    flex: 1, alignItems: 'flex-start', borderRadius: radius.control, padding: space.md,
+    backgroundColor: 'rgba(255, 255, 255, 0.12)', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.18)',
+  },
+  heroCellLabel: { fontSize: 12, lineHeight: 16, fontWeight: '600', color: '#DCE3F0' },
+  heroWas: { fontSize: 13, lineHeight: 18, marginTop: space.xs },
+  heroWasSpace: { height: 18, marginTop: space.xs },
+  heroAmount: { fontSize: 24, lineHeight: 30, fontWeight: '700', color: '#FFFFFF' },
+  heroPer: { fontSize: 13, lineHeight: 18, color: '#DCE3F0' },
+  heroSave: {
+    borderRadius: radius.pill, paddingHorizontal: space.sm, paddingVertical: 2, marginTop: space.sm,
+    backgroundColor: '#FBD5D1',
+  },
   heroSaveText: { fontSize: 12, lineHeight: 16, fontWeight: '700', color: '#8A3B35' },
   heroNote: { fontSize: 13, lineHeight: 18, color: '#DCE3F0' },
   state: {
@@ -441,6 +428,4 @@ const styles = StyleSheet.create({
   },
   soonTag: { fontSize: 12, lineHeight: 16, fontWeight: '700', color: color.accent, textTransform: 'uppercase', letterSpacing: 0.6 },
   soonText: { ...type.body, fontSize: 14, lineHeight: 20, color: color.primary },
-  point: { flexDirection: 'row', alignItems: 'flex-start', gap: space.sm },
-  pointText: { ...type.body, flex: 1, fontSize: 14, lineHeight: 20 },
 });

@@ -12,6 +12,8 @@ import { useFamily } from '../../lib/family-context';
 import { useDrawer } from '../../lib/drawer-context';
 import { fetchRecentDocuments, fetchFamilyStats, fetchUnreadNotificationCount, checkExpiryNotifications } from '../../lib/api';
 import { usePreferences } from '../../lib/preferences';
+import { useOnPlus } from '../../lib/family-plan';
+import { PlusStar } from '../../components/screen-header';
 import { InvitationCards } from '../../components/invitation-cards';
 import { LockOffer } from '../../components/lock-offer';
 import { isPersonalVault, vaultName } from '../../lib/vaults';
@@ -73,6 +75,7 @@ export default function HomeScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const { user } = useAuth();
+  const onPlus = useOnPlus();
   // Home lists the newest documents from every vault together (046), each
   // tagged with the vault it is in, and opens each in its own vault.
   const { families, refreshFamilies } = useFamily();
@@ -166,7 +169,12 @@ export default function HomeScreen() {
                 </TouchableOpacity>
                 <View>
                   <Text style={styles.greeting}>{getTimeGreeting()}</Text>
-                  <Text style={styles.headerTitle}>{displayName}</Text>
+                  <Text
+                    style={styles.headerTitle}
+                    accessibilityLabel={onPlus ? `${displayName}, Family Plus` : undefined}
+                  >
+                    {onPlus && <PlusStar onDark />}{displayName}
+                  </Text>
                 </View>
               </View>
               <TouchableOpacity

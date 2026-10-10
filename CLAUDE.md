@@ -700,7 +700,7 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `emergency.ts` | The emergency card's shape, blood groups (`bloodGroupLabel()`: "A−", "Bombay (hh)"), `telHref()`, and `cardProblem()` — the same checks and messages as `save_emergency_card()`, so the form can say what is wrong before saving |
 | `family-people.ts` | Whose a document can be: everyone in the tree, you first (`useDocumentOwners()`, members only before 031), and a person's expiry badge (`badgeFromExpiries()`) |
 | `plans.ts` | What each plan allows (038–048): the limits as 039–048 set them — storage (on Free 200 MB for a family and 100 MB for a personal vault, `freePersonal`; 10 GB on Plus), 4 members on Free and 8 on Plus, 10 voice chats and 20 questions a month for each person on Free (049; fair use 500 on Plus) (`DEFAULT_PLAN_LIMITS`, used only when the database cannot be asked), Family Plus's prices, monthly and yearly (`PLUS_PRICE`; `localPlusPrice()` / `localPlusPrices()` show rupees in India, dollars elsewhere, by the device's time zone; the yearly one against twelve months, crossed out, and the months it saves: `plusTwelveMonths()`, `plusYearlySaving()`), `storageLevel()`, and the words for a full vault (`storageFullMessage()`; for a chat, `chatStorageFullMessage()`), which live in `supabase/functions/_shared/plan-text.ts` so Gmail import says the same; 050's file limit and the words for its refusals (`MAX_FILE_BYTES`, `fileTooLargeMessage()`, `limitHint()`, `QUESTION_INPUT_MAX`) come from `_shared/limits.ts`. Whether Plus can be bought is the payments function's answer (044: `usePaymentsStatus()`, `plusForSale()`); `PLUS_FOR_SALE` (false) is only what the words assume before it answers |
-| `family-plan.ts` | Is the current family on Family Plus? `useFamilyPlan()` (from `family_storage_status()`, kept a minute per family): `isFree`, and `routeFor(feature, route)`, which sends a free family to `/plus?feature=…` instead of a starred feature. Unknown (before 038, offline) gates nothing. `usePaymentsStatus()`: can Family Plus be bought here (044) |
+| `family-plan.ts` | Is the current family on Family Plus? `useFamilyPlan()` (from `family_storage_status()`, kept a minute per family): `isFree`, and `routeFor(feature, route)`, which sends a free family to `/plus?feature=…` instead of a starred feature. Unknown (before 038, offline) gates nothing. `usePaymentsStatus()`: can Family Plus be bought here (044). `useOnPlus()`: is the signed-in person on Plus in any vault (from `question_status()`, a minute, shared; `forgetOnPlus()` after paying), for the ★ before their name |
 | `file-types.ts` | What a picked file is (`detectFileType()`: MIME type, then name, never a web `blob:` uri) and whether the vault can keep it (PDF, JPG, PNG) |
 | `app-info.ts` | Version, release date and commit (stamped into `extra` by `app.config.ts` at build time), and the support contact Help shows |
 | `ocr.ts` | Platform-split OCR with progress callback; reads the person's chosen languages |
@@ -1400,7 +1400,10 @@ so storage policies live only in `019`.
   pins the prices, and that a year costs a whole number of months. Screen
   readers skip the crossed-out price and hear "₹1,100 a year instead of
   ₹1,200" (`plusYearlyOffer()`, in each `accessibilityLabel`). The Plus
-  page compares Free, Plus Monthly and Plus Yearly side by side.
+  page compares Free, Plus Monthly and Plus Yearly side by side; its banner
+  shows the two prices as two cells, Monthly and Yearly, and under the table
+  it says only what the table cannot: fair use on questions, and what
+  happens when Plus ends.
   Storage is the one cost that keeps growing after a month is paid for, so
   no plan is open-ended. 038 had two Plus plans (5 GB
   monthly, 10 GB yearly); 039 made them one, so how a family pays never
@@ -2157,7 +2160,9 @@ neither calls HuggingFace directly. Three things matter:
   `reembed-index` for every family.** The search screen starts that rebuild
   by itself when an answer reports `debug.index_rebuilding`, so nobody has to
   find the Settings row for search to work; Settings › Search remains the
-  manual route and the place errors are shown in full. **`rag-search` also
+  manual route and the place errors are shown in full — and it shows only
+  when it needs the person (an update an admin can start, one running, or
+  documents that could not be read), never as "Up to date". **`rag-search` also
   starts one server-side**, after its response, whenever it sees a stale
   index — the client path depends on the browser having the current bundle,
   and a stale one leaves the vault with no vectors indefinitely. The work is
@@ -2338,7 +2343,12 @@ rule again once pinned chunks are mixed in.
   Family Plus page, Free and Plus side by side (`/plus`); a new starred
   feature must do the same, through `useFamilyPlan().routeFor()` and a
   redirect in its own screen, and get a row on that page. Each shows the tag
-  where you find it, and Help's FAQ names them all. Every plan, Free
+  where you find it, and Help's FAQ names them all. A person on Plus (any
+  vault they are in, 049's `person_on_plus()`) has a ★ before their own name
+  — the drawer, Home, Settings, Manage Family (`useOnPlus()` from
+  `question_status()`, `<PlusStar />`) — and in Manage Family every member
+  of a family on Plus has one; never another member's Plus through some
+  other family, which is not theirs to see. Every plan, Free
   included, has a storage limit the server keeps (see
   [Plans and storage limits](#plans-and-storage-limits--every-plan-has-a-limit-038-039)).
 - **Never give a web panel `flex` for its width.** On react-native-web
