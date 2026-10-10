@@ -16,8 +16,8 @@ export const MAX_FILE_BYTES = 10 * 1024 * 1024;
 export function fileTooLargeMessage(bytes: number): string {
   const mb = bytes / (1024 * 1024);
   const size = `${mb >= 100 ? Math.round(mb) : Math.round(mb * 10) / 10} MB`;
-  return `This file is ${size}. AskLocker takes files up to ${MAX_FILE_BYTES / (1024 * 1024)} MB. `
-    + 'Scan it again at a lower quality, or save it in parts.';
+  return `This file is ${size}. The limit is ${MAX_FILE_BYTES / (1024 * 1024)} MB. `
+    + 'Try a lower-quality scan, or split it into parts.';
 }
 
 /**

@@ -26,7 +26,7 @@ const json = (status: number, body: Record<string, unknown>) =>
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 
-const GONE = { status: "gone", error: "This link has expired, was turned off, or has been opened too many times. Ask whoever sent it for a new one." };
+const GONE = { status: "gone", error: "This link no longer works. Ask whoever sent it for a new one." };
 const SECRET = /^[0-9a-f]{64}$/;
 const FIVE_MINUTES = 300;
 

@@ -82,11 +82,11 @@ Deno.serve(async (req) => {
       if (error.code === "PGRST202" || /could not find the function/i.test(error.message)) {
         return json(503, {
           status: "needs_migration",
-          error: "Linking someone to their account needs a database update that has not been applied here yet (migration 037).",
+          error: "Linking someone to their account is not switched on yet.",
         });
       }
       if (error.code === "42501") {
-        return json(403, { error: "Only a family admin can link someone to their account" });
+        return json(403, { error: "Only a family admin can link accounts." });
       }
       // The family has no room for them (041), in the database's own words.
       if (error.hint === "family_full") {
@@ -115,7 +115,7 @@ Deno.serve(async (req) => {
       case "merged":
         return json(200, { success: true, ...result });
       case "already_invited":
-        return json(409, { ...result, error: `${result.email ?? "Someone"} has been invited to be this person already. Withdraw that invitation first.` });
+        return json(409, { ...result, error: `${result.email ?? "Someone"} is already invited as this person. Withdraw that invitation first.` });
       case "already_linked":
         return json(409, { ...result, error: `${result.display_name ?? "This person"} is already linked to an account.` });
       case "already_member":
@@ -125,7 +125,7 @@ Deno.serve(async (req) => {
       case "no_account":
         return json(404, {
           status: "no_account",
-          error: "No AskLocker account uses this email yet. Ask them to sign in to AskLocker once with Google, using this email, then link them again.",
+          error: "Nobody uses this email on AskLocker yet. Ask them to sign in once with Google using this email. Then link them again.",
         });
       case "invalid_email":
         return json(400, { status: "invalid_email", error: "That doesn't look like an email address." });

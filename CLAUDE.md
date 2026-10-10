@@ -1551,7 +1551,7 @@ so storage policies live only in `019`.
   before stay.
 - **Plus is offered where it is felt**: after an upload in a free vault that
   found a future expiry date ("It expires on 12 March 2027. ★ With Family
-  Plus, everyone gets a reminder…", `fetchDocumentExpiry()`), on Ask when
+  Plus, everyone gets reminders…", `fetchDocumentExpiry()`), on Ask when
   questions run low, in Manage Family when it is full, and on the share
   sheet's ★ 30 days. Each opens `/plus?feature=…` (`reminders`,
   `questions`, `members`, `links`), which marks its row.
@@ -2316,6 +2316,16 @@ rule again once pinned chunks are mixed in.
   AskLocker, so change it with any change to sharing, search, OCR,
   embeddings, voice or Gmail import. The app made such claims until
   7 October 2026.
+- **Copy is short and plain** (since 10 October 2026, when the owner said
+  the app's text read as AI-written and every screen was cut by half or
+  more). A screen intro is one sentence, a card one or two, a Help answer
+  two or three, an error what happened and what to do. Talk to the person
+  as "you", in plain words; steps are imperatives ("Tap Share, then Make a
+  link"). No em-dash asides, semicolons or colon-then-explanation, no
+  account of how the server works or why a limit exists, no lists of every
+  edge case, and none of "just for you", "simply", "please note". Numbers
+  always come from the constants, never typed in. Explanations belong in
+  this file, not on a screen.
 - **★ Family Plus marks what only Plus families get** (`<PlusTag />`):
   10 GB instead of 200 MB (100 MB for a personal vault), questions with no
   monthly limit (on Free, each person has 20 a month, 049), voice chats with

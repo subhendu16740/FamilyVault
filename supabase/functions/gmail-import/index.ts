@@ -62,7 +62,7 @@ Deno.serve(async (req) => {
       .select('id, message_id, part_id, file_name')
       .maybeSingle();
     if (!item) {
-      return json(409, { status: 'not_available', error: 'This file is already imported or being imported, or is not yours to import.' });
+      return json(409, { status: 'not_available', error: 'This file is already imported or being imported.' });
     }
     claimedId = item.id;
 
@@ -71,7 +71,7 @@ Deno.serve(async (req) => {
       .select('refresh_token_enc, expired_at')
       .eq('user_id', userId)
       .maybeSingle();
-    if (!conn) throw new ImportProblem('Gmail is not connected any more.');
+    if (!conn) throw new ImportProblem('Gmail is no longer connected. Connect it again.');
     if (conn.expired_at) throw new GmailError('Gmail access has expired', 401, 'expired');
 
     // 2–3. Find the part again and download it.
@@ -79,11 +79,11 @@ Deno.serve(async (req) => {
     const message = await getMessage(token, item.message_id);
     const part = attachmentParts(message.payload).find((p) => p.partId === item.part_id);
     if (!part) throw new ImportProblem('This attachment is no longer in Gmail.');
-    if (part.size > MAX_IMPORT_BYTES) throw new ImportProblem(`Larger than ${MAX_IMPORT_BYTES / (1024 * 1024)} MB — too big to import.`);
+    if (part.size > MAX_IMPORT_BYTES) throw new ImportProblem(`Files over ${MAX_IMPORT_BYTES / (1024 * 1024)} MB can't be imported.`);
 
     const bytes = await getAttachment(token, item.message_id, part.attachmentId);
     const kind = sniffType(bytes);
-    if (!kind) throw new ImportProblem('This file is not really a PDF or a photo, whatever its name says.');
+    if (!kind) throw new ImportProblem("This file isn't really a PDF or a photo.");
     const sha = await sha256Hex(bytes);
 
     // 4. The same file already imported into this family: point at it.
@@ -117,7 +117,7 @@ Deno.serve(async (req) => {
     const r = (rooms as Array<{ plan: string; limit_bytes: number; used_bytes: number; personal?: boolean }> | null)?.[0];
     if (r) {
       if (r.plan !== 'plus') {
-        throw new ImportProblem('Import from Gmail is part of Family Plus. Settings › Family Plus shows what it includes.');
+        throw new ImportProblem('Import from Gmail comes with Family Plus. See Settings › Family Plus.');
       }
       const room: StorageRoom = {
         plan: 'plus',
@@ -166,10 +166,10 @@ Deno.serve(async (req) => {
     try {
       const result = await ingestDocument(supabase, { familyId: family_id, namespace: family.storage_namespace, documentId, storagePath });
       chunks = result.chunks;
-      if (result.empty) unreadable = result.reason ?? 'No text could be read from this file';
+      if (result.empty) unreadable = result.reason ?? "We couldn't read any text in this file.";
     } catch (err) {
       console.error('[gmail-import] ingestion failed:', err);
-      unreadable = 'Saved, but reading it failed; it will be retried when the search index is rebuilt.';
+      unreadable = "We couldn't read it yet. We'll try again later.";
     }
 
     return json(200, { status: 'imported', document_id: documentId, chunks, ...(unreadable ? { unreadable } : {}) });

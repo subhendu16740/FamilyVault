@@ -301,7 +301,7 @@ export default function PlusScreen() {
                   )}
                 </TouchableOpacity>
                 <Text style={styles.payFine}>
-                  Pay with UPI, card or net banking on Razorpay. Nothing renews by itself.
+                  Pay by UPI, card or net banking through Razorpay. Nothing renews by itself.
                   {plan === 'plus' ? ' New time is added to what you have left.' : ''}
                 </Text>
               </>

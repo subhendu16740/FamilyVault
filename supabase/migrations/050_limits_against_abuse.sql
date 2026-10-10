@@ -230,7 +230,7 @@ BEGIN
      OR left(p_storage_path, length(v_schema) + 1) <> v_schema || '/'
      OR length(p_storage_path) = length(v_schema) + 1
      OR p_storage_path ~ '(^|/)\.\.?(/|$)' OR p_storage_path ~ '//' OR position(E'\\' IN p_storage_path) > 0 THEN
-    RAISE EXCEPTION 'A document''s file must be in its own vault''s folder.'
+    RAISE EXCEPTION 'That file is not in this vault.'
       USING ERRCODE = '42501', HINT = 'bad_path';
   END IF;
 
@@ -239,7 +239,7 @@ BEGIN
     FROM storage.objects o
    WHERE o.bucket_id = 'documents' AND o.name = p_storage_path;
   IF NOT FOUND THEN
-    RAISE EXCEPTION 'The file for this document is not in the vault. Try adding it again.'
+    RAISE EXCEPTION 'The file is missing. Try adding it again.'
       USING ERRCODE = 'P0001', HINT = 'no_file';
   END IF;
 
@@ -247,7 +247,7 @@ BEGIN
   EXECUTE format('SELECT EXISTS (SELECT 1 FROM %I.documents d WHERE d.storage_path = $1)', v_schema)
      INTO v_taken USING p_storage_path;
   IF v_taken THEN
-    RAISE EXCEPTION 'Another document in this vault already holds this file.'
+    RAISE EXCEPTION 'Another document already uses this file.'
       USING ERRCODE = '42501', HINT = 'bad_path';
   END IF;
 
@@ -255,8 +255,8 @@ BEGIN
   IF NOT (v_claim->>'allowed')::boolean THEN
     RAISE EXCEPTION '%',
       CASE WHEN (v_claim->>'plus')::boolean
-        THEN format('You have added %s documents today, the most one person can add in a day. You can add more tomorrow.', v_claim->>'limit')
-        ELSE format('You have added %s documents today, the most on Free. You can add more tomorrow.', v_claim->>'limit')
+        THEN format('You have reached today''s limit of %s documents. You can add more tomorrow.', v_claim->>'limit')
+        ELSE format('You have reached today''s limit of %s documents on Free. You can add more tomorrow.', v_claim->>'limit')
       END
       USING ERRCODE = 'P0001', HINT = 'upload_limit';
   END IF;
@@ -368,8 +368,8 @@ begin
     ) >= v_cap then
       raise exception '%',
         case when v_cap = 0
-          then 'On Free, families are created by people whose family is on Family Plus. Ask someone in your family to invite you instead.'
-          else format('On Free, each person can create %s, besides their personal vault. To create another, move the family you created to Family Plus.',
+          then 'On Free, you cannot create a family. Ask someone in your family to invite you instead.'
+          else format('On Free, you can create %s besides your personal vault. To create another, move a family you created to Family Plus.',
                       case when v_cap = 1 then 'one family' else v_cap || ' families' end)
         end
         using errcode = 'P0001', hint = 'family_limit';
@@ -532,7 +532,7 @@ BEGIN
   PERFORM pg_advisory_xact_lock(hashtext('saved_chats:' || NEW.user_id::text || ':' || NEW.family_id::text));
   IF (SELECT count(*) FROM public.saved_chats c
        WHERE c.user_id = NEW.user_id AND c.family_id = NEW.family_id) >= 50 THEN
-    RAISE EXCEPTION 'You can keep 50 saved chats in a vault. Delete one you no longer need, then save this one.'
+    RAISE EXCEPTION 'You can keep 50 saved chats in a vault. Delete one to save this one.'
       USING ERRCODE = 'P0001', HINT = 'chat_limit';
   END IF;
   RETURN NEW;
@@ -557,7 +557,7 @@ AS $fn$
 BEGIN
   IF (SELECT count(*) FROM public.feedback f
        WHERE f.user_id = NEW.user_id AND f.created_at > now() - interval '1 day') >= 10 THEN
-    RAISE EXCEPTION 'Thank you — you have sent 10 messages today, which is as many as we take in a day. Please send this one tomorrow.'
+    RAISE EXCEPTION 'Thank you! You can send 10 messages a day. Please send this one tomorrow.'
       USING ERRCODE = 'P0001', HINT = 'feedback_limit';
   END IF;
   RETURN NEW;
@@ -583,7 +583,7 @@ BEGIN
   IF NEW.user_id IS NULL AND (
     SELECT count(*) FROM public.family_people p WHERE p.family_id = NEW.family_id
   ) >= 300 THEN
-    RAISE EXCEPTION 'A family tree can have up to 300 people, and this one is full.'
+    RAISE EXCEPTION 'This family tree is full at 300 people.'
       USING ERRCODE = 'P0001', HINT = 'tree_full';
   END IF;
   RETURN NEW;
@@ -633,7 +633,7 @@ BEGIN
   IF (SELECT count(*) FROM public.document_shares s
        WHERE s.family_id = NEW.family_id AND s.document_id = NEW.document_id
          AND s.revoked_at IS NULL AND s.expires_at > now()) >= 20 THEN
-    RAISE EXCEPTION 'This document has 20 links that still work. Turn one off before making another.'
+    RAISE EXCEPTION 'This document has 20 working links. Turn one off to make another.'
       USING ERRCODE = 'P0001', HINT = 'share_limit';
   END IF;
   RETURN NEW;
@@ -705,13 +705,13 @@ BEGIN
   IF (SELECT count(*) FROM public.audit_logs a
        WHERE a.family_id = NEW.family_id AND a.action = 'invite_sent'
          AND a.created_at > now() - interval '1 day') >= 20 THEN
-    RAISE EXCEPTION 'This family has sent 20 invitations today, the most in a day. You can invite more tomorrow.'
+    RAISE EXCEPTION 'This family has sent 20 invitations today. You can invite more tomorrow.'
       USING ERRCODE = 'P0001', HINT = 'invite_limit';
   END IF;
   IF (SELECT count(*) FROM public.audit_logs a
        WHERE a.family_id = NEW.family_id AND a.action = 'invite_sent' AND a.resource_id = NEW.user_id
          AND a.created_at > now() - interval '1 day') >= 3 THEN
-    RAISE EXCEPTION 'This person has been invited 3 times today. Please wait until tomorrow before asking them again.'
+    RAISE EXCEPTION 'This person was invited 3 times today. You can ask them again tomorrow.'
       USING ERRCODE = 'P0001', HINT = 'invite_limit';
   END IF;
   RETURN NEW;

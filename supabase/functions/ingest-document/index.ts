@@ -35,11 +35,11 @@ const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
 const REFUSALS: Record<string, [number, string]> = {
-  no_document: [404, 'There is no such document in this vault.'],
-  no_file: [404, "This document's file is not in the vault."],
-  bad_path: [400, "That is not this document's file."],
-  already_read: [409, 'This document has been read already.'],
-  read_limit: [429, 'You have added as many documents as you can today. They will be read when you add them again tomorrow.'],
+  no_document: [404, "We can't find this document in this vault."],
+  no_file: [404, "This document's file is missing. Try adding it again."],
+  bad_path: [400, "That file doesn't belong to this document."],
+  already_read: [409, 'This document was already read.'],
+  read_limit: [429, "You've added as many documents as you can today. Add this one again tomorrow."],
 };
 
 Deno.serve(async (req) => {

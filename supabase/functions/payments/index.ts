@@ -87,7 +87,7 @@ Deno.serve(async (req) => {
       if (!KEY_ID || !KEY_SECRET) return json(503, NOT_CONFIGURED);
       const cur = (typeof currency === 'string' ? currency.toUpperCase() : 'INR') as RazorpayCurrency;
       if (!CURRENCIES.includes(cur)) {
-        return json(400, { status: 'currency', error: 'Paying in this currency is not switched on yet.' });
+        return json(400, { status: 'currency', error: "You can't pay in this currency yet." });
       }
 
       const amount = plusOrderAmount(period, cur);
@@ -165,7 +165,7 @@ Deno.serve(async (req) => {
         if (missingTable(readErr)) return json(503, NEEDS_MIGRATION);
         throw readErr;
       }
-      if (!order) return json(404, { status: 'no_order', error: 'That payment was not started here.' });
+      if (!order) return json(404, { status: 'no_order', error: "We couldn't find that payment." });
       const auth = await requireFamilyMember(req, supabase, order.family_id);
       if (!auth.ok) return auth.response;
 
@@ -173,7 +173,7 @@ Deno.serve(async (req) => {
       if (order.status === 'paid') return json(200, { status: 'paid', paid_until: order.paid_until });
       if (!KEY_ID || !KEY_SECRET) return json(503, NOT_CONFIGURED);
       if (!(await paymentSignatureOk(orderId, paymentId, signature, KEY_SECRET))) {
-        return json(400, { status: 'bad_signature', error: 'That payment could not be confirmed.' });
+        return json(400, { status: 'bad_signature', error: "We couldn't confirm that payment." });
       }
 
       let payment = await razorpay(`/payments/${paymentId}`);
@@ -184,7 +184,7 @@ Deno.serve(async (req) => {
       const p = payment.data;
       if (p.order_id !== orderId || Number(p.amount) !== order.amount || String(p.currency) !== order.currency) {
         console.error('[payments] payment does not match its order', orderId, paymentId);
-        return json(400, { status: 'bad_signature', error: 'That payment could not be confirmed.' });
+        return json(400, { status: 'bad_signature', error: "We couldn't confirm that payment." });
       }
       if (p.status === 'authorized') {
         payment = await razorpay(`/payments/${paymentId}/capture`, {
@@ -192,7 +192,7 @@ Deno.serve(async (req) => {
         });
       }
       if (!payment.ok || payment.data.status !== 'captured') {
-        return json(402, { status: 'not_paid', error: 'The payment has not gone through. Nothing was charged for Family Plus.' });
+        return json(402, { status: 'not_paid', error: "The payment didn't go through. You weren't charged." });
       }
 
       const { data: paidUntil, error: applyErr } = await supabase.rpc('apply_plan_payment', {

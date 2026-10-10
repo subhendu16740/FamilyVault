@@ -87,25 +87,25 @@ export function questionLimitMessage(a: QuestionAllowance, language?: string): s
     const t = a.triesLimit ?? a.tries ?? 0;
     if (hi) {
       return a.plus
-        ? `आपने आज ${t} सवाल पूछ लिए हैं, जो एक व्यक्ति के लिए एक दिन में सबसे ज़्यादा हैं। कल फिर से पूछ सकते हैं।`
-        : `आपने आज ${t} सवाल पूछ लिए हैं, जो Free में एक दिन में सबसे ज़्यादा हैं। हर सवाल गिना जाता है, जवाब मिले या नहीं। कल फिर से पूछ सकते हैं।`;
+        ? `आज के लिए ${t} सवालों की सीमा पूरी हो गई। कल फिर से पूछ सकते हैं।`
+        : `Free में आज के लिए ${t} सवालों की सीमा पूरी हो गई। हर सवाल गिना जाता है, जवाब मिले या नहीं। कल फिर से पूछ सकते हैं।`;
     }
     return a.plus
-      ? `You have asked ${t} questions today, the most one person can ask in a day. You can ask again tomorrow.`
-      : `You have asked ${t} questions today, the most on Free in a day. Every question counts here, answered or not. You can ask again tomorrow.`;
+      ? `You've reached today's limit of ${t} questions. You can ask again tomorrow.`
+      : `You've reached today's limit of ${t} questions on Free. Every question counts, answered or not. You can ask again tomorrow.`;
   }
   const day = resetDay(a.resetsOn, hi ? 'hi' : 'en');
   const n = a.ceiling ?? a.used;
   if (hi) {
     const again = day ? ` ये ${day} को फिर से मिलेंगे।` : ' ये अगले महीने फिर से मिलेंगे।';
     return a.plus
-      ? `आपने इस महीने ${n} सवाल पूछ लिए हैं, जो एक व्यक्ति के लिए सबसे ज़्यादा हैं।${again}`
-      : `आपने इस महीने के अपने ${n} मुफ़्त सवाल पूछ लिए हैं।${again} Family Plus में हर महीने सवालों की कोई सीमा नहीं है।`;
+      ? `इस महीने के लिए ${n} सवालों की सीमा पूरी हो गई।${again}`
+      : `इस महीने के आपके ${n} मुफ़्त सवाल पूरे हो गए।${again} Family Plus में सवालों की कोई मासिक सीमा नहीं है।`;
   }
   const again = day ? ` They start again on ${day}.` : ' They start again next month.';
   return a.plus
-    ? `You have asked ${n} questions this month, the most one person can ask.${again}`
-    : `You have asked your ${n} free questions for this month.${again} With Family Plus there is no monthly limit.`;
+    ? `You've reached the fair-use limit of ${n} questions this month.${again}`
+    : `You've used your ${n} free questions for this month.${again} Family Plus has no monthly limit.`;
 }
 
 /**
@@ -117,11 +117,11 @@ export function questionsLeftText(a: QuestionAllowance): string | null {
     // Plus: say nothing until fair use is close.
     if (a.ceiling == null || a.left == null || a.left > 50) return null;
     return a.left === 0
-      ? `You have asked the most questions one person can this month`
+      ? `You've reached this month's fair-use limit`
       : `${a.left} of ${a.ceiling} questions left this month`;
   }
   const left = a.left ?? Math.max(a.limit - a.used, 0);
-  if (left === 0) return `You have used your ${a.limit} free questions this month`;
+  if (left === 0) return `You've used your ${a.limit} free questions this month`;
   return `${left} of ${a.limit} free question${a.limit === 1 ? '' : 's'} left this month`;
 }
 

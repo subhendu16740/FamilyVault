@@ -75,11 +75,11 @@ Deno.serve(async (req) => {
       if (error.code === "PGRST202" || /could not find the function/i.test(error.message)) {
         return json(503, {
           status: "needs_migration",
-          error: "Adding members needs a database update that has not been applied here yet (migration 037).",
+          error: "Adding members is not switched on yet.",
         });
       }
       if (error.code === "42501") {
-        return json(403, { error: "Only a family admin can add members" });
+        return json(403, { error: "Only a family admin can add members." });
       }
       // The family has no room (041): the database's own words say how full
       // it is and what makes room.
@@ -105,11 +105,11 @@ Deno.serve(async (req) => {
       case "already_member":
         return json(409, { ...result, error: `${result.display_name ?? "This person"} is already in this family.` });
       case "already_invited":
-        return json(409, { ...result, error: "They have been invited already. They join once they accept." });
+        return json(409, { ...result, error: "They're already invited. They'll join once they accept." });
       case "no_account":
         return json(404, {
           status: "no_account",
-          error: "No AskLocker account uses this email yet. Ask them to sign in to AskLocker once with Google, using this email, then add them again.",
+          error: "Nobody uses this email on AskLocker yet. Ask them to sign in once with Google using this email. Then add them again.",
         });
       case "invalid_email":
         return json(400, { status: "invalid_email", error: "That doesn't look like an email address." });

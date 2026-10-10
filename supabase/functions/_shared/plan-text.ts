@@ -194,20 +194,19 @@ export interface StorageMessageOptions {
 export function storageFullMessage(room: StorageRoom, fileBytes = 0, options: StorageMessageOptions = {}): string {
   const { limits = DEFAULT_PLAN_LIMITS, price, removalOn, forSale = PLUS_FOR_SALE } = options;
   const left = Math.max(0, room.limitBytes - room.usedBytes);
-  const on = `${formatBytes(room.limitBytes)} on ${planLabel(room.plan)}`;
   const head = left === 0 || fileBytes === 0
-    ? `${room.personal ? 'Your personal vault is full' : "Your family's storage is full"}: ${formatBytes(room.usedBytes)} used of ${on}.`
-    : `This file is ${formatBytes(fileBytes)}, and ${room.personal ? 'your personal vault' : 'your family'} has ${formatBytes(left)} left of ${on}.`;
+    ? `${room.personal ? 'Your personal vault' : "Your family's storage"} is full, with ${formatBytes(room.usedBytes)} of ${formatBytes(room.limitBytes)} used.`
+    : `This file is ${formatBytes(fileBytes)}, but ${room.personal ? 'your personal vault' : 'your family'} has only ${formatBytes(left)} left.`;
 
-  const free = 'Delete documents you no longer need';
+  const free = "Delete documents you don't need";
   const plus = `${formatBytes(limits.plus)}${price ? ` for ${price}` : ''}`;
   let more: string;
   if (room.plan === 'free' && removalOn) {
-    more = `Family Plus has ended: on ${removalOn}, the newest documents above ${formatBytes(room.limitBytes)} will be removed, unless it is renewed or you delete documents to get under ${formatBytes(room.limitBytes)}.`;
+    more = `Family Plus has ended. On ${removalOn}, the newest documents over ${formatBytes(room.limitBytes)} will be removed. Renew, or delete documents to get under ${formatBytes(room.limitBytes)}.`;
   } else if (room.plan === 'free') {
     more = forSale
-      ? `${free}, or move to Family Plus: ${plus}.`
-      : `${free} to make room. Family Plus, coming soon, gives ${plus}.`;
+      ? `${free}, or move to Family Plus and get ${plus}.`
+      : `${free}. Family Plus is coming soon, with ${plus}.`;
   } else {
     more = `${free} to make room.`;
   }
@@ -220,10 +219,10 @@ export function storageFullMessage(room: StorageRoom, fileBytes = 0, options: St
  */
 export function chatStorageFullMessage(room: StorageRoom, options: Omit<StorageMessageOptions, 'removalOn'> = {}): string {
   const { limits = DEFAULT_PLAN_LIMITS, price, forSale = PLUS_FOR_SALE } = options;
-  const head = `There is no room to save this chat: ${room.personal ? 'your personal vault' : 'your family'} has used ${formatBytes(room.usedBytes)} of its ${formatBytes(room.limitBytes)}.`;
-  if (room.plan !== 'free') return `${head} Delete documents or saved chats you no longer need to make room.`;
+  const head = `There's no room to save this chat. ${room.personal ? 'Your personal vault' : 'Your family'} has used ${formatBytes(room.usedBytes)} of ${formatBytes(room.limitBytes)}.`;
+  if (room.plan !== 'free') return `${head} Delete documents or saved chats you don't need to make room.`;
   const plus = `${formatBytes(limits.plus)}${price ? ` for ${price}` : ''}`;
   return forSale
-    ? `${head} Saving more needs Family Plus: ${plus}. Or delete documents you no longer need.`
-    : `${head} Saving more needs Family Plus, coming soon: ${plus}. Until then, delete documents you no longer need.`;
+    ? `${head} To save more, move to Family Plus and get ${plus}. Or delete documents you don't need.`
+    : `${head} Family Plus is coming soon, with ${plus}. Until then, delete documents you don't need.`;
 }
