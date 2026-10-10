@@ -35,9 +35,9 @@ export default function ProfileScreen() {
     const trimmed = name.trim();
     const number = phone.trim();
     if (!trimmed) { setStatus({ kind: 'error', text: 'Please type your name.' }); return; }
-    if (trimmed.length > 60) { setStatus({ kind: 'error', text: 'Please use a shorter name — 60 letters at most.' }); return; }
+    if (trimmed.length > 60) { setStatus({ kind: 'error', text: 'Your name can be up to 60 letters.' }); return; }
     if (number && !/^\+?[\d\s()-]{6,20}$/.test(number)) {
-      setStatus({ kind: 'error', text: 'That does not look like a phone number. Use digits, and + for the country code.' });
+      setStatus({ kind: 'error', text: "That doesn't look like a phone number. Use digits, with + for the country code." });
       return;
     }
     setSaving(true);
@@ -47,10 +47,10 @@ export default function ProfileScreen() {
       refreshMembers().catch(() => {});
       setStatus({
         kind: 'ok',
-        text: familySees ? 'Saved.' : 'Saved. Your family will see the new name after the next AskLocker update.',
+        text: familySees ? 'Saved.' : 'Saved. Your family will see the new name after the next update.',
       });
     } catch (err: any) {
-      setStatus({ kind: 'error', text: err?.message || 'Could not save. Please try again.' });
+      setStatus({ kind: 'error', text: err?.message || "Couldn't save. Please try again." });
     } finally {
       setSaving(false);
     }
@@ -68,7 +68,7 @@ export default function ProfileScreen() {
             onChangeText={(t) => { setName(t); setStatus(null); }}
             autoComplete="name"
             maxLength={60}
-            hint="Your family sees this name on documents and in the member list."
+            hint="Your family sees this name."
           />
           <Field
             label="Phone number (optional)"
@@ -83,7 +83,7 @@ export default function ProfileScreen() {
             label="Email"
             value={user?.email ?? ''}
             editable={false}
-            hint="This is the address you sign in with. It cannot be changed here."
+            hint="You sign in with this address. It can't be changed here."
           />
           {status && <Status kind={status.kind}>{status.text}</Status>}
           <PrimaryButton label="Save" onPress={save} busy={saving} icon="check" />

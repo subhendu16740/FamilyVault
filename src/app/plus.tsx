@@ -50,12 +50,12 @@ function rows(limits: PlanLimits): Row[] {
       label: limits.members.plus > limits.members.free ? '★ Members who sign in' : 'Members who sign in',
       free: String(limits.members.free), plus: String(limits.members.plus), feature: 'members',
     },
-    { label: 'Add and scan documents, read in Indian languages too', free: true, plus: true },
+    { label: 'Add and scan documents, Indian languages too', free: true, plus: true },
     // Before 049 nobody's questions are counted, on either plan.
     limits.questions.free == null
       ? { label: 'Ask about your documents', free: true, plus: true }
       : {
-        label: '★ Questions about your documents', free: questionsCell(limits.questions.free),
+        label: '★ Questions', free: questionsCell(limits.questions.free),
         plus: questionsCell(limits.questions.plus), feature: 'questions',
       },
     { label: 'Family tree and emergency cards', free: true, plus: true },
@@ -63,27 +63,27 @@ function rows(limits: PlanLimits): Row[] {
     // 049 also makes a 30-day link part of Plus; before it, every plan has them.
     limits.questions.free == null
       ? { label: 'Share a document by link', free: true, plus: true }
-      : { label: '★ Share a document by link', free: 'Up to 7 days', plus: 'Up to 30 days', feature: 'links' },
+      : { label: '★ Share links', free: 'Up to 7 days', plus: 'Up to 30 days', feature: 'links' },
     {
-      label: '★ Voice chats: ask by voice, hear the answer', free: voiceCell(limits.voiceAnswers.free), plus: voiceCell(limits.voiceAnswers.plus),
+      label: '★ Voice chats', free: voiceCell(limits.voiceAnswers.free), plus: voiceCell(limits.voiceAnswers.plus),
       feature: 'voice',
     },
     {
-      label: '★ Expiry reminders before anything runs out, and every date in one list', free: false, plus: true,
+      label: '★ Expiry reminders', free: false, plus: true,
       feature: 'reminders',
     },
-    { label: '★ Import documents from Gmail', free: false, plus: true, feature: 'gmail' },
+    { label: '★ Import from Gmail', free: false, plus: true, feature: 'gmail' },
   ];
 }
 
 const BROUGHT_BY: Record<PlusFeature, { icon: string; text: string }> = {
-  reminders: { icon: 'clock', text: 'Expiry reminders, and the Reminders page, are part of Family Plus.' },
-  gmail: { icon: 'mail', text: 'Import from Gmail is part of Family Plus.' },
-  storage: { icon: 'hard-drive', text: 'More space for documents and saved chats is part of Family Plus.' },
-  voice: { icon: 'mic', text: 'Asking by voice and hearing every answer, with no limit, is part of Family Plus.' },
-  questions: { icon: 'message-circle', text: 'Asking questions with no monthly limit is part of Family Plus.' },
-  members: { icon: 'users', text: 'More members who sign in are part of Family Plus.' },
-  links: { icon: 'link', text: 'Share links that last 30 days are part of Family Plus.' },
+  reminders: { icon: 'clock', text: 'Expiry reminders come with Family Plus.' },
+  gmail: { icon: 'mail', text: 'Import from Gmail comes with Family Plus.' },
+  storage: { icon: 'hard-drive', text: 'More space comes with Family Plus.' },
+  voice: { icon: 'mic', text: 'Voice chats with no limit come with Family Plus.' },
+  questions: { icon: 'message-circle', text: 'Questions with no monthly limit come with Family Plus.' },
+  members: { icon: 'users', text: 'Room for more members comes with Family Plus.' },
+  links: { icon: 'link', text: '30-day share links come with Family Plus.' },
 };
 
 const said = (cell: Cell) => (cell === true ? 'yes' : cell === false ? 'no' : cell);
@@ -131,7 +131,7 @@ export default function PlusScreen() {
       const result = await openCheckout(order);
       if (result.status === 'closed' || result.status === 'unsupported') return;
       if (result.status === 'failed') {
-        setPayNote({ tone: 'error', text: `${result.reason} Nothing was charged for Family Plus.` });
+        setPayNote({ tone: 'error', text: `${result.reason} You weren't charged.` });
         return;
       }
       setPayNote({ tone: 'info', text: 'Payment received. Switching on Family Plus…' });
@@ -151,7 +151,7 @@ export default function PlusScreen() {
         // through switches Plus on even when this check could not finish.
         setPayNote({
           tone: 'info',
-          text: "We're confirming your payment with Razorpay. If it went through, Family Plus switches on within a few minutes — there's no need to pay again.",
+          text: "We're still confirming your payment. If it went through, Family Plus turns on in a few minutes. You don't need to pay again.",
         });
         setTimeout(() => { refresh(true); }, 30_000);
       }
@@ -175,7 +175,7 @@ export default function PlusScreen() {
 
         <LinearGradient colors={['#2A3D66', '#4A6491']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.hero}>
           <Text style={styles.heroTag}>★ Family Plus</Text>
-          <Text style={styles.heroTitle}>More space and more help, for the whole family</Text>
+          <Text style={styles.heroTitle}>More space and more help for your family</Text>
           <Text style={styles.heroPrice} accessibilityLabel={monthly}>
             {localPlusAmount('monthly')}
             <Text style={styles.heroPer}> a month</Text>
@@ -205,8 +205,8 @@ export default function PlusScreen() {
             <Feather name="alert-triangle" size={18} color="#B91C1C" />
             <Text style={[styles.stateText, { color: '#B91C1C' }]}>
               Family Plus has ended for {familyName ?? 'your family'}. On {longDate(new Date(removalAt))}, the newest
-              documents above {formatBytes(freeHere)} will be removed, unless Family Plus is renewed or documents are
-              deleted to get under {formatBytes(freeHere)}.
+              documents over {formatBytes(freeHere)} will be removed. Renew, or delete documents to get under{' '}
+              {formatBytes(freeHere)}.
             </Text>
           </View>
         ) : plan === 'free' ? (
@@ -270,7 +270,7 @@ export default function PlusScreen() {
           <Card style={styles.payCard}>
             <Text style={styles.payTitle}>{plan === 'plus' ? 'Add more time' : 'Get Family Plus'}</Text>
             {!checkoutSupported ? (
-              <Text style={styles.payFine}>Paying for Family Plus is on the AskLocker web app for now.</Text>
+              <Text style={styles.payFine}>For now, you can pay on the AskLocker web app.</Text>
             ) : !canPayHere ? (
               <Text style={styles.payFine}>Paying from outside India is coming soon.</Text>
             ) : (
@@ -301,8 +301,8 @@ export default function PlusScreen() {
                   )}
                 </TouchableOpacity>
                 <Text style={styles.payFine}>
-                  By UPI, card or net banking, through Razorpay. Nothing renews by itself:{' '}
-                  {plan === 'plus' ? 'the time is added to what is left.' : 'you pay again only when you want more time.'}
+                  Pay with UPI, card or net banking on Razorpay. Nothing renews by itself.
+                  {plan === 'plus' ? ' New time is added to what you have left.' : ''}
                 </Text>
               </>
             )}
@@ -323,10 +323,9 @@ export default function PlusScreen() {
               <Text style={styles.soonTag}>Coming soon</Text>
               <Text
                 style={styles.soonText}
-                accessibilityLabel={`Family Plus can't be bought in the app yet. When it can, it is ${monthly} or ${yearlyOffer} for the whole family.`}
+                accessibilityLabel={`You can't buy Family Plus yet. It will be ${monthly} or ${yearlyOffer} for the whole family.`}
               >
-                Family Plus can't be bought in the app yet. When it can, it is {monthly} or <YearlyPrice /> for the
-                whole family.
+                You can't buy Family Plus yet. It will be {monthly} or <YearlyPrice /> for the whole family.
               </Text>
             </View>
           )
@@ -336,27 +335,25 @@ export default function PlusScreen() {
           <View style={styles.point}>
             <Feather name="users" size={16} color={color.primary} />
             <Text style={styles.pointText}>
-              One plan covers the whole family: up to {limits.members.plus} members sign in, and everyone can be in
-              the family tree, with or without an account.
+              One plan covers up to {limits.members.plus} members. Anyone can be in your family tree, even without an
+              account.
             </Text>
           </View>
           {limits.questions.free != null && (
             <View style={styles.point}>
               <Feather name="message-circle" size={16} color={color.primary} />
               <Text style={styles.pointText}>
-                Everyone in a Family Plus family asks with no monthly limit, in every vault they ask in. To keep it
-                fair, one person can ask up to {limits.questionsFairUse} questions a month, far more than anyone asks.
-                On Free, each person has {limits.questions.free} a month, starting again on the 1st.
+                On Plus, there's no monthly limit on questions. For fair use, one person can ask up to{' '}
+                {limits.questionsFairUse} a month. On Free, each person gets {limits.questions.free} a month, starting
+                again on the 1st.
               </Text>
             </View>
           )}
           <View style={styles.point}>
             <Feather name="clock" size={16} color={color.primary} />
             <Text style={styles.pointText}>
-              If Family Plus ends while a vault holds more than it may keep on Free ({formatBytes(limits.free)} for a
-              family, {formatBytes(limits.freePersonal)} for a personal vault), it has {limits.graceDays} days to
-              renew, or to delete documents to get under that. After that, the newest documents above it are removed.
-              We remind you when it ends, a week before and the day before.
+              If Plus ends and a vault is over its free space, you have {limits.graceDays} days to renew or delete
+              documents. After that, the newest documents over the limit are removed. We'll remind you before then.
             </Text>
           </View>
           <View style={styles.point}>
@@ -372,8 +369,7 @@ export default function PlusScreen() {
         </Card>
 
         <Muted>
-          Expiry reminders, under the bell and on your devices, are part of Family Plus. Birthday reminders reach every
-          family, Free or Plus.
+          Expiry reminders show under the bell and on your devices. Birthday reminders come on every plan.
         </Muted>
       </ScrollView>
     </SafeAreaView>
