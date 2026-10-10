@@ -65,6 +65,10 @@ export const deviceKey = {
   // The accounts with fingerprint sign-in on this device: the login screen
   // offers "Sign in with fingerprint" while there is one (app-lock.tsx).
   passkeysHere: 'fv:passkeys-here',
+  // Usage counts (analytics.ts): this device's random id, never an account's,
+  // and the Settings › Privacy switch, '1' when turned off.
+  analyticsId: 'fv:analytics-id',
+  analyticsOff: 'fv:analytics-off',
 };
 
 /** The accounts with fingerprint sign-in on this device. */

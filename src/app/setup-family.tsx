@@ -12,6 +12,7 @@ import { useFamily } from '../lib/family-context';
 import { createNewFamily } from '../lib/api';
 import { BackButton } from '../components/back-button';
 import { color, radius, size, space, type } from '../constants/design';
+import { track } from '../lib/analytics';
 
 export default function SetupFamilyScreen() {
   const { user } = useAuth();
@@ -37,6 +38,7 @@ export default function SetupFamilyScreen() {
     setLoading(true);
     try {
       const familyId = await createNewFamily(user.id, familyName.trim(), description.trim() || undefined);
+      track('family_created', {});
       await refreshFamilies();
       // Their own new family, so it opens: making it is their own choice.
       switchFamily(familyId);

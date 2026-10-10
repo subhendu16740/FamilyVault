@@ -22,6 +22,7 @@ import type { FamilyMemberWithUser } from '../lib/database.types';
 import { longDate } from '../lib/dates';
 import { Field, Muted, PrimaryButton, SecondaryButton, Status } from './settings-ui';
 import { color, radius, size, space, type } from '../constants/design';
+import { track } from '../lib/analytics';
 
 const DAYS: { days: ShareDays; label: string }[] = [
   { days: 1, label: '1 day' },
@@ -108,6 +109,7 @@ export function ShareSheet({ visible, onClose, familyId, documentId, fileName }:
     try {
       const outcome = await createShareLink(familyId, documentId, days, note);
       if (outcome.status === 'made') {
+        track('share_link_made', { days });
         setMade({ url: shareLinkUrl(window.location.origin, outcome.token), expiresAt: outcome.link.expiresAt });
         setCopied(false);
         setLinks((prev) => (Array.isArray(prev) ? [outcome.link, ...prev] : [outcome.link]));

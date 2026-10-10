@@ -22,7 +22,7 @@ import { digitsFromWords, restoreCodes } from '../../supabase/functions/_shared/
 import { takeInTurn, uniqueRelatives } from '../../supabase/functions/_shared/vaults.ts';
 import { passagesUsed, splitUsedPassages } from '../../supabase/functions/_shared/used-passages.ts';
 import { toSpeech } from '../../src/lib/speech-text.ts';
-import { acceptedCurrencies, hmacSha256Hex, paymentSignatureOk, plusOrderAmount, plusOrderDescription, sameText, webhookSignatureOk, ORDER_ID, PAYMENT_ID } from '../../supabase/functions/_shared/razorpay.ts';
+import { acceptedCurrencies, connectionCountry, hmacSha256Hex, payerCurrency, payerCurrencyMessage, paymentSignatureOk, plusOrderAmount, plusOrderDescription, sameText, webhookSignatureOk, ORDER_ID, PAYMENT_ID } from '../../supabase/functions/_shared/razorpay.ts';
 import { createHmac } from 'node:crypto';
 import {
   attachmentParts, classifyAttachment, allowedReturnOrigin, sniffType, storageFileName, senderDomain,
@@ -781,6 +781,35 @@ await test('razorpay: the server sets the price, and only Razorpay\'s signature 
   assert.ok(sameText('abc', 'abc') && !sameText('abc', 'abd') && !sameText('abc', 'ab'));
   assert.ok(ORDER_ID.test('order_Specimen000001') && !ORDER_ID.test('order_x') && !ORDER_ID.test('pay_Specimen000001'));
   assert.ok(PAYMENT_ID.test('pay_Specimen000001') && !PAYMENT_ID.test('pay_ bad'));
+});
+
+await test('razorpay: the server picks rupees or dollars from where the payer connects, not from a setting', async () => {
+  // Cloudflare's header: two letters; "XX" (unknown) and junk are no country.
+  assert.equal(connectionCountry('IN'), 'IN');
+  assert.equal(connectionCountry(' us '), 'US');
+  assert.equal(connectionCountry('XX'), null);
+  assert.equal(connectionCountry('T1'), 'T1');
+  assert.equal(connectionCountry(''), null);
+  assert.equal(connectionCountry(null), null);
+  assert.equal(connectionCountry('India'), null);
+  // In India, with India's time zone (or none sent): rupees.
+  assert.equal(payerCurrency('IN', 'Asia/Kolkata'), 'INR');
+  assert.equal(payerCurrency('IN', 'Asia/Calcutta'), 'INR');
+  assert.equal(payerCurrency('IN', undefined), 'INR');
+  // Abroad: dollars, even with the phone set to India time (an NRI's trick).
+  assert.equal(payerCurrency('US', 'Asia/Kolkata'), 'USD');
+  assert.equal(payerCurrency('AE', 'Asia/Dubai'), 'USD');
+  assert.equal(payerCurrency('T1', 'Asia/Kolkata'), 'USD');
+  // In India with another time zone: dollars (both must say India).
+  assert.equal(payerCurrency('IN', 'America/New_York'), 'USD');
+  // No country: the time zone alone, as the app always did; neither: no opinion.
+  assert.equal(payerCurrency(null, 'Asia/Kolkata'), 'INR');
+  assert.equal(payerCurrency(null, 'Europe/London'), 'USD');
+  assert.equal(payerCurrency(null, undefined), null);
+  assert.equal(payerCurrency(null, ''), null);
+  assert.equal(payerCurrency(null, 42), null);
+  assert.equal(payerCurrencyMessage('USD'), 'From where you are, Family Plus is $10 a month or $110 a year.');
+  assert.equal(payerCurrencyMessage('INR'), 'In India, Family Plus is ₹100 a month or ₹1,100 a year.');
 });
 
 await test('the languages suite: by hand only, every language, half a day at most', () => {

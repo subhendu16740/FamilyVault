@@ -28,6 +28,7 @@ import { toSpeech } from '../../lib/speech-text';
 import { ScreenHeader, HeaderIconButton, HeaderActions } from '../../components/screen-header';
 import { VaultPill, VaultSheet, type VaultChoice } from '../../components/vault-sheet';
 import { color, size, space, type } from '../../constants/design';
+import { track } from '../../lib/analytics';
 
 type DocumentCategory = Database['public']['Tables']['document_categories']['Row'];
 
@@ -189,6 +190,7 @@ export default function SearchScreen() {
     setSaving(true);
     try {
       const id = await saveChat(familyId, toSaved(messages));
+      track('chat_saved', {});
       lastSaved.current = messages;
       setSavedId(id);
       setChatFull(null);
@@ -389,6 +391,7 @@ export default function SearchScreen() {
 
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
 
+    track('question_asked', { voice: !!wantVoice, scope: askAll ? 'all' : 'one' });
     try {
       const result = await ragSearch(askFamily.id, question, history, {
         language: voiceMode ? voiceLanguage : undefined,

@@ -26,6 +26,7 @@ import { ScreenHeader } from '../components/screen-header';
 import { TwelveMonthsPrice, YearlyPrice } from '../components/plus-price';
 import { Card, Muted, screenStyles } from '../components/settings-ui';
 import { color, radius, space, type } from '../constants/design';
+import { track } from '../lib/analytics';
 
 type Cell = boolean | string;
 
@@ -106,10 +107,11 @@ export default function PlusScreen() {
 
   useFocusEffect(useCallback(() => {
     let cancelled = false;
+    track('plus_viewed', { feature: feature && feature in BROUGHT_BY ? feature : 'none' });
     refresh(true);
     fetchPlanLimits().then((l) => { if (!cancelled) setLimits(l); });
     return () => { cancelled = true; };
-  }, [refresh]));
+  }, [refresh, feature]));
 
   const familyName = currentFamily ? vaultName(currentFamily) : undefined;
   // What this vault may keep on Free (048): a personal vault less than a family.
@@ -127,6 +129,7 @@ export default function PlusScreen() {
     setPaying(period);
     setPayNote(null);
     try {
+      track('pay_started', { period, currency });
       const order = await createPlusOrder(currentFamily.id, period, currency);
       const result = await openCheckout(order);
       if (result.status === 'closed' || result.status === 'unsupported') return;
@@ -137,6 +140,7 @@ export default function PlusScreen() {
       setPayNote({ tone: 'info', text: 'Payment received. Switching on Family Plus…' });
       try {
         const { paidUntil } = await verifyPlusPayment(result);
+        track('payment_done', { period, currency });
         await refresh(true);
         forgetOnPlus();
         setPayNote({

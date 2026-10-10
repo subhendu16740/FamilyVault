@@ -365,6 +365,14 @@ button (see [Signing in](#signing-in--google-only-with-googles-own-button-where-
 - `EXPO_PUBLIC_GOOGLE_WEB_ORIGINS` — the web addresses in that client's
   Authorized JavaScript origins, comma-separated
 
+and, optional, by `src/lib/analytics.ts` — usage counts (see Usage counts
+under [Conventions](#conventions)), **for Vercel's Production environment
+only**, so DEV and previews send nothing:
+
+- `EXPO_PUBLIC_POSTHOG_KEY` — the PostHog project's API key (`phc_…`; public,
+  like the anon key). Unset, nothing is sent.
+- `EXPO_PUBLIC_POSTHOG_HOST` — `https://eu.i.posthog.com` unless set
+
 The `EXPO_PUBLIC_` prefix means *publicly visible in the shipped bundle*.
 Never put a secret behind it. The anon key is safe there because Row-Level
 Security, not secrecy, is the access boundary. Because they are build-time,
@@ -670,6 +678,7 @@ src/
 supabase/
   functions/                 # Deno Edge Functions (NOT typechecked by tsconfig)
   migrations/                # SQL — incomplete, see Database
+  queries/                   # read-only queries to paste into the SQL editor (document-categories.sql)
 
 public/                      # copied to the web build's root: sw.js (shows notifications), manifest, icons
 qa/                          # end-to-end QA against DEV (own package.json)
@@ -705,6 +714,7 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `app-info.ts` | Version, release date and commit (stamped into `extra` by `app.config.ts` at build time), and the support contact Help shows |
 | `ocr.ts` | Platform-split OCR with progress callback; reads the person's chosen languages |
 | `ocr-languages.ts` | The document-language picker list, and `resolveOcrLanguages()` which always appends English |
+| `analytics.ts` | Usage counts with PostHog: `track(event, props)`, typed by `AnalyticsEvents` so only named events and properties can be sent; a random id per device (`deviceKey.analyticsId`), the Privacy switch (`analyticsOn`, `setAnalyticsOn`), `categoryForAnalytics()` (built-in names only), `screenName()` (the route, never an id). Screen views come from `components/analytics-tracker.tsx` in the root layout. Off without `EXPO_PUBLIC_POSTHOG_KEY` |
 | `razorpay.ts` / `razorpay.web.ts` | Paying for Family Plus (044): on the web, Razorpay's own checkout window (`openCheckout`; checkout.js is loaded the first time someone pays, and card and UPI details go to Razorpay, never to us); the phone app's file is a stand-in until EAS builds exist. Types in `razorpay-types.ts` |
 | `google-button.ts` / `google-button.web.ts` | Google's own sign-in button on the web (Google Identity Services): `googleButtonAvailable()` (a client id is set and this origin is in `EXPO_PUBLIC_GOOGLE_WEB_ORIGINS`), `renderGoogleButton()` (loads Google's script once, a fresh nonce each time). The phone app's file says no, so it keeps the redirect sign-in. Types in `google-button-types.ts`; see [Signing in](#signing-in--google-only-with-googles-own-button-where-it-is-set-up) |
 | `push.ts` / `push.web.ts` | Notifications on this device (034): on the web, Web Push through `public/sw.js` (`loadPushStatus`, `turnOnPush`, `turnOffPush`, `sendTestPush`, and `forgetPushOnThisDevice` on sign-out); the phone app's file is a stand-in until EAS builds exist. Types in `push-types.ts` |
@@ -1640,6 +1650,21 @@ so storage policies live only in `019`.
   no subscription, no mandate, no stored card. Anyone in the family can pay.
   Razorpay keeps 2% plus GST of each payment (about ₹2.36 of ₹100, ₹26 of
   ₹1,100) and charges nothing else — no setup or yearly fee.
+- **The server says who pays in rupees** (`payerCurrency()`,
+  `_shared/razorpay.ts`): rupees only when the connection comes from India
+  (Cloudflare's `CF-IPCountry` header, which Supabase's gateway passes to
+  the functions and a client cannot set) and the device's time zone, which
+  the app sends, agrees; everyone else pays in dollars. So an NRI abroad
+  cannot get ₹100 by setting the phone to India time, and someone in India
+  sees rupees. `status` answers the currency (with `currency_from`:
+  `connection`, or `time_zone` when the header is missing, and the caller's
+  `country`), the app shows prices in it from then on (`setPayerCurrency()`
+  in `plans.ts`; the time zone guesses until it answers), and `order`
+  refuses any other currency with 409 `wrong_currency` and the right one,
+  before Razorpay is asked. Nothing is kept. What no rule stops: a parent
+  in India paying ₹100 for a family that includes an NRI, or a VPN with the
+  phone set to India time. A $ order can only be paid by a card issued
+  abroad (Razorpay's rule), which costs 3% plus GST instead of 2%.
 - **The server sets the price and checks the payment.** `payments`'s
   `order` takes a member's family and a month or a year, never an amount:
   it makes a Razorpay order at `PLUS_PRICE`'s price and keeps it in
@@ -1963,12 +1988,14 @@ so storage policies live only in `019`.
   applied.
 - **`payments`** — paying for Family Plus (044; see
   [Paying for Family Plus](#paying-for-family-plus--razorpay-a-month-or-a-year-at-a-time-044)):
-  `status` for anyone (does this project take payments, and Razorpay's
-  public key id), `order` and `verify` for a member of the family. `order`
-  hands back the same unpaid order for an hour (same person, family and
-  price, 050), rather than making another at Razorpay on every tap. Answers
-  400 `bad_request`, `bad_signature` or `currency`, 401/403, 402
-  `not_paid`, 404 `no_order`, 502 `razorpay` (Razorpay said no), and 503
+  `status` for anyone (does this project take payments, Razorpay's
+  public key id, and which currency this person pays in), `order` and
+  `verify` for a member of the family. `order` refuses a currency other
+  than the server's choice, and hands back the same unpaid order for an
+  hour (same person, family and price, 050), rather than making another at
+  Razorpay on every tap. Answers 400 `bad_request`, `bad_signature` or
+  `currency`, 401/403, 402 `not_paid`, 404 `no_order`, 409
+  `wrong_currency`, 502 `razorpay` (Razorpay said no), and 503
   `not_configured` without the keys or `needs_migration` where 044 is not
   applied.
 - **`razorpay-webhook`** — Razorpay reporting a payment (044). Deployed
@@ -2310,7 +2337,7 @@ rule again once pinned chunks are mixed in.
   - Parts of it go to outside services: HuggingFace (every passage, and
     every question, for search), Groq (the passages an answer is written
     from, and the chat) and OCR.space (scanned PDFs, photos imported from
-    Gmail).
+    Gmail). PostHog gets usage counts, and never any of it.
 
   So no screen, notification, README or store listing says "secure",
   "safe", "private and isolated", "100% private", "only you can see it" or
@@ -2319,8 +2346,26 @@ rule again once pinned chunks are mixed in.
   you". Settings › Privacy says all of this plainly and names the outside
   services. It must stay true of the code and of the people who run
   AskLocker, so change it with any change to sharing, search, OCR,
-  embeddings, voice or Gmail import. The app made such claims until
+  embeddings, voice, Gmail import, payments or usage counts. The app made such claims until
   7 October 2026.
+- **Usage counts — PostHog, named events only.** Which screens are opened
+  and which actions are taken (a document added, a question asked, a link
+  made, Plus paid for), so the team can see what is used. Only through
+  `track()` in `src/lib/analytics.ts`, whose `AnalyticsEvents` lists every
+  event and every property: adding one means changing that list, where a
+  reviewer sees it. Never a document, file name, question, answer, person's
+  or family's name, email or id: a category only by its built-in name
+  (`categoryForAnalytics()`, a family's own is "Other"), a screen only as
+  its route (`/document/[id]`). Sent straight to PostHog's `/batch/` API —
+  no SDK, so no automatic capture of taps or text and no screen recording,
+  which would show document names — with a random id per device (not the
+  account), `$process_person_profile: false` and `$geoip_disable: true`;
+  the PostHog project discards the internet address (a project setting).
+  Off without `EXPO_PUBLIC_POSTHOG_KEY` (set for Production only) and on a
+  device where Settings › Privacy's switch is off. Settings › Privacy names
+  PostHog in builds that send. How many documents each category has is a
+  query, not an event: `supabase/queries/document-categories.sql` counts
+  category ids across every vault and reads nothing else.
 - **Copy is short and plain** (since 10 October 2026, when the owner said
   the app's text read as AI-written and every screen was cut by half or
   more). A screen intro is one sentence, a card one or two, a Help answer

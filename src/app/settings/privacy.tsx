@@ -2,15 +2,24 @@
 // Every sentence here has to stay true of the code, and of the people who run
 // AskLocker: documents are not end-to-end encrypted, so nothing here may
 // promise that nobody but the family can see them. Check it when changing
-// sharing, search, OCR, embeddings, voice, notifications or Gmail import.
+// sharing, search, OCR, embeddings, voice, notifications, Gmail import,
+// payments or usage counts.
 
+import { useEffect, useState } from 'react';
 import { ScrollView } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ScreenHeader } from '../../components/screen-header';
-import { Card, CardTitle, Body, SecondaryButton, screenStyles } from '../../components/settings-ui';
+import { Card, CardTitle, Body, OnOff, SecondaryButton, screenStyles } from '../../components/settings-ui';
+import { analyticsBuilt, analyticsOn, setAnalyticsOn } from '../../lib/analytics';
 
 export default function PrivacyScreen() {
+  // Usage counts (analytics.ts): only builds made with a PostHog key send any.
+  const [counts, setCounts] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (analyticsBuilt) analyticsOn().then(setCounts);
+  }, []);
+
   return (
     <SafeAreaView style={screenStyles.safe} edges={['top']}>
       <ScreenHeader title="Privacy" fallback="/settings" />
@@ -89,6 +98,31 @@ export default function PrivacyScreen() {
             the email itself. Your family doesn't see this, and disconnecting Gmail forgets it.
           </Body>
         </Card>
+
+        <Card>
+          <CardTitle icon="credit-card">Paying for Family Plus</CardTitle>
+          <Body>
+            Razorpay takes your card or UPI details, and AskLocker never sees them. To pick rupees or dollars, we check
+            which country you're connecting from. We don't keep it.
+          </Body>
+        </Card>
+
+        {analyticsBuilt && (
+          <Card>
+            <CardTitle icon="bar-chart-2">How the app is used</CardTitle>
+            <Body>
+              We count which screens and buttons are used, to see what to improve, with PostHog. It gets a random id
+              for this device, never your documents, questions, names or email.
+            </Body>
+            {counts !== null && (
+              <OnOff
+                label="Share usage counts"
+                value={counts}
+                onChange={(on) => { setCounts(on); setAnalyticsOn(on); }}
+              />
+            )}
+          </Card>
+        )}
 
         <Card>
           <CardTitle icon="user-x">Leaving or deleting</CardTitle>

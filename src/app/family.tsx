@@ -20,6 +20,7 @@ import { InvitationCards } from '../components/invitation-cards';
 import { longDate } from '../lib/dates';
 import { isPersonalVault, vaultName, vaultSubtitle } from '../lib/vaults';
 import { color, radius, shadow, size, space, type } from '../constants/design';
+import { track } from '../lib/analytics';
 
 const relations = ['Father', 'Mother', 'Spouse', 'Son', 'Daughter', 'Brother', 'Sister', 'Other'];
 
@@ -154,6 +155,7 @@ export default function FamilyScreen() {
       switch (outcome.status) {
         case 'invited':
         case 'added':
+          track('member_invited', {});
           setNotice(outcome.status === 'invited'
             ? `Invitation sent to ${outcome.email}. They show as Pending approval until they accept.`
             : `${outcome.displayName} joined ${familyName} and can see its documents.`);
