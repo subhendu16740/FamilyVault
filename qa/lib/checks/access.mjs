@@ -257,6 +257,27 @@ const webhookJudge = (forged) => ({ status, data }) => {
   }
   return ['fail', `HTTP ${status}${status >= 200 && status < 300 ? ` — it ACCEPTED ${forged ? 'a forged' : 'an unsigned'} payment report` : ''}: ${JSON.stringify(data).slice(0, 160)}`];
 };
+// What Family Plus adds (049): each person's questions this month are counted
+// on the server — nobody reads or changes anyone's count, and only the server
+// counts one or gives one back — and nobody raises a plan's question limit.
+// Skipped until 049 is on DEV (PGRST202: no such function; the table, or the
+// column, missing).
+const questionsJudge = (expect) => (outcome) => {
+  if (outcome.missing || missingTable(outcome.error) || ['PGRST202', 'PGRST204', '42703'].includes(String(outcome.error?.code))) {
+    return ['skipped', 'migration 049 is not applied to DEV yet'];
+  }
+  return judge(expect, outcome);
+};
+// Limits against abuse (050): each person's counts for the day are the
+// server's, and so is reading a document — no client reads or changes a
+// count, starts a read, or raises a plan's number. Skipped until 050 is on
+// DEV (PGRST202: no such function; the table, or the column, missing).
+const abuseJudge = (expect) => (outcome) => {
+  if (outcome.missing || missingTable(outcome.error) || ['PGRST202', 'PGRST204', '42703'].includes(String(outcome.error?.code))) {
+    return ['skipped', 'migration 050 is not applied to DEV yet'];
+  }
+  return judge(expect, outcome);
+};
 // A well-formed device key and secret: RFC 8291's own example.
 const PROBE_P256DH = 'BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4';
 const PROBE_AUTH = 'BTBZMqHH6r4Tts7J_aSIgg';
@@ -369,8 +390,11 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     return;
   }
 
-  // ── The sacrificial document every write probe aims at.
+  // ── The sacrificial document every write probe aims at. Its file goes up
+  // first, as the app's does: since 050 a document needs its file there.
   const sacrificialPath = `${vaultA.namespace}/qa_sacrificial_${cfg.runId}.pdf`;
+  await a.client.storage.from('documents')
+    .upload(sacrificialPath, Buffer.from('%PDF-1.4\n% AskLocker QA: the sacrificial document\n'), { contentType: 'application/pdf' });
   const { data: sacrificialId, error: sacErr } = await a.client.rpc('insert_family_document', {
     p_family_id: vaultA.id,
     p_uploaded_by: a.user.id,
@@ -642,6 +666,51 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     }
   }
 
+  // ── Questions this month (049): account A reads its own count, using none —
+  // the positive control for the probes below — and plan_limits says each
+  // plan's monthly number. Account A's vault is on Free, so a 30-day share
+  // link is refused it (a 1-day one is the share control above).
+  let questionsMissing = false;
+  {
+    const title = 'Control — account A reads how many questions it has left this month, using none';
+    const { data: first, error } = await a.client.rpc('question_status');
+    if (String(error?.code) === 'PGRST202') {
+      questionsMissing = true;
+      results.add('access', 'control:questions', title, 'skipped', { why: 'migration 049 is not applied to DEV yet' });
+      results.add('access', 'control:link-30', 'Control — a vault on Free cannot make a 30-day share link (049)', 'skipped', { why: 'migration 049 is not applied to DEV yet' });
+    } else {
+      const { data: again } = error ? { data: null } : await a.client.rpc('question_status');
+      const { data: rows, error: limErr } = await a.client.from('plan_limits').select('plan, max_members, questions_per_month, questions_fair_use');
+      const plans = Object.fromEntries((rows ?? []).map((r) => [r.plan, r]));
+      const n = (v) => (v == null ? null : Number(v));
+      const expected = first?.plus ? plans.plus : plans.free;
+      const ceiling = expected ? n(expected.questions_per_month ?? expected.questions_fair_use) : null;
+      const ok = !error && !limErr && first && n(first.ceiling) === ceiling
+        && n(first.limit) === n(expected?.questions_per_month)
+        && n(first.left) === Math.max(ceiling - n(first.used), 0)
+        && n(again?.used) === n(first.used)
+        && n(plans.plus?.max_members) >= n(plans.free?.max_members);
+      results.add('access', 'control:questions', title, ok ? 'pass' : 'fail', {
+        why: error ? short(error) : limErr ? short(limErr)
+          : `${first.used} asked, ${first.left} left of ${first.ceiling}${first.plus ? ' (Plus)' : ''}; members ${plans.free?.max_members}/${plans.plus?.max_members}`,
+      });
+      if (planOfA === 'plus') {
+        results.add('access', 'control:link-30', 'Control — a vault on Free cannot make a 30-day share link (049)', 'skipped', { why: 'QA Vault A is on Plus' });
+      } else if (!passport) {
+        results.add('access', 'control:link-30', 'Control — a vault on Free cannot make a 30-day share link (049)', 'skipped', { why: 'no passport to share' });
+      } else {
+        const { data: made, error: linkErr } = await a.client.rpc('create_document_share', {
+          p_family_id: A.family, p_document_id: passport.id, p_days: 30, p_note: `QA probe ${cfg.runId}`,
+        });
+        if (made?.id) await a.client.rpc('revoke_document_share', { p_share_id: made.id });
+        const refused = linkErr && linkErr.hint === 'plus_only';
+        results.add('access', 'control:link-30', 'Control — a vault on Free cannot make a 30-day share link (049)', refused ? 'pass' : 'fail',
+          { why: linkErr ? `${short(linkErr)}${linkErr.hint ? ` (${linkErr.hint})` : ''}` : 'a 30-day link was MADE on Free (and turned off again)' });
+      }
+    }
+  }
+  const onQuestions = (run) => async () => (questionsMissing ? { missing: true } : run());
+
   // ── Paying for Family Plus (044): the payments function says whether DEV
   // takes payments — the control for the probes below. DEV may only ever
   // hold Razorpay's TEST keys: a live key there would charge real money from
@@ -655,6 +724,51 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
       return ['pass', `takes test payments in ${(data.currencies ?? []).join(', ')}`];
     })({ status: r.status, data: r.data });
     results.add('access', 'control:payments', 'Control — account A asks whether Family Plus can be paid for (test keys only on DEV)', state, { why });
+  }
+
+  // ── Rupees or dollars is the server's call (payerCurrency()): rupees only
+  // when the connection is from India and the time zone agrees. Asked with
+  // India's time zone, so from GitHub's machines (outside India) the answer
+  // must be dollars; from India, rupees. And with another time zone,
+  // dollars wherever the run is.
+  let payIn = null;
+  {
+    const title = "Control — rupees only for a connection from India: India's time zone alone does not get them";
+    const r = await invokeFunction(cfg, a, 'payments', { action: 'status', time_zone: 'Asia/Kolkata' }, { timeoutMs: 30_000 });
+    const other = await invokeFunction(cfg, a, 'payments', { action: 'status', time_zone: 'America/New_York' }, { timeoutMs: 30_000 });
+    const d = r.data ?? {};
+    const [state, why] = r.status !== 200
+      ? ['fail', `HTTP ${r.status}: ${JSON.stringify(r.data).slice(0, 160)}`]
+      : !('currency' in d)
+        ? ['skipped', 'payments on DEV does not pick the currency yet']
+        : other.data?.currency !== 'USD'
+          ? ['fail', `offered ${other.data?.currency} with a New York time zone`]
+          : d.currency_from !== 'connection'
+            ? ['skipped', `the function cannot see the connection's country, so the time zone decides (${d.currency})`]
+            : d.currency === (d.country === 'IN' ? 'INR' : 'USD')
+              ? ['pass', `${d.currency} for a connection from ${d.country}`]
+              : ['fail', `offered ${d.currency} to a connection from ${d.country}`];
+    if (state === 'pass') payIn = d.currency;
+    results.add('access', 'control:payer-currency', title, state, { why });
+  }
+  {
+    // An order in the other currency is refused before Razorpay is asked, so
+    // nothing is made even on DEV's test keys.
+    const title = 'Control — account A cannot pay in the other currency (409 wrong_currency)';
+    if (!payIn) {
+      results.add('access', 'control:wrong-currency', title, 'skipped', { why: 'the server did not pick a currency from the connection (see the control above)' });
+    } else {
+      const wrong = payIn === 'INR' ? 'USD' : 'INR';
+      const r = await invokeFunction(cfg, a, 'payments', {
+        action: 'order', family_id: A.family, period: 'monthly', currency: wrong, time_zone: 'Asia/Kolkata',
+      }, { timeoutMs: 30_000 });
+      const [state, why] = r.status === 409 && r.data?.status === 'wrong_currency' && r.data?.currency === payIn
+        ? ['pass', `refused ${wrong}: "${String(r.data.error).slice(0, 80)}"`]
+        : r.status === 503 && r.data?.status === 'not_configured'
+          ? ['skipped', 'no Razorpay keys on DEV']
+          : ['fail', `HTTP ${r.status}${r.status === 200 ? ` — an order was MADE in ${wrong}` : ''}: ${JSON.stringify(r.data).slice(0, 160)}`];
+      results.add('access', 'control:wrong-currency', title, state, { why });
+    }
   }
 
   // A payment report as Razorpay sends one, for an order and a payment that
@@ -978,6 +1092,20 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     ['anon', "read how many voice chats QA Vault A has left", chatsVoiceJudge('refused'), rpc(anon, 'family_voice_status', { p_family_id: A.family })],
     ['B', "read how many voice chats QA Vault A has left", chatsVoiceJudge('refused'), rpc(b, 'family_voice_status', { p_family_id: A.family })],
     ['B', "add up QA Vault A's saved chats (server-only)", chatsVoiceJudge('refused'), rpc(b, 'family_chats_bytes', { p_family_id: A.family })],
+    // Questions each month (049): each person's count is the server's.
+    ['anon', 'read how many questions anyone has left', questionsJudge('refused'), onQuestions(rpc(anon, 'question_status', {}))],
+    ['B', 'count a question for account A (server-only)', questionsJudge('refused'), onQuestions(rpc(b, 'claim_question', { p_user_id: A.user }))],
+    ['B', "give account A's questions back (server-only)", questionsJudge('refused'), onQuestions(rpc(b, 'release_question', { p_user_id: A.user }))],
+    ['B', 'ask whether account A is on Family Plus (server-only)', questionsJudge('refused'), onQuestions(rpc(b, 'person_on_plus', { p_user_id: A.user }))],
+    ['B', "read everyone's question counts", questionsJudge('refused-or-empty'), onQuestions(() => b.client.from('question_usage').select('questions').limit(5))],
+    ['B', "raise every plan's question limit", questionsJudge('refused'), onQuestions(() => b.client.from('plan_limits').update({ questions_per_month: 100000 }).eq('plan', 'free'))],
+    // Limits against abuse (050): the day's counts, and reading a document.
+    ['anon', "start reading one of account A's documents (server-only)", abuseJudge('refused'), rpc(anon, 'start_document_read', { p_family_id: A.family, p_document_id: sacrificialId, p_user_id: A.user })],
+    ['B', "start reading one of account A's documents (server-only)", abuseJudge('refused'), rpc(b, 'start_document_read', { p_family_id: A.family, p_document_id: sacrificialId, p_user_id: A.user })],
+    ['B', "count a document added today for account A (server-only)", abuseJudge('refused'), rpc(b, 'claim_daily', { p_user_id: A.user, p_what: 'uploads' })],
+    ['B', "read account A's limits for the day (server-only)", abuseJudge('refused'), rpc(b, 'person_daily_limit', { p_user_id: A.user, p_what: 'uploads' })],
+    ['B', 'read what everyone did today', abuseJudge('refused-or-empty'), () => b.client.from('daily_usage').select('uploads, question_tries').limit(5)],
+    ['B', "raise every plan's documents a day", abuseJudge('refused'), () => b.client.from('plan_limits').update({ uploads_per_day: 100000 }).eq('plan', 'free')],
     // Paying for Family Plus (044): an order only for your own family, Plus
     // only for a payment Razorpay signed, and the ledger is the server's.
     ['anon', 'start paying for QA Vault A', paymentsFnJudge(http401), fn(anon, 'payments', { action: 'order', family_id: A.family, period: 'monthly', currency: 'INR' })],
@@ -1083,6 +1211,9 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     }
   }
 
+  // ── The leak 050 closed: another vault's file read into your own.
+  await runLeakChecks(cfg, { a, b, vaultA, vaultB, passport }, results);
+
   // ── Clean up anything a probe managed to create, and verify the target survived.
   // (Superuser first: harmless when refused, essential if a probe died mid-way.)
   await b.client.from('users').update({ is_superuser: false }).eq('id', b.user.id);
@@ -1136,4 +1267,100 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     still?.length ? {} : { why: 'it is GONE — one of the delete probes succeeded' });
   const { error: delErr } = await a.client.rpc('delete_family_document', { p_family_id: A.family, p_document_id: sacrificialId, p_user_id: A.user });
   if (delErr && still?.length) results.note('access', `could not remove the sacrificial document: ${delErr.message}`);
+  if (!delErr) await a.client.storage.from('documents').remove([sacrificialPath]);
+}
+
+// ─── The leak 050 closed ─────────────────────────────────────────
+//
+// Before 050, insert_family_document() took any file address, and
+// ingest-document read whatever address it was sent with the service role.
+// Anyone who had once seen another family's file address — a member who
+// left, anyone sent a share link — could add a document to their own vault
+// "for" it and have its text read in. Account B knows the address of A's
+// passport here (it is in the fixture list; in life, in a share link's
+// download address) and tries both ways in, from its own QA Vault B. The
+// passport's file is never touched: only rows B made are deleted.
+async function runLeakChecks(cfg, { a, b, vaultA, vaultB, passport }, results) {
+  const { error: colErr } = await a.client.from('plan_limits').select('uploads_per_day').limit(1);
+  const have050 = !colErr;
+  const pending = have050 ? '' : ' — migration 050 is not applied to DEV yet';
+  if (!vaultB?.id || !vaultB.namespace) {
+    results.add('access', 'leak', 'The leak 050 closed', 'skipped', { why: 'account B has no vault of its own' });
+    return;
+  }
+
+  // 1. A document in B's own vault for A's file.
+  {
+    const title = "Account B cannot add a document to its own vault for account A's file (050)";
+    const { data: madeId, error } = await b.client.rpc('insert_family_document', {
+      p_family_id: vaultB.id, p_uploaded_by: b.user.id, p_file_name: `qa_leak_${cfg.runId}.pdf`,
+      p_file_type: 'pdf', p_file_size_bytes: 1, p_storage_path: passport.storage_path,
+    });
+    // Its row only: the file is A's passport.
+    if (madeId) await b.client.rpc('delete_family_document', { p_family_id: vaultB.id, p_document_id: madeId, p_user_id: b.user.id });
+    results.add('access', 'leak-insert', title, error ? 'pass' : 'fail',
+      { why: error ? `${short(error)}${error.hint ? ` (${error.hint})` : ''}` : `a row was MADE for A's file (and deleted again)${pending}` });
+  }
+
+  // 2. B's own document, read from A's file. B adds a document of its own, as
+  //    the app does, then asks ingest-document to read A's passport for it.
+  let newIngest = false;
+  {
+    const title = "Account B cannot have account A's file read into its own vault (050)";
+    const ownPath = `${vaultB.namespace}/qa_leak_${cfg.runId}_own.pdf`;
+    const bytes = Buffer.from('%PDF-1.4\n% AskLocker QA: a document of account B\n');
+    const { error: upErr } = await b.client.storage.from('documents').upload(ownPath, bytes, { contentType: 'application/pdf' });
+    const { data: ownId, error: insErr } = upErr ? { data: null, error: upErr } : await b.client.rpc('insert_family_document', {
+      p_family_id: vaultB.id, p_uploaded_by: b.user.id, p_file_name: `qa_leak_${cfg.runId}_own.pdf`,
+      p_file_type: 'pdf', p_file_size_bytes: bytes.length, p_storage_path: ownPath,
+    });
+    if (insErr || !ownId) {
+      results.add('access', 'leak-ingest', title, 'skipped', { why: `account B could not add a document of its own: ${short(insErr)}` });
+    } else {
+      const r = await invokeFunction(cfg, b, 'ingest-document',
+        { family_id: vaultB.id, document_id: ownId, storage_path: passport.storage_path }, { timeoutMs: 60_000 });
+      newIngest = r.data?.status === 'bad_path';
+      const [state, why] = r.status >= 400 && r.status < 500
+        ? ['pass', `HTTP ${r.status}${r.data?.status ? ` ${r.data.status}` : ''}`]
+        : ['fail', r.status >= 200 && r.status < 300
+          ? `HTTP ${r.status} — account A's passport was READ into B's vault (the ingest-document on DEV is older than this check)`
+          : `HTTP ${r.status}: ${JSON.stringify(r.data).slice(0, 160)}`];
+      results.add('access', 'leak-ingest', title, state, { why });
+      await b.client.rpc('delete_family_document', { p_family_id: vaultB.id, p_document_id: ownId, p_user_id: b.user.id });
+    }
+    await b.client.storage.from('documents').remove([ownPath]);
+  }
+
+  // 3. A document already read is not read again: the server's day of OCR
+  //    must not go on one document asked for in a loop. Only with 050 and the
+  //    ingest-document that knows it — an older one would read it again.
+  {
+    const title = 'Control — a document already read is not read again (050)';
+    if (!have050 || !newIngest) {
+      results.add('access', 'control:read-once', title, 'skipped', { why: !have050 ? 'migration 050 is not applied to DEV yet' : 'the ingest-document on DEV is older than 050' });
+    } else if (passport.ingestion_status !== 'completed') {
+      results.add('access', 'control:read-once', title, 'skipped', { why: `the passport is ${passport.ingestion_status ?? 'not read'}` });
+    } else {
+      const r = await invokeFunction(cfg, a, 'ingest-document', { family_id: vaultA.id, document_id: passport.id }, { timeoutMs: 60_000 });
+      results.add('access', 'control:read-once', title, r.status === 409 && r.data?.status === 'already_read' ? 'pass' : 'fail',
+        { why: `HTTP ${r.status}: ${JSON.stringify(r.data).slice(0, 160)}` });
+    }
+  }
+
+  // 4. On Free, one family a person creates, besides their personal vault.
+  //    B has QA Vault B, on Free. Only with 050: before it a family would be
+  //    made, and nothing deletes a family but deleting its account.
+  {
+    const title = 'Control — on Free, a person cannot create a second family (050)';
+    if (!have050) {
+      results.add('access', 'control:family-limit', title, 'skipped', { why: 'migration 050 is not applied to DEV yet' });
+    } else {
+      const { data: made, error } = await b.client.rpc('create_family', {
+        p_user_id: b.user.id, p_family_name: `QA second family ${cfg.runId}`,
+      });
+      results.add('access', 'control:family-limit', title, error?.hint === 'family_limit' ? 'pass' : 'fail', {
+        why: error ? `${short(error)}${error.hint ? ` (${error.hint})` : ''}` : `a second family was MADE (${made}): remove it by hand`,
+      });
+    }
+  }
 }

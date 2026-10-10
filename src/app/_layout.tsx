@@ -7,6 +7,7 @@ import { AuthProvider, useAuth } from '../lib/auth';
 import { FamilyProvider } from '../lib/family-context';
 import { PreferencesProvider } from '../lib/preferences';
 import { EnvBadge } from '../components/env-badge';
+import { AnalyticsTracker } from '../components/analytics-tracker';
 import { AppLockProvider } from '../lib/app-lock';
 import { AppLockScreen } from '../components/app-lock-screen';
 
@@ -96,6 +97,8 @@ export default function RootLayout() {
         {/* After the Stack, so it draws over every screen. Renders nothing
             in production. */}
         <EnvBadge />
+        {/* Which screens are opened, where usage counts are on (analytics.ts). */}
+        <AnalyticsTracker />
         {/* The fingerprint or face lock, over everything when it is up. */}
         <AppLockScreen />
       </FamilyProvider>

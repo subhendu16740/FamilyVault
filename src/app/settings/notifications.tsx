@@ -23,11 +23,11 @@ import {
 import { color, space } from '../../constants/design';
 
 const DEVICE_TEXT: Record<Exclude<PushStatus, 'on' | 'off'>, string> = {
-  unsupported: 'This browser cannot show notifications. Chrome, Edge, Firefox and Safari can.',
+  unsupported: "This browser can't show notifications. Try Chrome, Edge, Firefox or Safari.",
   'needs-home-screen':
-    'On iPhone or iPad, add AskLocker to your Home Screen first: tap Share, then Add to Home Screen. Open it from there and turn reminders on.',
-  blocked: "Notifications are blocked for AskLocker in this browser. Allow them in the browser's settings for this site, then come back here.",
-  'not-ready': 'Notifications on devices are not switched on yet. Reminders still appear under the bell.',
+    'On iPhone or iPad, tap Share, then Add to Home Screen. Open AskLocker from there and turn this on.',
+  blocked: "This browser blocks AskLocker's notifications. Allow them in its site settings, then come back.",
+  'not-ready': "Device notifications aren't ready yet. You'll still see alerts under the bell.",
 };
 
 export default function NotificationSettingsScreen() {
@@ -62,7 +62,7 @@ export default function NotificationSettingsScreen() {
     const result = await turnOnPush();
     if (result.ok) {
       setDevice('on');
-      setNews({ kind: 'ok', text: 'Reminders are on for this device. Send a test to see what one looks like.' });
+      setNews({ kind: 'ok', text: 'On for this device. Send a test to see one.' });
     } else {
       setNews({ kind: 'error', text: result.message });
       setDevice(await loadPushStatus().catch(() => 'off' as const));
@@ -72,14 +72,14 @@ export default function NotificationSettingsScreen() {
   const turnOff = () => act('off', async () => {
     await turnOffPush();
     setDevice('off');
-    setNews({ kind: 'ok', text: 'This device will not get notifications any more. They still appear under the bell.' });
+    setNews({ kind: 'ok', text: "Off for this device. You'll still see them under the bell." });
   });
 
   const test = () => act('test', async () => {
     const result = await sendTestPush();
     setNews(result.sent > 0
       ? { kind: 'ok', text: result.sent === 1 ? 'Sent. It should arrive in a few seconds.' : `Sent to your ${result.sent} devices. It should arrive in a few seconds.` }
-      : { kind: 'error', text: 'Could not reach this device. Turn reminders off and on again, then send another test.' });
+      : { kind: 'error', text: "Couldn't reach this device. Turn it off and on, then send another test." });
   });
 
   return (
@@ -91,8 +91,8 @@ export default function NotificationSettingsScreen() {
           <OnOff value={notificationsEnabled} onChange={setNotificationsEnabled} label="Show notifications" />
           <Body>
             {notificationsEnabled
-              ? 'New alerts appear under the bell on Home, with a count.'
-              : 'The bell on Home stays quiet, the list is hidden, and nothing is sent to your devices. Nothing is deleted — switch back on to see them.'}
+              ? 'New alerts show under the bell on Home.'
+              : 'The bell stays quiet and nothing goes to your devices. Turn this back on to see your alerts again.'}
           </Body>
         </Card>
 
@@ -103,8 +103,8 @@ export default function NotificationSettingsScreen() {
               <ActivityIndicator color={color.primary} />
             ) : device === 'on' ? (
               <>
-                <Body>On. This device shows AskLocker's notifications, even when the app is closed.</Body>
-                {!notificationsEnabled && <Muted>Notifications are switched off above, so nothing is sent until you switch them back on.</Muted>}
+                <Body>This device gets notifications, even when AskLocker is closed.</Body>
+                {!notificationsEnabled && <Muted>Notifications are off above, so nothing is sent for now.</Muted>}
                 <View style={styles.buttons}>
                   <SecondaryButton label="Send a test" icon="send" onPress={test} disabled={busy !== null} />
                   <SecondaryButton label="Turn off" icon="bell-off" onPress={turnOff} disabled={busy !== null} />
@@ -112,7 +112,7 @@ export default function NotificationSettingsScreen() {
               </>
             ) : device === 'off' ? (
               <>
-                <Body>Get AskLocker's notifications on this phone or computer, even when AskLocker is closed: invitations, birthdays and, with ★ Family Plus, documents about to expire.</Body>
+                <Body>Get invitations, birthdays and, with ★ Family Plus, expiry reminders here, even when AskLocker is closed.</Body>
                 <PrimaryButton label="Turn on" icon="bell" onPress={turnOn} busy={busy === 'on'} disabled={busy !== null} />
               </>
             ) : (
@@ -129,27 +129,27 @@ export default function NotificationSettingsScreen() {
               <OnOff value={birthdayReminders} onChange={setBirthdayReminders} label="Birthday reminders" />
               <Body>
                 {birthdayReminders
-                  ? 'On the morning of a birthday in your family tree, you get a reminder.'
-                  : 'You are not reminded of birthdays.'}
+                  ? 'You get a reminder on the morning of each birthday in your family tree.'
+                  : "You won't get birthday reminders."}
               </Body>
               <Muted>
-                Only for people with a date of birth in the family tree. If someone there has passed away, an admin can
-                remove their date of birth from their page.
+                Only for people with a birth date in the tree. If someone has passed away, an admin can remove their
+                birth date.
               </Muted>
             </>
           ) : (
-            <Muted>Birthday reminders are not switched on yet.</Muted>
+            <Muted>Birthday reminders aren't ready yet.</Muted>
           )}
         </Card>
 
         <Card>
           <CardTitle icon="info">What you are told about</CardTitle>
-          <Body>• A document of your family's is about to expire: 90, 30 and 7 days before, and on the day.</Body>
-          <Body>• Someone's birthday in your family tree, if Birthdays is on.</Body>
-          <Body>• Someone adds you to a family.</Body>
+          <Body>• Expiring documents, 90, 30 and 7 days ahead and on the day. Needs ★ Family Plus.</Body>
+          <Body>• Birthdays in your family tree, if Birthdays is on.</Body>
+          <Body>• Invitations to join a family.</Body>
           <Muted>
-            Everyone in the family is told. Phones and computers are told between 8 in the morning and 10 at night,
-            India time; anything that comes up at night waits for the morning. It is free.
+            Phones and computers get these between 8 am and 10 pm, India time. Anything at night waits until
+            morning.
           </Muted>
         </Card>
       </ScrollView>

@@ -25,7 +25,7 @@ export function FingerprintSignIn({ onSignedIn }: { onSignedIn: () => void }) {
       await lock.signIn();
       onSignedIn();
     } catch (err: any) {
-      setProblem(err?.message || 'Not signed in. Please try again.');
+      setProblem(err?.message || "Didn't sign in. Try again.");
     } finally {
       setBusy(false);
     }

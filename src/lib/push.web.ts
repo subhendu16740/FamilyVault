@@ -16,11 +16,11 @@ export type { PushResult, PushStatus, TestResult };
 const WORKER = '/sw.js';
 
 const HOME_SCREEN =
-  'On iPhone or iPad, add AskLocker to your Home Screen first: tap Share, then Add to Home Screen. Open it from there and turn reminders on.';
-const UNSUPPORTED = 'This browser cannot show notifications. Chrome, Edge, Firefox and Safari can.';
+  'On iPhone or iPad, tap Share, then Add to Home Screen. Open AskLocker from there and turn reminders on.';
+const UNSUPPORTED = "This browser can't show notifications. Try Chrome, Edge, Firefox or Safari.";
 const BLOCKED =
-  "Notifications are blocked for AskLocker in this browser. Allow them in the browser's settings for this site, then try again.";
-const NOT_READY = 'Reminders on devices are not switched on yet.';
+  'Notifications are blocked. Allow them for this site in your browser settings, then try again.';
+const NOT_READY = "Reminders on devices aren't available yet.";
 
 let serverKeyCache: string | null = null;
 
@@ -78,9 +78,9 @@ async function serverKey(): Promise<string | 'not-ready'> {
   if (error) {
     const status = (error as { context?: Response })?.context?.status;
     if (status === 404 || status === 503) return 'not-ready';
-    throw new Error('Could not reach the reminders service. Please try again.');
+    throw new Error("Couldn't reach AskLocker. Try again.");
   }
-  if (typeof data?.public_key !== 'string') throw new Error('Could not reach the reminders service. Please try again.');
+  if (typeof data?.public_key !== 'string') throw new Error("Couldn't reach AskLocker. Try again.");
   serverKeyCache = data.public_key;
   return data.public_key;
 }
@@ -111,7 +111,7 @@ export async function turnOnPush(): Promise<PushResult> {
   const permission = await Notification.requestPermission();
   if (permission === 'denied') return { ok: false, message: BLOCKED };
   if (permission !== 'granted') {
-    return { ok: false, message: 'AskLocker can remind you once you allow notifications when your browser asks.' };
+    return { ok: false, message: 'To get reminders, allow notifications when your browser asks.' };
   }
 
   const key = await serverKey();
@@ -137,7 +137,7 @@ export async function turnOnPush(): Promise<PushResult> {
   if (error) {
     if (isMissingMigration(error)) return { ok: false, message: NOT_READY };
     if (error.code === '23514') {
-      return { ok: false, message: "This browser's notification service is not one AskLocker can use. Try Chrome, Edge, Firefox or Safari." };
+      return { ok: false, message: "AskLocker can't send notifications to this browser. Try Chrome, Edge, Firefox or Safari." };
     }
     throw new Error(error.message);
   }
@@ -166,6 +166,6 @@ export async function forgetPushOnThisDevice(): Promise<void> {
 
 export async function sendTestPush(): Promise<TestResult> {
   const { data, error } = await supabase.functions.invoke('push', { body: { action: 'test' } });
-  if (error) throw new Error('Could not send a test just now. Please try again.');
+  if (error) throw new Error("Couldn't send a test. Try again.");
   return { devices: data?.devices ?? 0, sent: data?.sent ?? 0 };
 }

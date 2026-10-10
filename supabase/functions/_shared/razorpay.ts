@@ -11,9 +11,12 @@
 //     raw body with the webhook secret — both HMAC-SHA256, in hex.
 //   • Rupees always; dollars only once international payments are switched
 //     on in Razorpay and RAZORPAY_CURRENCIES says "INR,USD".
+//   • Who pays in which is the server's call too (payerCurrency()): rupees
+//     only when the connection comes from India and the device's time zone
+//     agrees, so someone abroad cannot pick rupees by changing a setting.
 // ────────────────────────────────────────────────────────────────
 
-import { PLUS_PRICE, type PricePeriod } from './plan-text.ts';
+import { PLUS_PRICE, plusPrices, type PricePeriod } from './plan-text.ts';
 
 export type RazorpayCurrency = 'INR' | 'USD';
 
@@ -35,6 +38,42 @@ export function acceptedCurrencies(setting: string | undefined | null): Razorpay
   const asked = (setting ?? '').toUpperCase().split(',').map((c) => c.trim());
   const ok = asked.filter((c): c is RazorpayCurrency => c === 'INR' || c === 'USD');
   return ok.length ? [...new Set(ok)] : ['INR'];
+}
+
+const INDIA_TIME_ZONE = /^Asia\/(Kolkata|Calcutta)$/;
+
+/**
+ * The connection's country, two letters, from Cloudflare's CF-IPCountry
+ * header (Supabase's gateway sits behind Cloudflare, which sets it from the
+ * caller's internet address and overwrites one a client sends). Null when
+ * Cloudflare does not know ("XX") or the header is missing.
+ */
+export function connectionCountry(header: string | null | undefined): string | null {
+  const c = (header ?? '').trim().toUpperCase();
+  return /^[A-Z][A-Z0-9]$/.test(c) && c !== 'XX' ? c : null;
+}
+
+/**
+ * Rupees or dollars for this payer. Rupees only when the connection is from
+ * India and the device's time zone, when the app sends it, is India's; an
+ * NRI abroad pays in dollars even with the phone set to India time. With no
+ * country, the time zone alone decides, as the app always did. Null when
+ * neither is known (an app older than this sends no time zone and chose for
+ * itself).
+ */
+export function payerCurrency(country: string | null, timeZone: unknown): RazorpayCurrency | null {
+  const zone = typeof timeZone === 'string' && timeZone.length > 0 && timeZone.length < 64 ? timeZone : null;
+  const zoneIndia = zone ? INDIA_TIME_ZONE.test(zone) : null;
+  if (country) return country === 'IN' && zoneIndia !== false ? 'INR' : 'USD';
+  if (zoneIndia !== null) return zoneIndia ? 'INR' : 'USD';
+  return null;
+}
+
+/** Said when the app asked to pay in the other currency: what it costs here. */
+export function payerCurrencyMessage(currency: RazorpayCurrency): string {
+  return currency === 'INR'
+    ? `In India, Family Plus is ${plusPrices('inr')}.`
+    : `From where you are, Family Plus is ${plusPrices('usd')}.`;
 }
 
 const enc = new TextEncoder();

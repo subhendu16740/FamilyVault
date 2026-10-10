@@ -24,6 +24,7 @@ import {
   Card, CardTitle, Field, Muted, PrimaryButton, SecondaryButton, DangerButton, Status, screenStyles,
 } from '../../../components/settings-ui';
 import { color, radius, size, space, type } from '../../../constants/design';
+import { track } from '../../../lib/analytics';
 
 type ContactDraft = { name: string; relation: string; phone: string };
 const blankContact = (): ContactDraft => ({ name: '', relation: '', phone: '' });
@@ -82,7 +83,7 @@ export default function EditEmergencyCardScreen() {
       })
       .catch((err) => {
         if (!cancelled) {
-          setProblem(isMissingMigration(err) ? 'Emergency cards are not switched on yet.' : err?.message ?? 'Could not load the emergency card.');
+          setProblem(isMissingMigration(err) ? "Emergency cards aren't switched on yet." : err?.message ?? "Couldn't load the emergency card.");
         }
       })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -109,9 +110,10 @@ export default function EditEmergencyCardScreen() {
     setStatus(null);
     try {
       await saveEmergencyCard(id, card);
+      track('emergency_card_saved', {});
       done();
     } catch (err: any) {
-      setStatus(isMissingMigration(err) ? 'Emergency cards are not switched on yet.' : err?.message || 'Could not save. Please try again.');
+      setStatus(isMissingMigration(err) ? "Emergency cards aren't switched on yet." : err?.message || "Couldn't save. Try again.");
       setSaving(false);
       setConfirmDelete(false);
     }
@@ -144,10 +146,10 @@ export default function EditEmergencyCardScreen() {
         ) : !person ? (
           <Status kind="error">This person is no longer in the family tree.</Status>
         ) : !canEdit ? (
-          <Status kind="error">Only a family admin, or the person themselves, can change an emergency card.</Status>
+          <Status kind="error">Only an admin or the person themselves can change this card.</Status>
         ) : (
           <>
-            <Muted>Everyone in your family can see this card. Fill in what you know; anything can be left empty.</Muted>
+            <Muted>Everyone in your family can see this card. Fill in what you know.</Muted>
 
             <Card>
               <CardTitle icon="droplet">Blood group</CardTitle>
@@ -238,7 +240,7 @@ export default function EditEmergencyCardScreen() {
         <Pressable style={styles.overlay} onPress={() => !saving && setConfirmDelete(false)}>
           <Pressable style={styles.dialog} onPress={() => {}}>
             <Text style={styles.dialogTitle}>Delete {whose} emergency card?</Text>
-            <Text style={styles.dialogText}>Everything on it goes. You can add a new one at any time.</Text>
+            <Text style={styles.dialogText}>Everything on it will be deleted.</Text>
             <View style={styles.dialogButtons}>
               <TouchableOpacity style={styles.cancelBtn} onPress={() => setConfirmDelete(false)} disabled={saving} accessibilityRole="button">
                 <Text style={styles.cancelText}>Cancel</Text>

@@ -13,10 +13,11 @@ import { accountKey, storageGet, storageSet } from '../../lib/storage';
 import { isPersonalVault, vaultName } from '../../lib/vaults';
 import {
   fetchCategories, ragSearch, indexStatus, saveChat, getSavedChat, isMissingMigration, claimVoiceAnswer,
-  fetchVoiceStatus, ChatStorageFullError,
+  fetchVoiceStatus, ChatStorageFullError, fetchQuestionStatus,
   type RagSearchResult, type RagHistoryTurn, type IndexStatus, type SavedChatMessage,
 } from '../../lib/api';
 import { plusPage } from '../../lib/family-plan';
+import { QUESTION_INPUT_MAX, limitHint, parseAllowance, questionsLeftText, resetDay, type QuestionAllowance } from '../../lib/plans';
 import type { Database } from '../../lib/database.types';
 import { usePreferences } from '../../lib/preferences';
 import { phrase } from '../../lib/voice-languages';
@@ -27,6 +28,7 @@ import { toSpeech } from '../../lib/speech-text';
 import { ScreenHeader, HeaderIconButton, HeaderActions } from '../../components/screen-header';
 import { VaultPill, VaultSheet, type VaultChoice } from '../../components/vault-sheet';
 import { color, size, space, type } from '../../constants/design';
+import { track } from '../../lib/analytics';
 
 type DocumentCategory = Database['public']['Tables']['document_categories']['Row'];
 
@@ -122,8 +124,10 @@ export default function SearchScreen() {
       return;
     }
     showSaveNotice('error', isMissingMigration(err)
-      ? 'Saving chats is not switched on yet.'
-      : 'Could not save this chat. Please try again.', 7000);
+      ? "Saving chats isn't available yet."
+      : limitHint(err) === 'chat_limit'
+        ? (err as Error).message      // 50 a person in a vault (050), in the database's words
+        : "Couldn't save this chat. Try again.", 7000);
   };
 
   const startNewChat = () => {
@@ -186,10 +190,11 @@ export default function SearchScreen() {
     setSaving(true);
     try {
       const id = await saveChat(familyId, toSaved(messages));
+      track('chat_saved', {});
       lastSaved.current = messages;
       setSavedId(id);
       setChatFull(null);
-      showSaveNotice('ok', 'Saved. Find it again with the clock at the top.');
+      showSaveNotice('ok', 'Saved. Tap the clock at the top to find it.');
     } catch (err) {
       saveFailed(err);
     } finally {
@@ -294,6 +299,19 @@ export default function SearchScreen() {
   }, [familyId]));
   useEffect(() => { setVoiceQuota(null); limitSaid.current = false; }, [familyId]);
 
+  // Questions this month (049): each person's own, across every vault. Shown
+  // once few are left; each answer brings the count up to date.
+  const [questions, setQuestions] = useState<QuestionAllowance | null>(null);
+  useFocusEffect(useCallback(() => {
+    let cancelled = false;
+    fetchQuestionStatus().then((status) => {
+      if (!cancelled && status) setQuestions(status);   // unknown (before 049, offline): say nothing
+    });
+    return () => { cancelled = true; };
+  }, []));
+  const questionsLine = questions ? questionsLeftText(questions) : null;
+  const showQuestions = !!questions && !!questionsLine && (questions.limit == null || (questions.left ?? 0) <= 5);
+
   const readAnswer = useCallback(async (id: string, text: string, lang?: string) => {
     if (!heardIds.current.has(id) && currentFamily) {
       // None left, as far as this screen knows: no need to ask again.
@@ -373,6 +391,7 @@ export default function SearchScreen() {
 
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
 
+    track('question_asked', { voice: !!wantVoice, scope: askAll ? 'all' : 'one' });
     try {
       const result = await ragSearch(askFamily.id, question, history, {
         language: voiceMode ? voiceLanguage : undefined,
@@ -386,7 +405,16 @@ export default function SearchScreen() {
             : m
         )
       );
-      if (wantVoice) readAnswer(aiPlaceholder.id, result.answer, result.answer_language);
+      const allowance = parseAllowance(result.questions);
+      if (allowance) setQuestions(allowance);
+      if (result.question_limit) {
+        // This month's questions, or today's tries (050), are used up: said
+        // aloud in voice mode, and, like an apology, never counted as a voice chat.
+        if (voiceWanted) {
+          heardIds.current.add(aiPlaceholder.id);
+          speakMessage(aiPlaceholder.id, result.answer, result.answer_language);
+        }
+      } else if (wantVoice) readAnswer(aiPlaceholder.id, result.answer, result.answer_language);
       else if (voiceWanted) sayNoVoiceLeft();
       if (result.debug?.index_rebuilding) repairIndex(result.debug.rebuilding_family_ids?.[0] ?? askFamily.id);
     } catch (err) {
@@ -554,10 +582,10 @@ export default function SearchScreen() {
                   {voiceMode
                     ? t('empty_sub')
                     : askAll
-                      ? 'I can find information across all your vaults: your personal vault and your families.'
+                      ? "I'll search all your vaults."
                       : pickedVault
-                        ? `I can find information in ${vaultName(pickedVault.families)}.`
-                        : "I can find information across all your family's uploaded documents."}
+                        ? `I'll search ${vaultName(pickedVault.families)}.`
+                        : "I'll search all your documents."}
                 </Text>
               </View>
 
@@ -644,7 +672,7 @@ export default function SearchScreen() {
                               : ''}
                             {msg.debug.models?.answer ? ` · ${shortModel(msg.debug.models.answer)}` : ''}
                             {msg.debug.history_turns > 0 && !msg.debug.client_sent_sources ? ' · old client' : ''}
-                            {msg.debug.index_rebuilding ? ' · index rebuilding — run Settings › Search' : ''}
+                            {msg.debug.index_rebuilding ? ' · index rebuilding, see Settings › Search' : ''}
                             {msg.debug.embedded === false && !msg.debug.index_rebuilding
                               ? ` · no query vector${msg.debug.embed_error ? `: ${msg.debug.embed_error}` : ', keywords only'}`
                               : ''}
@@ -691,11 +719,11 @@ export default function SearchScreen() {
             <ActivityIndicator size="small" color="#2A3D66" />
             <Text style={styles.indexStripText} numberOfLines={1}>
               {indexFix.reextracting
-                ? 'Improving search… reading your PDFs again, tables and all'
+                ? 'Improving search… rereading your PDFs'
                 : indexFix.rechunking
-                  ? 'Improving search across languages… re-reading your documents'
-                  : `Improving search across languages… ${indexFix.done_count}` +
-                    `${indexFix.total_count > 0 ? ` of ${indexFix.total_count}` : ''} passages`}
+                  ? 'Improving search… rereading your documents'
+                  : `Improving search… ${indexFix.done_count}` +
+                    `${indexFix.total_count > 0 ? ` of ${indexFix.total_count}` : ''} done`}
             </Text>
           </View>
         )}
@@ -711,8 +739,7 @@ export default function SearchScreen() {
           <View style={[styles.indexStrip, styles.indexStripError]}>
             <Feather name="alert-triangle" size={14} color="#9A6200" />
             <Text style={[styles.indexStripText, styles.indexStripErrorText]} numberOfLines={2}>
-              Not searchable, nothing could be read from {indexFix.unindexed.length === 1 ? 'it' : 'them'}:{' '}
-              {indexFix.unindexed.join(', ')}. Try uploading again.
+              We couldn't read {indexFix.unindexed.join(', ')}. Try uploading again.
             </Text>
           </View>
         )}
@@ -731,12 +758,31 @@ export default function SearchScreen() {
             <Feather name={noVoiceLeft ? 'mic-off' : 'mic'} size={14} color={color.primary} />
             <Text style={styles.indexStripText}>
               {noVoiceLeft
-                ? `You have used your ${voiceQuota.limit} free voice chats. Type to ask; answers stay on the screen.`
-                : `You have ${voiceQuota.left} of ${voiceQuota.limit} free voice chats left.`}
+                ? `You've used all ${voiceQuota.limit} free voice chats. Type to ask instead.`
+                : `${voiceQuota.left} of ${voiceQuota.limit} free voice chats left.`}
             </Text>
             <TouchableOpacity onPress={() => router.push(plusPage('voice') as any)} accessibilityRole="link" hitSlop={8}>
               <Text style={styles.voiceStripLink}>Family Plus ›</Text>
             </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Questions this month (049): once few are left, how many, and what Family Plus changes. */}
+        {showQuestions && questions && (
+          <View
+            style={[styles.indexStrip, questions.left === 0 ? styles.indexStripError : styles.voiceStrip]}
+            accessibilityLiveRegion="polite"
+          >
+            <Feather name="message-circle" size={14} color={questions.left === 0 ? '#9A6200' : color.primary} />
+            <Text style={[styles.indexStripText, questions.left === 0 && styles.indexStripErrorText]}>
+              {questionsLine}
+              {questions.left === 0 && resetDay(questions.resetsOn) ? `. They start again on ${resetDay(questions.resetsOn)}.` : '.'}
+            </Text>
+            {!questions.plus && (
+              <TouchableOpacity onPress={() => router.push(plusPage('questions') as any)} accessibilityRole="link" hitSlop={8}>
+                <Text style={styles.voiceStripLink}>Family Plus ›</Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
 
@@ -757,7 +803,7 @@ export default function SearchScreen() {
         {hasMessages && (
           <View style={styles.saveBar}>
             {savedId && saveStopped ? (
-              <View style={[styles.saveBtn, styles.saveBtnStopped]} accessibilityLabel="New answers in this chat are not being saved">
+              <View style={[styles.saveBtn, styles.saveBtnStopped]} accessibilityLabel="New answers aren't being saved">
                 <Feather name="alert-circle" size={16} color="#9A6200" />
                 <Text style={[styles.saveBtnText, styles.saveBtnTextStopped]}>Not saving new answers</Text>
               </View>
@@ -810,6 +856,7 @@ export default function SearchScreen() {
               placeholder={voiceMode ? voicePlaceholder() : 'Ask about your documents...'}
               placeholderTextColor={voiceNotice ? '#B45309' : '#9CA3AF'}
               returnKeyType="send"
+              maxLength={QUESTION_INPUT_MAX}
               style={[styles.input, voiceMode && styles.inputLarge]}
               editable={!isAsking && voiceState !== 'listening'}
             />
@@ -874,7 +921,7 @@ export default function SearchScreen() {
       <VaultSheet
         visible={searchInOpen}
         title="Search in"
-        intro="All my vaults searches every document you can see. Pick one vault and the answer comes sooner."
+        intro="Pick one vault for a faster answer."
         choices={searchInChoices}
         selected={pickedVault ? pickedVault.family_id : 'all'}
         onSelect={chooseSearchIn}

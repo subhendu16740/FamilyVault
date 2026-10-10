@@ -236,6 +236,7 @@ export async function runMemberChecks(cfg, { a, b, vaultA }, results) {
   }
 
   let sacrificialId = null;
+  const sacrificialPath = `${vaultA.namespace}/qa_sacrificial_${cfg.runId}_m.pdf`;
   let treePerson = null;              // B's person in A's tree, removed at the end
   let cardChecked = false;            // B saved an emergency card (032)
   let linkEntry = null;               // the entry linked to B (033), removed at the end if still there
@@ -274,9 +275,12 @@ export async function runMemberChecks(cfg, { a, b, vaultA }, results) {
     const afterGrant = await memberRow(b.user.id);
     check('viewer-cannot-grant', 'A viewer cannot give itself delete rights', afterGrant?.can_delete === false, `can_delete is ${afterGrant?.can_delete}`);
 
+    // Its file first: since 050 a document needs its file there.
+    await a.client.storage.from('documents').upload(sacrificialPath,
+      Buffer.from('%PDF-1.4\n% AskLocker QA: a document a viewer must not delete\n'), { contentType: 'application/pdf' });
     const { data: docId, error: sacErr } = await a.client.rpc('insert_family_document', {
       p_family_id: vaultA.id, p_uploaded_by: a.user.id, p_file_name: `qa_sacrificial_${cfg.runId}_m.pdf`,
-      p_file_type: 'pdf', p_file_size_bytes: 1, p_storage_path: `${vaultA.namespace}/qa_sacrificial_${cfg.runId}_m.pdf`,
+      p_file_type: 'pdf', p_file_size_bytes: 1, p_storage_path: sacrificialPath,
     });
     let viewerRefusal = '';
     if (sacErr) {
@@ -479,6 +483,7 @@ export async function runMemberChecks(cfg, { a, b, vaultA }, results) {
     if (waiting) await a.client.rpc('cancel_family_invite', { p_invite_id: waiting.id });
     if (await memberRow(b.user.id)) await a.client.from('family_members').delete().eq('family_id', vaultA.id).eq('user_id', b.user.id);
     if (sacrificialId) await a.client.rpc('delete_family_document', { p_family_id: vaultA.id, p_document_id: sacrificialId, p_user_id: a.user.id });
+    await a.client.storage.from('documents').remove([sacrificialPath]);
     if (linkEntry) await a.client.rpc('remove_family_person', { p_person_id: linkEntry });
     // B's person stays in the tree after leaving, by design; a QA run should not.
     if (treePerson && !(await memberRow(b.user.id))) {

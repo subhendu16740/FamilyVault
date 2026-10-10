@@ -55,10 +55,10 @@ function docIcon(fileType: string): 'file-text' | 'image' | 'file' {
 /** Why a delete did not go through, in words a person can act on. */
 function deleteProblem(err: unknown): string {
   const message = String((err as Error | null)?.message ?? '');
-  if (/permission/i.test(message)) return 'you can delete only the documents you added';
-  if (/not a member/i.test(message)) return 'you are no longer in that vault';
-  if (/fetch|network/i.test(message)) return 'AskLocker could not be reached';
-  return 'please try again';
+  if (/permission/i.test(message)) return 'You can only delete documents you added.';
+  if (/not a member/i.test(message)) return "You're no longer in that vault.";
+  if (/fetch|network/i.test(message)) return "We couldn't reach AskLocker. Check your connection.";
+  return 'Try again.';
 }
 
 /** "Personal vault", "Personal vault and Verma family". */
@@ -107,7 +107,7 @@ export default function DocumentsScreen() {
           .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
       );
       const failed = families.filter((_, i) => lists[i] === null).map((v) => vaultName(v.families));
-      if (failed.length) setLoadProblem(`The documents in ${joinNames(failed)} could not be loaded. Come back to this screen to try again.`);
+      if (failed.length) setLoadProblem(`Couldn't load documents in ${joinNames(failed)}. Open this screen again to retry.`);
     } finally {
       if (run === loads.current) setLoading(false);
     }
@@ -186,10 +186,10 @@ export default function DocumentsScreen() {
       });
       setSelecting(false);
     } else {
-      const notDone = problems.length === 1 ? 'One document was not deleted' : `${problems.length} documents were not deleted`;
+      const notDone = problems.length === 1 ? "One document wasn't deleted" : `${problems.length} documents weren't deleted`;
       setNews({
         kind: 'error',
-        text: `${gone.size ? `Deleted ${plural(gone.size, 'document', 'documents')}. ` : ''}${notDone}: ${problems[0]}.`,
+        text: `${gone.size ? `Deleted ${plural(gone.size, 'document', 'documents')}. ` : ''}${notDone}. ${problems[0]}`,
       });
     }
     setDeleting(false);
@@ -224,7 +224,7 @@ export default function DocumentsScreen() {
       {selecting && (
         <View style={styles.selectBar}>
           <Text style={styles.selectHint}>
-            Tick the documents to delete.{deletable.length < shown.length ? ' Greyed-out ones were added by someone else: only the person who added a document can delete it.' : ''}
+            Tick the documents to delete.{deletable.length < shown.length ? ' You can only delete ones you added.' : ''}
           </Text>
           {deletable.length > 1 && (
             <TouchableOpacity onPress={pickAll} style={styles.pickAll} accessibilityRole="button">
@@ -320,7 +320,7 @@ export default function DocumentsScreen() {
             <View style={styles.empty}>
               <Feather name="file-plus" size={32} color="#D1D5DB" />
               <Text style={styles.emptyTitle}>{chosenVault ? `No documents in ${chosenVault}` : 'No documents yet'}</Text>
-              <Text style={styles.emptyText}>Documents you upload appear here.</Text>
+              <Text style={styles.emptyText}>Your uploads show up here.</Text>
             </View>
           }
           contentContainerStyle={styles.list}
@@ -351,8 +351,8 @@ export default function DocumentsScreen() {
             </Text>
             <Text style={styles.dialogText}>
               {asking && asking.length === 1
-                ? `"${asking[0].file_name}" will be deleted from ${asking[0].vault}, with its file. This cannot be undone.`
-                : `They will be deleted from ${joinNames(askVaults)}, with their files. This cannot be undone.`}
+                ? `"${asking[0].file_name}" and its file will be deleted from ${asking[0].vault}. This can't be undone.`
+                : `This deletes them and their files from ${joinNames(askVaults)}. It can't be undone.`}
             </Text>
             <View style={styles.dialogButtons}>
               <TouchableOpacity style={styles.cancelBtn} onPress={() => setAsking(null)} disabled={deleting} accessibilityRole="button">

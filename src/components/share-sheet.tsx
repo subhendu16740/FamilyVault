@@ -1,5 +1,6 @@
 // Share by link (migration 036): one document, for someone outside the
-// family, for 1, 7 or 30 days. The link is shown once, when it is made — its
+// family, for 1, 7 or 30 days — 30 on Family Plus only (049: a free vault's
+// ★ 30 days opens the Plus page, and the server refuses it too). The link is shown once, when it is made — its
 // secret is never stored — and the family sees every live link below, with
 // how often it was opened. Whoever made a link, or an admin, can turn it off.
 //
@@ -9,15 +10,19 @@
 import { useCallback, useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Modal, Pressable, ActivityIndicator, StyleSheet } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { useAuth } from '../lib/auth';
 import { useFamily } from '../lib/family-context';
 import {
-  createShareLink, fetchFamilyMembers, fetchShareLinks, revokeShareLink, shareLinkUrl, type ShareDays, type ShareLink,
+  createShareLink, fetchFamilyMembers, fetchPlanLimits, fetchShareLinks, fetchStorageStatus, revokeShareLink, shareLinkUrl,
+  type ShareDays, type ShareLink,
 } from '../lib/api';
+import { plusPage } from '../lib/family-plan';
 import type { FamilyMemberWithUser } from '../lib/database.types';
 import { longDate } from '../lib/dates';
 import { Field, Muted, PrimaryButton, SecondaryButton, Status } from './settings-ui';
 import { color, radius, size, space, type } from '../constants/design';
+import { track } from '../lib/analytics';
 
 const DAYS: { days: ShareDays; label: string }[] = [
   { days: 1, label: '1 day' },
@@ -54,11 +59,29 @@ export function ShareSheet({ visible, onClose, familyId, documentId, fileName }:
   const [made, setMade] = useState<{ url: string; expiresAt: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  const [plusLink, setPlusLink] = useState(false);
+  // A 30-day link is part of Family Plus (049): for a vault known to be on
+  // Free, where the database already has 049, "30 days" opens the Plus page.
+  const [thirtyIsPlus, setThirtyIsPlus] = useState(false);
+  useEffect(() => {
+    if (!visible) return;
+    let cancelled = false;
+    setThirtyIsPlus(false);
+    Promise.all([fetchStorageStatus(familyId).catch(() => null), fetchPlanLimits().catch(() => null)])
+      .then(([room, limits]) => {
+        if (!cancelled) setThirtyIsPlus(room?.plan === 'free' && limits?.questions.free != null);
+      });
+    return () => { cancelled = true; };
+  }, [visible, familyId]);
+  const openPlus = () => {
+    onClose();
+    router.push(plusPage('links') as any);
+  };
 
   const load = useCallback(() => {
     fetchShareLinks(familyId, documentId)
       .then(setLinks)
-      .catch((err) => { setLinks([]); setProblem(err?.message ?? 'Could not load the links.'); });
+      .catch((err) => { setLinks([]); setProblem(err?.message ?? "Couldn't load the links."); });
   }, [familyId, documentId]);
 
   useEffect(() => {
@@ -66,6 +89,7 @@ export function ShareSheet({ visible, onClose, familyId, documentId, fileName }:
     setMade(null);
     setCopied(false);
     setProblem(null);
+    setPlusLink(false);
     setNote('');
     setDays(7);
     setLinks(null);
@@ -81,19 +105,25 @@ export function ShareSheet({ visible, onClose, familyId, documentId, fileName }:
   const make = async () => {
     setMaking(true);
     setProblem(null);
+    setPlusLink(false);
     try {
       const outcome = await createShareLink(familyId, documentId, days, note);
       if (outcome.status === 'made') {
+        track('share_link_made', { days });
         setMade({ url: shareLinkUrl(window.location.origin, outcome.token), expiresAt: outcome.link.expiresAt });
         setCopied(false);
         setLinks((prev) => (Array.isArray(prev) ? [outcome.link, ...prev] : [outcome.link]));
       } else if (outcome.status === 'refused') {
         setProblem(outcome.message);
+      } else if (outcome.status === 'plus_only') {
+        setProblem(outcome.message);
+        setPlusLink(true);
+        setDays(7);
       } else {
-        setProblem('Share links are not switched on yet.');
+        setProblem("Share links aren't switched on yet.");
       }
     } catch (err: any) {
-      setProblem(err?.message || 'Could not make a link. Please try again.');
+      setProblem(err?.message || "Couldn't make a link. Try again.");
     } finally {
       setMaking(false);
     }
@@ -105,7 +135,7 @@ export function ShareSheet({ visible, onClose, familyId, documentId, fileName }:
       await navigator.clipboard.writeText(made.url);
       setCopied(true);
     } catch {
-      setProblem('Could not copy. Select the link and copy it yourself.');
+      setProblem("Couldn't copy. Select the link and copy it.");
     }
   };
 
@@ -124,7 +154,7 @@ export function ShareSheet({ visible, onClose, familyId, documentId, fileName }:
       await revokeShareLink(id);
       setLinks((prev) => (Array.isArray(prev) ? prev.filter((l) => l.id !== id) : prev));
     } catch (err: any) {
-      setProblem(err?.message || 'Could not turn the link off. Please try again.');
+      setProblem(err?.message || "Couldn't turn off the link. Try again.");
     }
   };
 
@@ -144,12 +174,12 @@ export function ShareSheet({ visible, onClose, familyId, documentId, fileName }:
 
         <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
           {links === 'unavailable' ? (
-            <Muted>Share links are not switched on yet.</Muted>
+            <Muted>Share links aren't switched on yet.</Muted>
           ) : (
             <>
               <Text style={styles.intro}>
-                Anyone with the link can open this document — no account needed — until it expires. You can turn it
-                off at any time.
+                Anyone with the link can open this document without an account. You or a family admin can turn it
+                off any time.
               </Text>
 
               {made ? (
@@ -157,7 +187,7 @@ export function ShareSheet({ visible, onClose, familyId, documentId, fileName }:
                   <Text style={styles.linkBox} selectable numberOfLines={2}>{made.url}</Text>
                   <PrimaryButton label={copied ? 'Copied' : 'Copy link'} icon={copied ? 'check' : 'copy'} onPress={copy} />
                   {canShareOut && <SecondaryButton label="Send it…" icon="share-2" onPress={shareOut} />}
-                  <Muted>It works until {longDate(new Date(made.expiresAt))}. This is the only time it is shown.</Muted>
+                  <Muted>Works until {longDate(new Date(made.expiresAt))}. Copy it now. It won't be shown again.</Muted>
                 </View>
               ) : (
                 <>
@@ -173,15 +203,20 @@ export function ShareSheet({ visible, onClose, familyId, documentId, fileName }:
                     <View style={styles.chips} accessibilityRole="radiogroup">
                       {DAYS.map((d) => {
                         const on = d.days === days;
+                        // ★ Family Plus: for a free vault it opens the Plus page instead.
+                        const plusOnly = d.days === 30 && thirtyIsPlus;
                         return (
                           <TouchableOpacity
                             key={d.days}
                             style={[styles.chip, on && styles.chipOn]}
-                            onPress={() => setDays(d.days)}
-                            accessibilityRole="radio"
-                            aria-checked={on}
+                            onPress={() => (plusOnly ? openPlus() : setDays(d.days))}
+                            accessibilityRole={plusOnly ? 'link' : 'radio'}
+                            aria-checked={plusOnly ? undefined : on}
+                            accessibilityLabel={plusOnly ? '30 days, part of Family Plus' : undefined}
                           >
-                            <Text style={[styles.chipText, on && styles.chipTextOn]}>{d.label}</Text>
+                            <Text style={[styles.chipText, on && styles.chipTextOn]}>
+                              {plusOnly ? `★ ${d.label}` : d.label}
+                            </Text>
                           </TouchableOpacity>
                         );
                       })}
@@ -192,12 +227,17 @@ export function ShareSheet({ visible, onClose, familyId, documentId, fileName }:
               )}
 
               {!!problem && <Status kind="error">{problem}</Status>}
+              {plusLink && (
+                <TouchableOpacity onPress={openPlus} accessibilityRole="link" hitSlop={8}>
+                  <Text style={styles.plusLink}>See Family Plus ›</Text>
+                </TouchableOpacity>
+              )}
 
               <Text style={styles.section}>Links for this document</Text>
               {links === null ? (
                 <ActivityIndicator color={color.primary} />
               ) : links.length === 0 ? (
-                <Muted>None are working now.</Muted>
+                <Muted>No working links.</Muted>
               ) : (
                 links.map((l) => (
                   <View key={l.id} style={styles.row}>
@@ -260,4 +300,5 @@ const styles = StyleSheet.create({
   rowSub: type.caption,
   off: { minHeight: size.control, paddingHorizontal: space.md, alignItems: 'center', justifyContent: 'center' },
   offText: { ...type.label, color: color.danger, fontWeight: '600' },
+  plusLink: { ...type.label, color: color.primary, fontWeight: '600' },
 });

@@ -14,18 +14,19 @@ import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFamily } from '../lib/family-context';
 import { isPersonalVault, vaultName } from '../lib/vaults';
-import { useFamilyPlan, usePaymentsStatus, type PlusFeature } from '../lib/family-plan';
+import { forgetOnPlus, useFamilyPlan, usePaymentsStatus, type PlusFeature } from '../lib/family-plan';
 import { PaymentError, createPlusOrder, fetchPlanLimits, verifyPlusPayment } from '../lib/api';
 import { checkoutSupported, openCheckout } from '../lib/razorpay';
 import {
   DEFAULT_PLAN_LIMITS, formatBytes, localCurrency, localPlusAmount, localPlusPrice, localPlusYearlyOffer,
-  localPlusYearlySaving, plusPrice, plusYearlyOffer, type PlanLimits,
+  localPlusYearlySaving, type PlanLimits,
 } from '../lib/plans';
 import { longDate } from '../lib/dates';
 import { ScreenHeader } from '../components/screen-header';
 import { TwelveMonthsPrice, YearlyPrice } from '../components/plus-price';
 import { Card, Muted, screenStyles } from '../components/settings-ui';
 import { color, radius, space, type } from '../constants/design';
+import { track } from '../lib/analytics';
 
 type Cell = boolean | string;
 
@@ -39,34 +40,51 @@ interface Row {
 
 // "10 each" (per person, 043), or ✓ for a plan with no limit on voice chats.
 const voiceCell = (n: number | null): Cell => (n == null ? true : `${n} each`);
+// "20 a month each" (049), or ✓ for a plan with no monthly limit.
+const questionsCell = (n: number | null): Cell => (n == null ? true : `${n} a month each`);
 
 function rows(limits: PlanLimits): Row[] {
   return [
     { label: 'Space for a family', free: formatBytes(limits.free), plus: formatBytes(limits.plus), feature: 'storage' },
     { label: 'Space in your personal vault', free: formatBytes(limits.freePersonal), plus: formatBytes(limits.plus) },
-    { label: 'Members who sign in', free: String(limits.members.free), plus: String(limits.members.plus) },
-    { label: 'Add and scan documents, read in Indian languages too', free: true, plus: true },
-    { label: 'Ask about your documents', free: true, plus: true },
+    {
+      label: limits.members.plus > limits.members.free ? '★ Members who sign in' : 'Members who sign in',
+      free: String(limits.members.free), plus: String(limits.members.plus), feature: 'members',
+    },
+    { label: 'Add and scan documents, Indian languages too', free: true, plus: true },
+    // Before 049 nobody's questions are counted, on either plan.
+    limits.questions.free == null
+      ? { label: 'Ask about your documents', free: true, plus: true }
+      : {
+        label: '★ Questions', free: questionsCell(limits.questions.free),
+        plus: questionsCell(limits.questions.plus), feature: 'questions',
+      },
     { label: 'Family tree and emergency cards', free: true, plus: true },
     { label: 'Birthday reminders', free: true, plus: true },
-    { label: 'Share a document by link', free: true, plus: true },
+    // 049 also makes a 30-day link part of Plus; before it, every plan has them.
+    limits.questions.free == null
+      ? { label: 'Share a document by link', free: true, plus: true }
+      : { label: '★ Share links', free: 'Up to 7 days', plus: 'Up to 30 days', feature: 'links' },
     {
-      label: '★ Voice chats: ask by voice, hear the answer', free: voiceCell(limits.voiceAnswers.free), plus: voiceCell(limits.voiceAnswers.plus),
+      label: '★ Voice chats', free: voiceCell(limits.voiceAnswers.free), plus: voiceCell(limits.voiceAnswers.plus),
       feature: 'voice',
     },
     {
-      label: '★ Expiry reminders before anything runs out, and every date in one list', free: false, plus: true,
+      label: '★ Expiry reminders', free: false, plus: true,
       feature: 'reminders',
     },
-    { label: '★ Import documents from Gmail', free: false, plus: true, feature: 'gmail' },
+    { label: '★ Import from Gmail', free: false, plus: true, feature: 'gmail' },
   ];
 }
 
 const BROUGHT_BY: Record<PlusFeature, { icon: string; text: string }> = {
-  reminders: { icon: 'clock', text: 'Expiry reminders, and the Reminders page, are part of Family Plus.' },
-  gmail: { icon: 'mail', text: 'Import from Gmail is part of Family Plus.' },
-  storage: { icon: 'hard-drive', text: 'More space for documents and saved chats is part of Family Plus.' },
-  voice: { icon: 'mic', text: 'Asking by voice and hearing every answer, with no limit, is part of Family Plus.' },
+  reminders: { icon: 'clock', text: 'Expiry reminders come with Family Plus.' },
+  gmail: { icon: 'mail', text: 'Import from Gmail comes with Family Plus.' },
+  storage: { icon: 'hard-drive', text: 'More space comes with Family Plus.' },
+  voice: { icon: 'mic', text: 'Voice chats with no limit come with Family Plus.' },
+  questions: { icon: 'message-circle', text: 'Questions with no monthly limit come with Family Plus.' },
+  members: { icon: 'users', text: 'Room for more members comes with Family Plus.' },
+  links: { icon: 'link', text: '30-day share links come with Family Plus.' },
 };
 
 const said = (cell: Cell) => (cell === true ? 'yes' : cell === false ? 'no' : cell);
@@ -89,10 +107,11 @@ export default function PlusScreen() {
 
   useFocusEffect(useCallback(() => {
     let cancelled = false;
+    track('plus_viewed', { feature: feature && feature in BROUGHT_BY ? feature : 'none' });
     refresh(true);
     fetchPlanLimits().then((l) => { if (!cancelled) setLimits(l); });
     return () => { cancelled = true; };
-  }, [refresh]));
+  }, [refresh, feature]));
 
   const familyName = currentFamily ? vaultName(currentFamily) : undefined;
   // What this vault may keep on Free (048): a personal vault less than a family.
@@ -110,17 +129,20 @@ export default function PlusScreen() {
     setPaying(period);
     setPayNote(null);
     try {
+      track('pay_started', { period, currency });
       const order = await createPlusOrder(currentFamily.id, period, currency);
       const result = await openCheckout(order);
       if (result.status === 'closed' || result.status === 'unsupported') return;
       if (result.status === 'failed') {
-        setPayNote({ tone: 'error', text: `${result.reason} Nothing was charged for Family Plus.` });
+        setPayNote({ tone: 'error', text: `${result.reason} You weren't charged.` });
         return;
       }
       setPayNote({ tone: 'info', text: 'Payment received. Switching on Family Plus…' });
       try {
         const { paidUntil } = await verifyPlusPayment(result);
+        track('payment_done', { period, currency });
         await refresh(true);
+        forgetOnPlus();
         setPayNote({
           tone: 'ok',
           text: `Thank you! ${familyName ?? 'Your family'} has Family Plus until ${longDate(new Date(paidUntil))}.`,
@@ -134,9 +156,9 @@ export default function PlusScreen() {
         // through switches Plus on even when this check could not finish.
         setPayNote({
           tone: 'info',
-          text: "We're confirming your payment with Razorpay. If it went through, Family Plus switches on within a few minutes — there's no need to pay again.",
+          text: "We're still confirming your payment. If it went through, Family Plus turns on in a few minutes. You don't need to pay again.",
         });
-        setTimeout(() => { refresh(true); }, 30_000);
+        setTimeout(() => { refresh(true); forgetOnPlus(); }, 30_000);
       }
     } catch (err) {
       setPayNote({ tone: 'error', text: err instanceof Error ? err.message : 'Something went wrong. Please try again.' });
@@ -158,17 +180,27 @@ export default function PlusScreen() {
 
         <LinearGradient colors={['#2A3D66', '#4A6491']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.hero}>
           <Text style={styles.heroTag}>★ Family Plus</Text>
-          <Text style={styles.heroTitle}>More space and more help, for the whole family</Text>
-          <Text style={styles.heroPrice} accessibilityLabel={monthly}>
-            {localPlusAmount('monthly')}
-            <Text style={styles.heroPer}> a month</Text>
-          </Text>
-          <View style={styles.heroYearRow}>
-            <Text style={styles.heroYear} accessibilityLabel={`or ${yearlyOffer}`}>
-              or <YearlyPrice onDark />
-            </Text>
-            <View style={styles.heroSave}>
-              <Text style={styles.heroSaveText}>{localPlusYearlySaving()}</Text>
+          <Text style={styles.heroTitle}>More space and more help for your family</Text>
+          <View style={styles.heroCells}>
+            <View style={styles.heroCell} accessible accessibilityLabel={`Monthly, ${monthly}`}>
+              <Text style={styles.heroCellLabel}>Monthly</Text>
+              {/* As tall as the crossed-out price, so ₹100 sits level with ₹1,100. */}
+              <View style={styles.heroWasSpace} />
+              <Text style={styles.heroAmount}>{localPlusAmount('monthly')}</Text>
+              <Text style={styles.heroPer}>a month</Text>
+            </View>
+            <View
+              style={styles.heroCell}
+              accessible
+              accessibilityLabel={`Yearly, ${yearlyOffer}, ${localPlusYearlySaving()}`}
+            >
+              <Text style={styles.heroCellLabel}>Yearly</Text>
+              <TwelveMonthsPrice onDark style={styles.heroWas} />
+              <Text style={styles.heroAmount}>{localPlusAmount('yearly')}</Text>
+              <Text style={styles.heroPer}>a year</Text>
+              <View style={styles.heroSave}>
+                <Text style={styles.heroSaveText}>{localPlusYearlySaving()}</Text>
+              </View>
             </View>
           </View>
           <Text style={styles.heroNote}>
@@ -188,8 +220,8 @@ export default function PlusScreen() {
             <Feather name="alert-triangle" size={18} color="#B91C1C" />
             <Text style={[styles.stateText, { color: '#B91C1C' }]}>
               Family Plus has ended for {familyName ?? 'your family'}. On {longDate(new Date(removalAt))}, the newest
-              documents above {formatBytes(freeHere)} will be removed, unless Family Plus is renewed or documents are
-              deleted to get under {formatBytes(freeHere)}.
+              documents over {formatBytes(freeHere)} will be removed. Renew, or delete documents to get under{' '}
+              {formatBytes(freeHere)}.
             </Text>
           </View>
         ) : plan === 'free' ? (
@@ -253,7 +285,7 @@ export default function PlusScreen() {
           <Card style={styles.payCard}>
             <Text style={styles.payTitle}>{plan === 'plus' ? 'Add more time' : 'Get Family Plus'}</Text>
             {!checkoutSupported ? (
-              <Text style={styles.payFine}>Paying for Family Plus is on the AskLocker web app for now.</Text>
+              <Text style={styles.payFine}>For now, you can pay on the AskLocker web app.</Text>
             ) : !canPayHere ? (
               <Text style={styles.payFine}>Paying from outside India is coming soon.</Text>
             ) : (
@@ -284,8 +316,8 @@ export default function PlusScreen() {
                   )}
                 </TouchableOpacity>
                 <Text style={styles.payFine}>
-                  By UPI, card or net banking, through Razorpay. Nothing renews by itself:{' '}
-                  {plan === 'plus' ? 'the time is added to what is left.' : 'you pay again only when you want more time.'}
+                  Pay by UPI, card or net banking through Razorpay. Nothing renews by itself.
+                  {plan === 'plus' ? ' New time is added to what you have left.' : ''}
                 </Text>
               </>
             )}
@@ -306,47 +338,20 @@ export default function PlusScreen() {
               <Text style={styles.soonTag}>Coming soon</Text>
               <Text
                 style={styles.soonText}
-                accessibilityLabel={`Family Plus can't be bought in the app yet. When it can, it is ${monthly} or ${yearlyOffer} for the whole family.`}
+                accessibilityLabel={`You can't buy Family Plus yet. It will be ${monthly} or ${yearlyOffer} for the whole family.`}
               >
-                Family Plus can't be bought in the app yet. When it can, it is {monthly} or <YearlyPrice /> for the
-                whole family.
+                You can't buy Family Plus yet. It will be {monthly} or <YearlyPrice /> for the whole family.
               </Text>
             </View>
           )
         )}
 
-        <Card>
-          <View style={styles.point}>
-            <Feather name="users" size={16} color={color.primary} />
-            <Text style={styles.pointText}>
-              One plan covers the whole family: up to {limits.members.plus} members sign in, and everyone can be in
-              the family tree, with or without an account.
-            </Text>
-          </View>
-          <View style={styles.point}>
-            <Feather name="clock" size={16} color={color.primary} />
-            <Text style={styles.pointText}>
-              If Family Plus ends while a vault holds more than it may keep on Free ({formatBytes(limits.free)} for a
-              family, {formatBytes(limits.freePersonal)} for a personal vault), it has {limits.graceDays} days to
-              renew, or to delete documents to get under that. After that, the newest documents above it are removed.
-              We remind you when it ends, a week before and the day before.
-            </Text>
-          </View>
-          <View style={styles.point}>
-            <Feather name="globe" size={16} color={color.primary} />
-            <Text
-              style={styles.pointText}
-              accessibilityLabel={`In India: ${plusPrice('inr')} or ${plusYearlyOffer('inr')}. Elsewhere: ${plusPrice('usd')} or ${plusYearlyOffer('usd')}.`}
-            >
-              In India: {plusPrice('inr')} or <YearlyPrice currency="inr" />.{'\n'}
-              Elsewhere: {plusPrice('usd')} or <YearlyPrice currency="usd" />.
-            </Text>
-          </View>
-        </Card>
-
         <Muted>
-          Expiry reminders, under the bell and on your devices, are part of Family Plus. Birthday reminders reach every
-          family, Free or Plus.
+          {limits.questions.free != null
+            ? `Fair use on Plus: up to ${limits.questionsFairUse} questions a person each month.\n`
+            : ''}
+          If Plus ends and a vault is over its free space, the newest documents over it are removed after{' '}
+          {limits.graceDays} days.
         </Muted>
       </ScrollView>
     </SafeAreaView>
@@ -362,11 +367,20 @@ const styles = StyleSheet.create({
   hero: { borderRadius: radius.card, padding: space.lg, gap: space.xs },
   heroTag: { fontSize: 12, lineHeight: 16, fontWeight: '700', color: '#FBD5D1', letterSpacing: 0.4 },
   heroTitle: { fontSize: 17, lineHeight: 23, fontWeight: '600', color: '#FFFFFF' },
-  heroPrice: { fontSize: 28, lineHeight: 34, fontWeight: '700', color: '#FFFFFF', marginTop: space.sm },
-  heroPer: { fontSize: 15, fontWeight: '500', color: '#DCE3F0' },
-  heroYearRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: space.sm },
-  heroYear: { fontSize: 15, lineHeight: 20, fontWeight: '600', color: '#FFFFFF' },
-  heroSave: { borderRadius: radius.pill, paddingHorizontal: space.sm, paddingVertical: 2, backgroundColor: '#FBD5D1' },
+  heroCells: { flexDirection: 'row', gap: space.sm, marginTop: space.sm },
+  heroCell: {
+    flex: 1, alignItems: 'flex-start', borderRadius: radius.control, padding: space.md,
+    backgroundColor: 'rgba(255, 255, 255, 0.12)', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.18)',
+  },
+  heroCellLabel: { fontSize: 12, lineHeight: 16, fontWeight: '600', color: '#DCE3F0' },
+  heroWas: { fontSize: 13, lineHeight: 18, marginTop: space.xs },
+  heroWasSpace: { height: 18, marginTop: space.xs },
+  heroAmount: { fontSize: 24, lineHeight: 30, fontWeight: '700', color: '#FFFFFF' },
+  heroPer: { fontSize: 13, lineHeight: 18, color: '#DCE3F0' },
+  heroSave: {
+    borderRadius: radius.pill, paddingHorizontal: space.sm, paddingVertical: 2, marginTop: space.sm,
+    backgroundColor: '#FBD5D1',
+  },
   heroSaveText: { fontSize: 12, lineHeight: 16, fontWeight: '700', color: '#8A3B35' },
   heroNote: { fontSize: 13, lineHeight: 18, color: '#DCE3F0' },
   state: {
@@ -418,6 +432,4 @@ const styles = StyleSheet.create({
   },
   soonTag: { fontSize: 12, lineHeight: 16, fontWeight: '700', color: color.accent, textTransform: 'uppercase', letterSpacing: 0.6 },
   soonText: { ...type.body, fontSize: 14, lineHeight: 20, color: color.primary },
-  point: { flexDirection: 'row', alignItems: 'flex-start', gap: space.sm },
-  pointText: { ...type.body, flex: 1, fontSize: 14, lineHeight: 20 },
 });

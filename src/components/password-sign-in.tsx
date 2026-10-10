@@ -24,11 +24,11 @@ export function PasswordSignIn({ onSignedIn }: { onSignedIn: () => void }) {
 
   const submit = async () => {
     if (!email.trim() || !password) {
-      setNote({ kind: 'error', text: 'Type the email and the password.' });
+      setNote({ kind: 'error', text: 'Enter your email and password.' });
       return;
     }
     if (creating && !name.trim()) {
-      setNote({ kind: 'error', text: 'Type a name for the test account.' });
+      setNote({ kind: 'error', text: 'Enter a name.' });
       return;
     }
     setBusy(true);
@@ -40,7 +40,7 @@ export function PasswordSignIn({ onSignedIn }: { onSignedIn: () => void }) {
       else if (signedIn) onSignedIn();
       else {
         setCreating(false);
-        setNote({ kind: 'ok', text: 'Created. Confirm the address from the email Supabase sent, then sign in.' });
+        setNote({ kind: 'ok', text: 'Created. Confirm your email, then sign in.' });
       }
       return;
     }
@@ -57,7 +57,7 @@ export function PasswordSignIn({ onSignedIn }: { onSignedIn: () => void }) {
         <Text style={styles.dividerText}>Test builds only</Text>
         <View style={styles.dividerLine} />
       </View>
-      <Text style={styles.intro}>Email and password, for test accounts. asklocker.com signs in with Google only.</Text>
+      <Text style={styles.intro}>For test accounts. The live app uses Google only.</Text>
 
       {creating && (
         <View style={styles.inputWrapper}>

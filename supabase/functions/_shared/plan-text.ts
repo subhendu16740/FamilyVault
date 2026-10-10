@@ -9,9 +9,12 @@
 //   Family Plus   10 GB, either kind of vault — in India ₹100 a month or
 //                 ₹1,100 a year, elsewhere $10 a month or $110 a year
 //
-// On both, a family has at most 4 members — the people who sign in; anyone
-// can be in the family tree — and a free family hears its first 10 answers
-// read aloud, Family Plus every answer (041).
+// A family has at most 4 members on Free and 8 on Family Plus (041, 049) —
+// the people who sign in; anyone can be in the family tree. Each person on
+// Free has 10 voice chats (041–043) and 20 questions a month (049); on Family
+// Plus, voice without a limit and questions without a monthly limit (fair
+// use: 500 a month each). A share link lasts 1 or 7 days on Free, and up to
+// 30 days on Family Plus (049).
 //
 // A year costs eleven months: one month free. The yearly price is shown
 // against twelve months at the monthly price, crossed out (₹1,200 → ₹1,100,
@@ -53,20 +56,35 @@ export interface PlanLimits {
   members: { free: number; plus: number };
   /** Voice chats each person gets, per plan; null: no limit (041; per person since 043). */
   voiceAnswers: { free: number | null; plus: number | null };
+  /** Questions each person may ask a month, per plan; null: no monthly limit (049). */
+  questions: { free: number | null; plus: number | null };
+  /** The most one person may ask in a month where there is no monthly limit (049). */
+  questionsFairUse: number;
+  /** Questions each person may try in a day, answered or not, per plan; null: no limit (050). */
+  questionTriesPerDay: { free: number | null; plus: number | null };
+  /** Documents each person may add in a day, per plan; null: no limit (050). */
+  uploadsPerDay: { free: number | null; plus: number | null };
+  /** Families one person may create on Free, besides their personal vault (050); null: no limit. */
+  familiesPerPerson: number | null;
 }
 
 const GB = 1024 ** 3;
 
 const MB = 1024 ** 2;
 
-/** What 039–048 set; plan_limits is the truth. */
+/** What 039–050 set; plan_limits is the truth. */
 export const DEFAULT_PLAN_LIMITS: PlanLimits = {
   free: 200 * MB,
   freePersonal: 100 * MB,
   plus: 10 * GB,
   graceDays: 30,
-  members: { free: 4, plus: 4 },
+  members: { free: 4, plus: 8 },
   voiceAnswers: { free: 10, plus: null },
+  questions: { free: 20, plus: null },
+  questionsFairUse: 500,
+  questionTriesPerDay: { free: 10, plus: 100 },
+  uploadsPerDay: { free: 50, plus: 500 },
+  familiesPerPerson: 1,
 };
 
 /** What Family Plus costs, by the month or by the year (one month free). */
@@ -176,20 +194,19 @@ export interface StorageMessageOptions {
 export function storageFullMessage(room: StorageRoom, fileBytes = 0, options: StorageMessageOptions = {}): string {
   const { limits = DEFAULT_PLAN_LIMITS, price, removalOn, forSale = PLUS_FOR_SALE } = options;
   const left = Math.max(0, room.limitBytes - room.usedBytes);
-  const on = `${formatBytes(room.limitBytes)} on ${planLabel(room.plan)}`;
   const head = left === 0 || fileBytes === 0
-    ? `${room.personal ? 'Your personal vault is full' : "Your family's storage is full"}: ${formatBytes(room.usedBytes)} used of ${on}.`
-    : `This file is ${formatBytes(fileBytes)}, and ${room.personal ? 'your personal vault' : 'your family'} has ${formatBytes(left)} left of ${on}.`;
+    ? `${room.personal ? 'Your personal vault' : "Your family's storage"} is full, with ${formatBytes(room.usedBytes)} of ${formatBytes(room.limitBytes)} used.`
+    : `This file is ${formatBytes(fileBytes)}, but ${room.personal ? 'your personal vault' : 'your family'} has only ${formatBytes(left)} left.`;
 
-  const free = 'Delete documents you no longer need';
+  const free = "Delete documents you don't need";
   const plus = `${formatBytes(limits.plus)}${price ? ` for ${price}` : ''}`;
   let more: string;
   if (room.plan === 'free' && removalOn) {
-    more = `Family Plus has ended: on ${removalOn}, the newest documents above ${formatBytes(room.limitBytes)} will be removed, unless it is renewed or you delete documents to get under ${formatBytes(room.limitBytes)}.`;
+    more = `Family Plus has ended. On ${removalOn}, the newest documents over ${formatBytes(room.limitBytes)} will be removed. Renew, or delete documents to get under ${formatBytes(room.limitBytes)}.`;
   } else if (room.plan === 'free') {
     more = forSale
-      ? `${free}, or move to Family Plus: ${plus}.`
-      : `${free} to make room. Family Plus, coming soon, gives ${plus}.`;
+      ? `${free}, or move to Family Plus and get ${plus}.`
+      : `${free}. Family Plus is coming soon, with ${plus}.`;
   } else {
     more = `${free} to make room.`;
   }
@@ -202,10 +219,10 @@ export function storageFullMessage(room: StorageRoom, fileBytes = 0, options: St
  */
 export function chatStorageFullMessage(room: StorageRoom, options: Omit<StorageMessageOptions, 'removalOn'> = {}): string {
   const { limits = DEFAULT_PLAN_LIMITS, price, forSale = PLUS_FOR_SALE } = options;
-  const head = `There is no room to save this chat: ${room.personal ? 'your personal vault' : 'your family'} has used ${formatBytes(room.usedBytes)} of its ${formatBytes(room.limitBytes)}.`;
-  if (room.plan !== 'free') return `${head} Delete documents or saved chats you no longer need to make room.`;
+  const head = `There's no room to save this chat. ${room.personal ? 'Your personal vault' : 'Your family'} has used ${formatBytes(room.usedBytes)} of ${formatBytes(room.limitBytes)}.`;
+  if (room.plan !== 'free') return `${head} Delete documents or saved chats you don't need to make room.`;
   const plus = `${formatBytes(limits.plus)}${price ? ` for ${price}` : ''}`;
   return forSale
-    ? `${head} Saving more needs Family Plus: ${plus}. Or delete documents you no longer need.`
-    : `${head} Saving more needs Family Plus, coming soon: ${plus}. Until then, delete documents you no longer need.`;
+    ? `${head} To save more, move to Family Plus and get ${plus}. Or delete documents you don't need.`
+    : `${head} Family Plus is coming soon, with ${plus}. Until then, delete documents you don't need.`;
 }
