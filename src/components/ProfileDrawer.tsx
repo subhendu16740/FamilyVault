@@ -19,9 +19,9 @@ import { useAuth } from '../lib/auth';
 import { useFamily } from '../lib/family-context';
 import { isPersonalVault, vaultName } from '../lib/vaults';
 import { useDrawer } from '../lib/drawer-context';
-import { useFamilyPlan, type PlusFeature } from '../lib/family-plan';
+import { useFamilyPlan, useOnPlus, type PlusFeature } from '../lib/family-plan';
 import { appVersion } from '../lib/app-info';
-import { PlusTag } from './screen-header';
+import { PlusStar, PlusTag } from './screen-header';
 import { color, radius, size, space, type } from '../constants/design';
 
 type MenuItem = { icon: string; label: string; route: string; plus?: PlusFeature };
@@ -44,6 +44,7 @@ export default function ProfileDrawer() {
   const { currentFamily, membership } = useFamily();
   const { isDrawerOpen, closeDrawer } = useDrawer();
   const { routeFor } = useFamilyPlan();
+  const onPlus = useOnPlus();
   const { width } = useWindowDimensions();
   const drawerWidth = Math.min(300, Math.round(width * 0.86));
 
@@ -126,7 +127,13 @@ export default function ProfileDrawer() {
                 <Feather name="x" size={size.icon} color="#FFFFFF" />
               </TouchableOpacity>
             </View>
-            <Text style={styles.profileName} numberOfLines={1}>{displayName}</Text>
+            <Text
+              style={styles.profileName}
+              numberOfLines={1}
+              accessibilityLabel={onPlus ? `${displayName}, Family Plus` : undefined}
+            >
+              {onPlus && <PlusStar onDark />}{displayName}
+            </Text>
             {!!email && <Text style={styles.profileSub} numberOfLines={1}>{email}</Text>}
             {!!familyLine && <Text style={styles.profileSub} numberOfLines={1}>{familyLine}</Text>}
           </LinearGradient>

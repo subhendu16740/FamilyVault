@@ -93,6 +93,14 @@ export function PlusTag({ link = false }: { link?: boolean }) {
   );
 }
 
+/**
+ * "★ " before the name of someone on Family Plus, inside the name's own Text.
+ * Hidden from screen readers: the name's Text says "Family Plus" instead.
+ */
+export function PlusStar({ onDark = false }: { onDark?: boolean }) {
+  return <Text style={[styles.nameStar, onDark && styles.nameStarOnDark]} aria-hidden>★ </Text>;
+}
+
 const styles = StyleSheet.create({
   bar: {
     minHeight: size.bar,
@@ -137,4 +145,6 @@ const styles = StyleSheet.create({
   },
   plusStar: { fontSize: 12, color: color.accent },
   plusText: { fontSize: 12, fontWeight: '600', color: color.primary },
+  nameStar: { color: color.accent },
+  nameStarOnDark: { color: '#FBD5D1' },
 });

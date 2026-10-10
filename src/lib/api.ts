@@ -5,8 +5,8 @@ import type { Gender, KinLink, KinPerson } from '../../supabase/functions/_share
 import { parseAllowance, type QuestionAllowance } from '../../supabase/functions/_shared/questions';
 import { isBloodGroup, type EmergencyCard, type EmergencyCardInput, type EmergencyContact } from './emergency';
 import {
-  DEFAULT_PLAN_LIMITS, MAX_FILE_BYTES, PLUS_FOR_SALE, chatStorageFullMessage, fileTooLargeMessage, fits, limitHint,
-  localPlusPrices, storageFullMessage, type PlanLimits, type PlanName, type StorageRoom,
+  DEFAULT_PLAN_LIMITS, MAX_FILE_BYTES, PLUS_FOR_SALE, chatStorageFullMessage, deviceTimeZone, fileTooLargeMessage, fits,
+  limitHint, localPlusPrices, setPayerCurrency, storageFullMessage, type PlanLimits, type PlanName, type StorageRoom,
 } from './plans';
 import type {
   FamilyWithMembership,
@@ -1406,9 +1406,12 @@ export interface PaymentsStatus {
   /** Razorpay's public key id, for the checkout. */
   keyId: string | null;
   currencies: PaymentCurrency[];
+  /** What this person pays in, as the server decided; null before it could. */
+  currency: PaymentCurrency | null;
 }
 
-const PAYMENTS_OFF: PaymentsStatus = { available: false, keyId: null, currencies: [] };
+const PAYMENTS_OFF: PaymentsStatus = { available: false, keyId: null, currencies: [], currency: null };
+const asCurrency = (c: unknown): PaymentCurrency | null => (c === 'INR' || c === 'USD' ? c : null);
 let paymentsKnown: PaymentsStatus | null = null;
 let paymentsAsking: Promise<PaymentsStatus> | null = null;
 
@@ -1416,7 +1419,9 @@ let paymentsAsking: Promise<PaymentsStatus> | null = null;
 export function fetchPaymentsStatus(): Promise<PaymentsStatus> {
   if (paymentsKnown) return Promise.resolve(paymentsKnown);
   paymentsAsking ??= (async () => {
-    const { data, error } = await supabase.functions.invoke('payments', { body: { action: 'status' } });
+    const { data, error } = await supabase.functions.invoke('payments', {
+      body: { action: 'status', time_zone: deviceTimeZone() },
+    });
     if (error) {
       // Not deployed here is an answer; offline is not, and is asked again next time.
       if ((error as { context?: Response })?.context?.status === 404) paymentsKnown = PAYMENTS_OFF;
@@ -1425,7 +1430,10 @@ export function fetchPaymentsStatus(): Promise<PaymentsStatus> {
     const currencies = Array.isArray(data?.currencies)
       ? (data.currencies as unknown[]).filter((c): c is PaymentCurrency => c === 'INR' || c === 'USD')
       : [];
-    paymentsKnown = { available: data?.available === true, keyId: data?.key_id ?? null, currencies };
+    const currency = asCurrency(data?.currency);
+    // Prices everywhere follow the server's choice from here on.
+    setPayerCurrency(currency);
+    paymentsKnown = { available: data?.available === true, keyId: data?.key_id ?? null, currencies, currency };
     return paymentsKnown;
   })().catch(() => PAYMENTS_OFF).finally(() => { paymentsAsking = null; });
   return paymentsAsking;
@@ -1449,10 +1457,13 @@ export interface PlusOrder {
 /** A payment the server would not start or confirm, with a sentence for the person. */
 export class PaymentError extends Error {
   status: string;
-  constructor(status: string, message: string) {
+  /** wrong_currency: the currency this person pays in. */
+  currency: PaymentCurrency | null;
+  constructor(status: string, message: string, currency: PaymentCurrency | null = null) {
     super(message);
     this.name = 'PaymentError';
     this.status = status;
+    this.currency = currency;
   }
 }
 
@@ -1460,11 +1471,11 @@ async function paymentsInvoke<T>(body: Record<string, unknown>): Promise<T> {
   const { data, error } = await supabase.functions.invoke('payments', { body });
   if (!error) return data as T;
   const httpStatus = (error as { context?: Response })?.context?.status;
-  const payload = (await readFunctionError(error)) as { status?: string; error?: string } | null;
+  const payload = (await readFunctionError(error)) as { status?: string; error?: string; currency?: unknown } | null;
   if (httpStatus === 404 && !payload?.status) {
     throw new PaymentError('not_configured', "Paying for Family Plus isn't available yet.");
   }
-  throw new PaymentError(payload?.status ?? 'error', payload?.error ?? 'Something went wrong. Try again.');
+  throw new PaymentError(payload?.status ?? 'error', payload?.error ?? 'Something went wrong. Try again.', asCurrency(payload?.currency));
 }
 
 /** Starts paying for a month or a year of Family Plus for the family. */
@@ -1472,7 +1483,14 @@ export async function createPlusOrder(familyId: string, period: 'monthly' | 'yea
   const r = await paymentsInvoke<{
     order_id: string; amount: number; currency: PaymentCurrency; key_id: string; description: string;
     prefill?: { email?: string; name?: string };
-  }>({ action: 'order', family_id: familyId, period, currency });
+  }>({ action: 'order', family_id: familyId, period, currency, time_zone: deviceTimeZone() }).catch((err) => {
+    // The server pays this person in the other currency: show its prices from now on.
+    if (err instanceof PaymentError && err.status === 'wrong_currency' && err.currency) {
+      setPayerCurrency(err.currency);
+      if (paymentsKnown) paymentsKnown = { ...paymentsKnown, currency: err.currency };
+    }
+    throw err;
+  });
   return {
     orderId: r.order_id, amount: r.amount, currency: r.currency, keyId: r.key_id,
     description: r.description, prefill: r.prefill ?? {},

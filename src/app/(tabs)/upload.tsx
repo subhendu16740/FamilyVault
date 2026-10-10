@@ -29,6 +29,7 @@ import { ScreenHeader, PlusTag } from '../../components/screen-header';
 import { VaultDropdown, type VaultChoice } from '../../components/vault-sheet';
 import { isPersonalVault, splitVaults, vaultName, vaultSubtitle } from '../../lib/vaults';
 import { color, radius, shadow, size, space, type } from '../../constants/design';
+import { categoryForAnalytics, track } from '../../lib/analytics';
 
 type DocumentCategory = Database['public']['Tables']['document_categories']['Row'];
 
@@ -251,6 +252,11 @@ export default function UploadScreen() {
         // Only someone in this vault's tree: the choice may be from another vault's.
         belongsToMemberId: owners.some((o) => o.id === selectedPerson) ? selectedPerson : undefined,
         ocrText: ocrText || undefined,
+      });
+      track('document_added', {
+        category: categoryForAnalytics(categories.find((c) => c.id === selectedCategory)),
+        file_type: /^[a-z0-9]{1,8}$/.test(pickedFile.type) ? pickedFile.type : 'other',
+        vault: isPersonalVault(targetFamily) ? 'personal' : 'family',
       });
 
       // A future expiry date in a vault on Free: offer the reminders for it.

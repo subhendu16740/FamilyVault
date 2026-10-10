@@ -20,6 +20,7 @@ import { formatDateInput, parseDocumentDate } from '../lib/dates';
 import { parentsOf, shortName, siblingsSharingParents, spousesOf, type Gender, type KinGraph } from '../../supabase/functions/_shared/kinship';
 import { Field, PrimaryButton, Status } from './settings-ui';
 import { color, radius, size, space, type } from '../constants/design';
+import { track } from '../lib/analytics';
 
 export type PersonSheetState =
   | { mode: 'add'; relativeId?: string | null }
@@ -170,6 +171,7 @@ export function PersonSheet({ state, familyId, tree, graph, meId, onClose, onSav
       let personId = state.mode === 'connect' ? state.personId : null;
       if (mode === 'add') {
         personId = await addFamilyPerson(familyId, details, plan ? { kind: plan.kind, relativeId: plan.of, otherParentId: other } : undefined);
+        track('person_added', {});
       } else if (mode === 'connect') {
         await linkFamilyPeople(familyId, state.personId, plan!.kind, plan!.of, other);
       }

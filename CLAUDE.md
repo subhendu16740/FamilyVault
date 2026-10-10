@@ -365,6 +365,16 @@ button (see [Signing in](#signing-in--google-only-with-googles-own-button-where-
 - `EXPO_PUBLIC_GOOGLE_WEB_ORIGINS` — the web addresses in that client's
   Authorized JavaScript origins, comma-separated
 
+and, optional, by `src/lib/analytics.ts` — usage counts (see Usage counts
+under [Conventions](#conventions)). Production builds send to AskLocker's
+own PostHog project (EU Cloud, project 300863) without them: its key is
+public by design and lives in `analytics.ts`, used only where
+`isProduction`. Set these only to send elsewhere or from a test build:
+
+- `EXPO_PUBLIC_POSTHOG_KEY` — a PostHog project's API key (`phc_…`; public,
+  like the anon key). Wins over the built-in one.
+- `EXPO_PUBLIC_POSTHOG_HOST` — `https://eu.i.posthog.com` unless set
+
 The `EXPO_PUBLIC_` prefix means *publicly visible in the shipped bundle*.
 Never put a secret behind it. The anon key is safe there because Row-Level
 Security, not secrecy, is the access boundary. Because they are build-time,
@@ -670,6 +680,7 @@ src/
 supabase/
   functions/                 # Deno Edge Functions (NOT typechecked by tsconfig)
   migrations/                # SQL — incomplete, see Database
+  queries/                   # read-only queries to paste into the SQL editor (document-categories.sql)
 
 public/                      # copied to the web build's root: sw.js (shows notifications), manifest, icons
 qa/                          # end-to-end QA against DEV (own package.json)
@@ -700,11 +711,12 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `emergency.ts` | The emergency card's shape, blood groups (`bloodGroupLabel()`: "A−", "Bombay (hh)"), `telHref()`, and `cardProblem()` — the same checks and messages as `save_emergency_card()`, so the form can say what is wrong before saving |
 | `family-people.ts` | Whose a document can be: everyone in the tree, you first (`useDocumentOwners()`, members only before 031), and a person's expiry badge (`badgeFromExpiries()`) |
 | `plans.ts` | What each plan allows (038–048): the limits as 039–048 set them — storage (on Free 200 MB for a family and 100 MB for a personal vault, `freePersonal`; 10 GB on Plus), 4 members on Free and 8 on Plus, 10 voice chats and 20 questions a month for each person on Free (049; fair use 500 on Plus) (`DEFAULT_PLAN_LIMITS`, used only when the database cannot be asked), Family Plus's prices, monthly and yearly (`PLUS_PRICE`; `localPlusPrice()` / `localPlusPrices()` show rupees in India, dollars elsewhere, by the device's time zone; the yearly one against twelve months, crossed out, and the months it saves: `plusTwelveMonths()`, `plusYearlySaving()`), `storageLevel()`, and the words for a full vault (`storageFullMessage()`; for a chat, `chatStorageFullMessage()`), which live in `supabase/functions/_shared/plan-text.ts` so Gmail import says the same; 050's file limit and the words for its refusals (`MAX_FILE_BYTES`, `fileTooLargeMessage()`, `limitHint()`, `QUESTION_INPUT_MAX`) come from `_shared/limits.ts`. Whether Plus can be bought is the payments function's answer (044: `usePaymentsStatus()`, `plusForSale()`); `PLUS_FOR_SALE` (false) is only what the words assume before it answers |
-| `family-plan.ts` | Is the current family on Family Plus? `useFamilyPlan()` (from `family_storage_status()`, kept a minute per family): `isFree`, and `routeFor(feature, route)`, which sends a free family to `/plus?feature=…` instead of a starred feature. Unknown (before 038, offline) gates nothing. `usePaymentsStatus()`: can Family Plus be bought here (044) |
+| `family-plan.ts` | Is the current family on Family Plus? `useFamilyPlan()` (from `family_storage_status()`, kept a minute per family): `isFree`, and `routeFor(feature, route)`, which sends a free family to `/plus?feature=…` instead of a starred feature. Unknown (before 038, offline) gates nothing. `usePaymentsStatus()`: can Family Plus be bought here (044). `useOnPlus()`: is the signed-in person on Plus in any vault (from `question_status()`, a minute, shared; `forgetOnPlus()` after paying), for the ★ before their name |
 | `file-types.ts` | What a picked file is (`detectFileType()`: MIME type, then name, never a web `blob:` uri) and whether the vault can keep it (PDF, JPG, PNG) |
 | `app-info.ts` | Version, release date and commit (stamped into `extra` by `app.config.ts` at build time), and the support contact Help shows |
 | `ocr.ts` | Platform-split OCR with progress callback; reads the person's chosen languages |
 | `ocr-languages.ts` | The document-language picker list, and `resolveOcrLanguages()` which always appends English |
+| `analytics.ts` | Usage counts with PostHog (production builds only): `track(event, props)`, typed by `AnalyticsEvents` so only named events and properties can be sent; a random id per device (`deviceKey.analyticsId`), the Privacy switch (`analyticsOn`, `setAnalyticsOn`), `categoryForAnalytics()` (built-in names only), `screenName()` (the route, never an id). Screen views come from `components/analytics-tracker.tsx` in the root layout. Off in every build but production |
 | `razorpay.ts` / `razorpay.web.ts` | Paying for Family Plus (044): on the web, Razorpay's own checkout window (`openCheckout`; checkout.js is loaded the first time someone pays, and card and UPI details go to Razorpay, never to us); the phone app's file is a stand-in until EAS builds exist. Types in `razorpay-types.ts` |
 | `google-button.ts` / `google-button.web.ts` | Google's own sign-in button on the web (Google Identity Services): `googleButtonAvailable()` (a client id is set and this origin is in `EXPO_PUBLIC_GOOGLE_WEB_ORIGINS`), `renderGoogleButton()` (loads Google's script once, a fresh nonce each time). The phone app's file says no, so it keeps the redirect sign-in. Types in `google-button-types.ts`; see [Signing in](#signing-in--google-only-with-googles-own-button-where-it-is-set-up) |
 | `push.ts` / `push.web.ts` | Notifications on this device (034): on the web, Web Push through `public/sw.js` (`loadPushStatus`, `turnOnPush`, `turnOffPush`, `sendTestPush`, and `forgetPushOnThisDevice` on sign-out); the phone app's file is a stand-in until EAS builds exist. Types in `push-types.ts` |
@@ -1400,7 +1412,10 @@ so storage policies live only in `019`.
   pins the prices, and that a year costs a whole number of months. Screen
   readers skip the crossed-out price and hear "₹1,100 a year instead of
   ₹1,200" (`plusYearlyOffer()`, in each `accessibilityLabel`). The Plus
-  page compares Free, Plus Monthly and Plus Yearly side by side.
+  page compares Free, Plus Monthly and Plus Yearly side by side; its banner
+  shows the two prices as two cells, Monthly and Yearly, and under the table
+  it says only what the table cannot: fair use on questions, and what
+  happens when Plus ends.
   Storage is the one cost that keeps growing after a month is paid for, so
   no plan is open-ended. 038 had two Plus plans (5 GB
   monthly, 10 GB yearly); 039 made them one, so how a family pays never
@@ -1637,6 +1652,21 @@ so storage policies live only in `019`.
   no subscription, no mandate, no stored card. Anyone in the family can pay.
   Razorpay keeps 2% plus GST of each payment (about ₹2.36 of ₹100, ₹26 of
   ₹1,100) and charges nothing else — no setup or yearly fee.
+- **The server says who pays in rupees** (`payerCurrency()`,
+  `_shared/razorpay.ts`): rupees only when the connection comes from India
+  (Cloudflare's `CF-IPCountry` header, which Supabase's gateway passes to
+  the functions and a client cannot set) and the device's time zone, which
+  the app sends, agrees; everyone else pays in dollars. So an NRI abroad
+  cannot get ₹100 by setting the phone to India time, and someone in India
+  sees rupees. `status` answers the currency (with `currency_from`:
+  `connection`, or `time_zone` when the header is missing, and the caller's
+  `country`), the app shows prices in it from then on (`setPayerCurrency()`
+  in `plans.ts`; the time zone guesses until it answers), and `order`
+  refuses any other currency with 409 `wrong_currency` and the right one,
+  before Razorpay is asked. Nothing is kept. What no rule stops: a parent
+  in India paying ₹100 for a family that includes an NRI, or a VPN with the
+  phone set to India time. A $ order can only be paid by a card issued
+  abroad (Razorpay's rule), which costs 3% plus GST instead of 2%.
 - **The server sets the price and checks the payment.** `payments`'s
   `order` takes a member's family and a month or a year, never an amount:
   it makes a Razorpay order at `PLUS_PRICE`'s price and keeps it in
@@ -1960,12 +1990,14 @@ so storage policies live only in `019`.
   applied.
 - **`payments`** — paying for Family Plus (044; see
   [Paying for Family Plus](#paying-for-family-plus--razorpay-a-month-or-a-year-at-a-time-044)):
-  `status` for anyone (does this project take payments, and Razorpay's
-  public key id), `order` and `verify` for a member of the family. `order`
-  hands back the same unpaid order for an hour (same person, family and
-  price, 050), rather than making another at Razorpay on every tap. Answers
-  400 `bad_request`, `bad_signature` or `currency`, 401/403, 402
-  `not_paid`, 404 `no_order`, 502 `razorpay` (Razorpay said no), and 503
+  `status` for anyone (does this project take payments, Razorpay's
+  public key id, and which currency this person pays in), `order` and
+  `verify` for a member of the family. `order` refuses a currency other
+  than the server's choice, and hands back the same unpaid order for an
+  hour (same person, family and price, 050), rather than making another at
+  Razorpay on every tap. Answers 400 `bad_request`, `bad_signature` or
+  `currency`, 401/403, 402 `not_paid`, 404 `no_order`, 409
+  `wrong_currency`, 502 `razorpay` (Razorpay said no), and 503
   `not_configured` without the keys or `needs_migration` where 044 is not
   applied.
 - **`razorpay-webhook`** — Razorpay reporting a payment (044). Deployed
@@ -2157,7 +2189,9 @@ neither calls HuggingFace directly. Three things matter:
   `reembed-index` for every family.** The search screen starts that rebuild
   by itself when an answer reports `debug.index_rebuilding`, so nobody has to
   find the Settings row for search to work; Settings › Search remains the
-  manual route and the place errors are shown in full. **`rag-search` also
+  manual route and the place errors are shown in full — and it shows only
+  when it needs the person (an update an admin can start, one running, or
+  documents that could not be read), never as "Up to date". **`rag-search` also
   starts one server-side**, after its response, whenever it sees a stale
   index — the client path depends on the browser having the current bundle,
   and a stale one leaves the vault with no vectors indefinitely. The work is
@@ -2305,7 +2339,7 @@ rule again once pinned chunks are mixed in.
   - Parts of it go to outside services: HuggingFace (every passage, and
     every question, for search), Groq (the passages an answer is written
     from, and the chat) and OCR.space (scanned PDFs, photos imported from
-    Gmail).
+    Gmail). PostHog gets usage counts, and never any of it.
 
   So no screen, notification, README or store listing says "secure",
   "safe", "private and isolated", "100% private", "only you can see it" or
@@ -2314,8 +2348,30 @@ rule again once pinned chunks are mixed in.
   you". Settings › Privacy says all of this plainly and names the outside
   services. It must stay true of the code and of the people who run
   AskLocker, so change it with any change to sharing, search, OCR,
-  embeddings, voice or Gmail import. The app made such claims until
+  embeddings, voice, Gmail import, payments or usage counts. The app made such claims until
   7 October 2026.
+- **Usage counts — PostHog, named events only.** Which screens are opened
+  and which actions are taken (a document added, a question asked, a link
+  made, Plus paid for), so the team can see what is used. Only through
+  `track()` in `src/lib/analytics.ts`, whose `AnalyticsEvents` lists every
+  event and every property: adding one means changing that list, where a
+  reviewer sees it. Never a document, file name, question, answer, person's
+  or family's name, email or id: a category only by its built-in name
+  (`categoryForAnalytics()`, a family's own is "Other"), a screen only as
+  its route (`/document/[id]`). Sent straight to PostHog's `/batch/` API —
+  no SDK, so no automatic capture of taps or text and no screen recording,
+  which would show document names — with a random id per device (not the
+  account), `$process_person_profile: false` and `$geoip_disable: true`;
+  the PostHog project discards the internet address (a project setting).
+  On in production builds only (`isProduction`, from the Supabase URL; the
+  project's key is in `analytics.ts`, `EXPO_PUBLIC_POSTHOG_KEY` overrides
+  it) and off on a device where Settings › Privacy's switch is off. The
+  PostHog project (AskLocker, EU Cloud) discards IP addresses and has
+  autocapture, recordings, heatmaps and surveys off; its time zone is
+  India's. Settings › Privacy names
+  PostHog in builds that send. How many documents each category has is a
+  query, not an event: `supabase/queries/document-categories.sql` counts
+  category ids across every vault and reads nothing else.
 - **Copy is short and plain** (since 10 October 2026, when the owner said
   the app's text read as AI-written and every screen was cut by half or
   more). A screen intro is one sentence, a card one or two, a Help answer
@@ -2338,7 +2394,12 @@ rule again once pinned chunks are mixed in.
   Family Plus page, Free and Plus side by side (`/plus`); a new starred
   feature must do the same, through `useFamilyPlan().routeFor()` and a
   redirect in its own screen, and get a row on that page. Each shows the tag
-  where you find it, and Help's FAQ names them all. Every plan, Free
+  where you find it, and Help's FAQ names them all. A person on Plus (any
+  vault they are in, 049's `person_on_plus()`) has a ★ before their own name
+  — the drawer, Home, Settings, Manage Family (`useOnPlus()` from
+  `question_status()`, `<PlusStar />`) — and in Manage Family every member
+  of a family on Plus has one; never another member's Plus through some
+  other family, which is not theirs to see. Every plan, Free
   included, has a storage limit the server keeps (see
   [Plans and storage limits](#plans-and-storage-limits--every-plan-has-a-limit-038-039)).
 - **Never give a web panel `flex` for its width.** On react-native-web

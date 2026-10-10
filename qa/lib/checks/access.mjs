@@ -726,6 +726,51 @@ export async function runAccessChecks(cfg, { a, b, anon, vaultA, vaultB, docsA }
     results.add('access', 'control:payments', 'Control — account A asks whether Family Plus can be paid for (test keys only on DEV)', state, { why });
   }
 
+  // ── Rupees or dollars is the server's call (payerCurrency()): rupees only
+  // when the connection is from India and the time zone agrees. Asked with
+  // India's time zone, so from GitHub's machines (outside India) the answer
+  // must be dollars; from India, rupees. And with another time zone,
+  // dollars wherever the run is.
+  let payIn = null;
+  {
+    const title = "Control — rupees only for a connection from India: India's time zone alone does not get them";
+    const r = await invokeFunction(cfg, a, 'payments', { action: 'status', time_zone: 'Asia/Kolkata' }, { timeoutMs: 30_000 });
+    const other = await invokeFunction(cfg, a, 'payments', { action: 'status', time_zone: 'America/New_York' }, { timeoutMs: 30_000 });
+    const d = r.data ?? {};
+    const [state, why] = r.status !== 200
+      ? ['fail', `HTTP ${r.status}: ${JSON.stringify(r.data).slice(0, 160)}`]
+      : !('currency' in d)
+        ? ['skipped', 'payments on DEV does not pick the currency yet']
+        : other.data?.currency !== 'USD'
+          ? ['fail', `offered ${other.data?.currency} with a New York time zone`]
+          : d.currency_from !== 'connection'
+            ? ['skipped', `the function cannot see the connection's country, so the time zone decides (${d.currency})`]
+            : d.currency === (d.country === 'IN' ? 'INR' : 'USD')
+              ? ['pass', `${d.currency} for a connection from ${d.country}`]
+              : ['fail', `offered ${d.currency} to a connection from ${d.country}`];
+    if (state === 'pass') payIn = d.currency;
+    results.add('access', 'control:payer-currency', title, state, { why });
+  }
+  {
+    // An order in the other currency is refused before Razorpay is asked, so
+    // nothing is made even on DEV's test keys.
+    const title = 'Control — account A cannot pay in the other currency (409 wrong_currency)';
+    if (!payIn) {
+      results.add('access', 'control:wrong-currency', title, 'skipped', { why: 'the server did not pick a currency from the connection (see the control above)' });
+    } else {
+      const wrong = payIn === 'INR' ? 'USD' : 'INR';
+      const r = await invokeFunction(cfg, a, 'payments', {
+        action: 'order', family_id: A.family, period: 'monthly', currency: wrong, time_zone: 'Asia/Kolkata',
+      }, { timeoutMs: 30_000 });
+      const [state, why] = r.status === 409 && r.data?.status === 'wrong_currency' && r.data?.currency === payIn
+        ? ['pass', `refused ${wrong}: "${String(r.data.error).slice(0, 80)}"`]
+        : r.status === 503 && r.data?.status === 'not_configured'
+          ? ['skipped', 'no Razorpay keys on DEV']
+          : ['fail', `HTTP ${r.status}${r.status === 200 ? ` — an order was MADE in ${wrong}` : ''}: ${JSON.stringify(r.data).slice(0, 160)}`];
+      results.add('access', 'control:wrong-currency', title, state, { why });
+    }
+  }
+
   // A payment report as Razorpay sends one, for an order and a payment that
   // never existed — so nothing could be added even if a check failed.
   const fakeOrder = `order_QA${randomUUID().replace(/-/g, '').slice(0, 14)}`;

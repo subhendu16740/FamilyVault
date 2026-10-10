@@ -58,19 +58,33 @@ export const FREE_PERSONAL_STORAGE_BYTES = DEFAULT_PLAN_LIMITS.freePersonal;
 /** "100 MB", for sentences. */
 export const FREE_PERSONAL_STORAGE_LABEL = formatBytes(FREE_PERSONAL_STORAGE_BYTES);
 
+/** The device's time zone ("Asia/Kolkata"), or '' when it cannot say. */
+export function deviceTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone ?? '';
+  } catch {
+    return '';   // An engine without Intl time zones.
+  }
+}
+
+// The payments function's choice, once it has answered (payerCurrency() in
+// _shared/razorpay.ts: rupees only when the connection is from India and the
+// time zone agrees). Until then, and where payments are off, the time zone.
+let payerCurrencyKnown: PriceCurrency | null = null;
+
+/** Called with the payments function's answer. */
+export function setPayerCurrency(currency: 'INR' | 'USD' | null) {
+  payerCurrencyKnown = currency === 'INR' ? 'inr' : currency === 'USD' ? 'usd' : null;
+}
+
 /**
- * The currency this device should see prices in: rupees in India, dollars
- * elsewhere, judged by the device's time zone. Shown only — until payments
- * exist nothing is charged, and then the payment company decides. A device
- * that cannot say where it is sees rupees, as most families do.
+ * The currency this person sees prices in and pays in: rupees in India,
+ * dollars elsewhere. The server decides once asked; before that, the
+ * device's time zone guesses, and a device that cannot say sees rupees.
  */
 export function localCurrency(): PriceCurrency {
-  let zone = '';
-  try {
-    zone = Intl.DateTimeFormat().resolvedOptions().timeZone ?? '';
-  } catch {
-    // An engine without Intl time zones.
-  }
+  if (payerCurrencyKnown) return payerCurrencyKnown;
+  const zone = deviceTimeZone();
   return zone && !/^Asia\/(Kolkata|Calcutta)$/.test(zone) ? 'usd' : 'inr';
 }
 

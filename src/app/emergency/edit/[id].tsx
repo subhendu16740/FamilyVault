@@ -24,6 +24,7 @@ import {
   Card, CardTitle, Field, Muted, PrimaryButton, SecondaryButton, DangerButton, Status, screenStyles,
 } from '../../../components/settings-ui';
 import { color, radius, size, space, type } from '../../../constants/design';
+import { track } from '../../../lib/analytics';
 
 type ContactDraft = { name: string; relation: string; phone: string };
 const blankContact = (): ContactDraft => ({ name: '', relation: '', phone: '' });
@@ -109,6 +110,7 @@ export default function EditEmergencyCardScreen() {
     setStatus(null);
     try {
       await saveEmergencyCard(id, card);
+      track('emergency_card_saved', {});
       done();
     } catch (err: any) {
       setStatus(isMissingMigration(err) ? "Emergency cards aren't switched on yet." : err?.message || "Couldn't save. Try again.");

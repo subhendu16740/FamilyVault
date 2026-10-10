@@ -2,12 +2,16 @@
 //
 // JSON POSTs, one action each:
 //
-//   status   anyone: { available, key_id, currencies }. Whether this project
-//            takes payments; the app says "Coming soon" until it does.
-//   order    a member, for their own family: { family_id, period, currency }.
-//            Makes a Razorpay order for PLUS_PRICE's amount (never the
-//            client's), keeps it in plan_payments, and answers what the
-//            checkout needs.
+//   status   anyone: { available, key_id, currencies, currency }. Whether
+//            this project takes payments (the app says "Coming soon" until
+//            it does), and which currency this person pays in: the server's
+//            choice from the connection's country and the device's time
+//            zone ({ time_zone }), payerCurrency().
+//   order    a member, for their own family: { family_id, period, currency,
+//            time_zone }. Refuses a currency other than the server's choice
+//            (409 wrong_currency, with the right one). Makes a Razorpay order
+//            for PLUS_PRICE's amount (never the client's), keeps it in
+//            plan_payments, and answers what the checkout needs.
 //   verify   a member, after the checkout: { order_id, payment_id, signature }.
 //            Checks Razorpay's signature with the key secret, asks Razorpay
 //            that the payment is for this order's amount and captured
@@ -22,16 +26,16 @@
 // international payments are switched on in Razorpay).
 //
 // Answers: 200   400 bad_request | bad_signature | currency   401/403 not
-// signed in / not a member   402 not_paid   404 no_order   502 razorpay
-// (Razorpay said no)   503 not_configured | needs_migration
+// signed in / not a member   402 not_paid   404 no_order   409 wrong_currency
+// 502 razorpay (Razorpay said no)   503 not_configured | needs_migration
 // ────────────────────────────────────────────────────────────────
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/cors.ts';
 import { requireFamilyMember } from '../_shared/auth.ts';
 import {
-  ORDER_ID, PAYMENT_ID, acceptedCurrencies, paymentSignatureOk, plusOrderAmount, plusOrderDescription,
-  type RazorpayCurrency,
+  ORDER_ID, PAYMENT_ID, acceptedCurrencies, connectionCountry, payerCurrency, payerCurrencyMessage,
+  paymentSignatureOk, plusOrderAmount, plusOrderDescription, type RazorpayCurrency,
 } from '../_shared/razorpay.ts';
 
 const KEY_ID = Deno.env.get('RAZORPAY_KEY_ID') ?? '';
@@ -69,10 +73,18 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json().catch(() => ({}));
     const action = body?.action;
+    // Who pays in rupees and who in dollars: where the connection comes from
+    // (Cloudflare's header) and the device's time zone. Nothing is kept.
+    const country = connectionCountry(req.headers.get('cf-ipcountry'));
+    const payIn = payerCurrency(country, body?.time_zone);
 
     if (action === 'status') {
       const available = !!(KEY_ID && KEY_SECRET);
-      return json(200, { available, key_id: available ? KEY_ID : null, currencies: available ? CURRENCIES : [] });
+      return json(200, {
+        available, key_id: available ? KEY_ID : null, currencies: available ? CURRENCIES : [],
+        // The caller's own country, so QA can check the rule from wherever it runs.
+        currency: payIn, currency_from: country ? 'connection' : payIn ? 'time_zone' : null, country,
+      });
     }
 
     const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
@@ -85,7 +97,10 @@ Deno.serve(async (req) => {
       const auth = await requireFamilyMember(req, supabase, familyId);
       if (!auth.ok) return auth.response;
       if (!KEY_ID || !KEY_SECRET) return json(503, NOT_CONFIGURED);
-      const cur = (typeof currency === 'string' ? currency.toUpperCase() : 'INR') as RazorpayCurrency;
+      const cur = (typeof currency === 'string' ? currency.toUpperCase() : payIn ?? 'INR') as RazorpayCurrency;
+      if (payIn && cur !== payIn) {
+        return json(409, { status: 'wrong_currency', currency: payIn, error: payerCurrencyMessage(payIn) });
+      }
       if (!CURRENCIES.includes(cur)) {
         return json(400, { status: 'currency', error: "You can't pay in this currency yet." });
       }

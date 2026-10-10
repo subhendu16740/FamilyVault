@@ -12,14 +12,14 @@ import { isProduction, environmentDescription } from '../../lib/environment';
 import { useFamily } from '../../lib/family-context';
 import { usePreferences } from '../../lib/preferences';
 import { fetchPlanLimits, fetchVoiceStatus, indexStatus, type IndexStatus, type VoiceStatus } from '../../lib/api';
-import { useFamilyPlan } from '../../lib/family-plan';
+import { useFamilyPlan, useOnPlus } from '../../lib/family-plan';
 import { DEFAULT_PLAN_LIMITS, type PlanLimits } from '../../lib/plans';
 import { VOICE_LANGUAGES, phrase, voiceLanguage } from '../../lib/voice-languages';
 import { OCR_LANGUAGES, describeOcrLanguages } from '../../lib/ocr-languages';
 import {
   chooseVoice, chosenVoice, hasVoiceFor, speak, stopSpeaking, voicesFor, type DeviceVoice,
 } from '../../lib/speech';
-import { ScreenHeader, PlusTag } from '../../components/screen-header';
+import { ScreenHeader, PlusStar, PlusTag } from '../../components/screen-header';
 import { appVersion } from '../../lib/app-info';
 import { color, radius, shadow, size, space, type } from '../../constants/design';
 
@@ -74,6 +74,7 @@ export default function SettingsScreen() {
   // On the free plan each person has their own voice chats (041–043); say
   // how many are left where voice is switched on.
   const { isFree } = useFamilyPlan();
+  const onPlus = useOnPlus();
   const [limits, setLimits] = useState<PlanLimits>(DEFAULT_PLAN_LIMITS);
   const [voiceChats, setVoiceChats] = useState<VoiceStatus | null>(null);
   useEffect(() => {
@@ -214,11 +215,20 @@ export default function SettingsScreen() {
     if (index.up_to_date) {
       const stuck = index.unindexed?.length ?? 0;
       return stuck > 0
-        ? `Up to date. ${stuck} document${stuck === 1 ? '' : 's'} couldn't be read.`
-        : 'Up to date. All languages searchable.';
+        ? `${stuck} document${stuck === 1 ? '' : 's'} couldn't be read. Try adding a clearer copy.`
+        : 'Up to date.';
     }
-    return 'Update needed for Indian-language documents';
+    return 'Update so documents in every language can be found.';
   };
+
+  // Search keeps itself up to date (rag-search starts a rebuild when it sees
+  // one is due), so the row shows only when it needs the person: an update
+  // they can start, one running, or documents that could not be read.
+  const indexNeedsYou = !!index && (
+    rebuilding || !!indexError
+    || (!index.up_to_date && index.can_rebuild !== false)
+    || (index.unindexed?.length ?? 0) > 0
+  );
 
   useEffect(() => {
     if (!langPickerOpen) return;
@@ -254,7 +264,9 @@ export default function SettingsScreen() {
             <Text style={styles.avatarInitial}>{initial}</Text>
           </View>
           <View style={styles.profileInfo}>
-            <Text style={styles.profileName}>{displayName}</Text>
+            <Text style={styles.profileName} accessibilityLabel={onPlus ? `${displayName}, Family Plus` : undefined}>
+              {onPlus && <PlusStar onDark />}{displayName}
+            </Text>
             <Text style={styles.profileEmail}>{email}</Text>
             <View style={styles.adminBadge}>
               <Text style={styles.adminBadgeText}>{role}</Text>
@@ -354,8 +366,8 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        {/* Search index — live, and only actionable when a rebuild is due */}
-        <View style={styles.group}>
+        {/* Search — shown only when it needs the person */}
+        {indexNeedsYou && <View style={styles.group}>
           <Text style={styles.groupTitle}>Search</Text>
           <View style={styles.groupCard}>
             <TouchableOpacity
@@ -368,7 +380,7 @@ export default function SettingsScreen() {
                 <Feather name="refresh-cw" size={16} color={color.primary} />
               </View>
               <View style={styles.settingText}>
-                <Text style={styles.settingLabel}>Search index</Text>
+                <Text style={styles.settingLabel}>Search</Text>
                 <Text style={styles.settingSub}>{indexSubtitle()}</Text>
               </View>
               {rebuilding
@@ -378,7 +390,7 @@ export default function SettingsScreen() {
                   : null}
             </TouchableOpacity>
           </View>
-        </View>
+        </View>}
 
         <LinkGroup title="Help" items={helpItems} />
 
