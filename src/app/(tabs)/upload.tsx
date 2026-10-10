@@ -15,7 +15,7 @@ import { useAuth } from '../../lib/auth';
 import { StorageFullError, fetchCategories, fetchDocumentExpiry, fetchStorageStatus, uploadDocument } from '../../lib/api';
 import { longDate } from '../../lib/dates';
 import { plusPage, useFamilyPlan } from '../../lib/family-plan';
-import type { PlanName } from '../../lib/plans';
+import { MAX_FILE_BYTES, fileTooLargeMessage, type PlanName } from '../../lib/plans';
 import {
   extractTextFromImage, isImageFile, ocrLanguageGapOnThisDevice, type OcrProgress,
 } from '../../lib/ocr';
@@ -128,6 +128,13 @@ export default function UploadScreen() {
       setErrorMsg(unsupportedFileMessage(kind));
       return;
     }
+    // Over the bucket's 10 MB (050): said now, before it is read. A picker
+    // that cannot say the size is checked again at Save.
+    if ((picked.size ?? 0) > MAX_FILE_BYTES) {
+      setFullPlan(null);
+      setErrorMsg(fileTooLargeMessage(picked.size ?? 0));
+      return;
+    }
     const file: PickedFile = {
       uri: picked.uri,
       name: nameWithType(picked.name, kind, fallbackStem),
@@ -154,14 +161,14 @@ export default function UploadScreen() {
         `document_${Date.now()}`,
       );
     } catch (err) {
-      Alert.alert('Error', 'Failed to pick document.');
+      Alert.alert('Error', "Couldn't open that file. Try again.");
     }
   };
 
   const pickFromCamera = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Camera permission is required to scan documents.');
+      Alert.alert('Permission needed', 'Allow camera access to scan documents.');
       return;
     }
 
@@ -178,7 +185,7 @@ export default function UploadScreen() {
   const pickFromGallery = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Gallery permission is required.');
+      Alert.alert('Permission needed', 'Allow photo access to pick from your gallery.');
       return;
     }
 
@@ -221,8 +228,8 @@ export default function UploadScreen() {
     if (!pickedFile || !targetFamily || !user) {
       setFullPlan(null);
       setErrorMsg(askWhere && !targetFamily
-        ? 'Choose where this document should go.'
-        : 'Missing file, family, or user session. Please try again.');
+        ? 'Choose where to save this document.'
+        : 'Something went wrong. Try again.');
       return;
     }
 
@@ -257,7 +264,7 @@ export default function UploadScreen() {
     } catch (err: any) {
       console.error('Upload error:', err);
       setFullPlan(err instanceof StorageFullError ? err.room.plan : null);
-      setErrorMsg(err.message ?? 'Something went wrong.');
+      setErrorMsg(err.message ?? 'Something went wrong. Try again.');
     } finally {
       setUploading(false);
     }
@@ -332,7 +339,7 @@ export default function UploadScreen() {
             {/* Supported formats hint */}
             <View style={styles.hintCard}>
               <Feather name="info" size={16} color="#6B7280" />
-              <Text style={styles.hintText}>Supports PDF, PNG, JPG, JPEG</Text>
+              <Text style={styles.hintText}>PDF, PNG or JPG</Text>
             </View>
           </View>
         ) : (
@@ -369,7 +376,7 @@ export default function UploadScreen() {
                 <Feather name="alert-triangle" size={16} color="#9A6200" />
                 <Text style={styles.ocrGapText}>
                   This app can't read {languageGap.map(l => l.english).join(', ')} yet.
-                  Scanning still works, but only the English on the page will be found.
+                  It will only find the English text.
                 </Text>
               </View>
             )}
@@ -381,8 +388,8 @@ export default function UploadScreen() {
                   <ActivityIndicator size="small" color="#2A3D66" />
                   <Text style={styles.ocrLabel}>
                     {ocrProgress.downloading ? `Getting ${languageLabel} language data...` :
-                     ocrProgress.stage === 'loading' ? 'Loading OCR engine...' :
-                     ocrProgress.stage === 'recognizing' ? `Reading ${languageLabel} text from image...` : 'Done'}
+                     ocrProgress.stage === 'loading' ? 'Getting ready...' :
+                     ocrProgress.stage === 'recognizing' ? `Reading ${languageLabel} text...` : 'Done'}
                   </Text>
                 </View>
                 <View style={styles.ocrBarBg}>
@@ -396,7 +403,7 @@ export default function UploadScreen() {
               <View style={styles.ocrDoneCard}>
                 <Feather name="check-circle" size={16} color="#16A34A" />
                 <Text style={styles.ocrDoneText}>
-                  Text extracted ({ocrText.length} characters)
+                  Found {ocrText.length} characters of text
                 </Text>
               </View>
             )}
@@ -422,9 +429,9 @@ export default function UploadScreen() {
                 />
                 <Text style={styles.whereHint}>
                   {!targetFamily
-                    ? `${personal ? 'Your personal vault is only for you. ' : ''}Everyone in a family sees what is saved there.`
+                    ? `${personal ? 'Your personal vault is yours alone. ' : ''}Everyone in a family can see what's saved there.`
                     : isPersonalVault(targetFamily)
-                      ? 'Just for you: nobody else using AskLocker will see it.'
+                      ? "Yours alone. Your family won't see it."
                       : `Everyone in ${targetFamily.name} will see it.`}
                 </Text>
               </>
@@ -525,12 +532,12 @@ export default function UploadScreen() {
               <Feather name="check-circle" size={32} color="#22C55E" />
             </View>
             <Text style={styles.dialogTitle}>Uploaded!</Text>
-            <Text style={styles.dialogMsg}>Document saved to {uploadResult?.vault ?? 'your vault'}.</Text>
+            <Text style={styles.dialogMsg}>Saved to {uploadResult?.vault ?? 'your vault'}.</Text>
             {uploadResult?.expiresOn && (
               <View style={styles.offer}>
                 <Text style={styles.offerText}>
-                  It expires on {longDate(uploadResult.expiresOn)}. ★ With Family Plus, everyone in the family gets a
-                  reminder 90, 30 and 7 days before, and on the day.
+                  It expires on {longDate(uploadResult.expiresOn)}. ★ With Family Plus, everyone gets reminders
+                  90, 30 and 7 days before.
                 </Text>
                 <TouchableOpacity
                   onPress={() => {

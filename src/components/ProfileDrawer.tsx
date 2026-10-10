@@ -73,7 +73,7 @@ export default function ProfileDrawer() {
   const role = membership?.role ? membership.role.charAt(0).toUpperCase() + membership.role.slice(1) : '';
   // The open vault, and who sees it (046): "Personal vault · only you", or the family and your role.
   const familyLine = isPersonalVault(currentFamily)
-    ? `${vaultName(currentFamily)} · only you`
+    ? `${vaultName(currentFamily)} · yours alone`
     : [currentFamily?.name, role].filter(Boolean).join(' · ');
 
   const handleNavigate = async (item: MenuItem) => {

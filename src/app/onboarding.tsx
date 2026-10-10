@@ -15,12 +15,12 @@ const slides = [
   {
     emoji: '📁',
     title: 'One Vault. Every Document.',
-    subtitle: 'Passports, insurance, tax records, medical documents — all in one place.',
+    subtitle: 'Passports, insurance, tax and medical papers.',
   },
   {
     emoji: '🔍',
     title: 'Just Ask. We\'ll Find It.',
-    subtitle: 'Say \'Show me Dad\'s passport\' and AI finds it instantly.',
+    subtitle: 'Ask in your own words. AskLocker finds it.',
     showSearch: true,
   },
 ];

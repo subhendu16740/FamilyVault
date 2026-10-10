@@ -62,7 +62,7 @@ export default function StorageScreen() {
         setPlans(Object.fromEntries(list.map((f, i) => [f.id, statuses[i]])));
         setLimits(l);
       })
-      .catch((err) => { if (!cancelled) { setUsage([]); setError(err?.message ?? 'Could not add up your documents.'); } });
+      .catch((err) => { if (!cancelled) { setUsage([]); setError(err?.message ?? "Couldn't add up your storage."); } });
     return () => { cancelled = true; };
   }, [user?.id, familyKey]));
 
@@ -88,8 +88,7 @@ export default function StorageScreen() {
             <Card>
               <CardTitle icon="hard-drive">Plans</CardTitle>
               <Body>
-                Each vault's documents and saved chats share its plan's space. Every plan has a limit: on Free, a family
-                has {formatBytes(limits.free)} and your personal vault {formatBytes(limits.freePersonal)}.
+                Documents and saved chats share each vault's space. Every plan has a limit.
               </Body>
               <View style={styles.planRows}>
                 <View style={styles.planRow}>
@@ -115,7 +114,7 @@ export default function StorageScreen() {
               {payments && !payments.available && (
                 <View style={styles.plusRow}>
                   <PlusTag link />
-                  <Text style={styles.plusText}>Family Plus can't be bought in the app yet. Coming soon.</Text>
+                  <Text style={styles.plusText}>Family Plus is coming soon.</Text>
                 </View>
               )}
               <TouchableOpacity style={styles.compare} onPress={() => router.push('/plus' as any)} accessibilityRole="link">
@@ -125,7 +124,7 @@ export default function StorageScreen() {
             </Card>
 
             <Text style={styles.sectionTitle}>Your vaults</Text>
-            {usage.length === 0 && <Muted>You are not in a family yet.</Muted>}
+            {usage.length === 0 && <Muted>You're not in a family yet.</Muted>}
             {usage.map((f) => {
               const status = plans[f.familyId] ?? null;
               // As the server counts it once 038 is applied; the documents' sizes before.
@@ -172,8 +171,8 @@ export default function StorageScreen() {
                     {used >= limit ? 'No space left' : `${formatBytes(limit - used)} left`}
                     {' · '}{documents(f.documents)}
                   </Muted>
-                  <Muted>You added {formatBytes(f.yourBytes)} of it ({documents(f.yourDocuments)}).</Muted>
-                  {!!status?.chatsBytes && <Muted>Saved chats take {formatBytes(status.chatsBytes)} of it.</Muted>}
+                  <Muted>You added {formatBytes(f.yourBytes)} ({documents(f.yourDocuments)}).</Muted>
+                  {!!status?.chatsBytes && <Muted>Saved chats use {formatBytes(status.chatsBytes)}.</Muted>}
                   {level !== 'ok' && (
                     <View style={[styles.note, level === 'full' ? styles.noteFull : styles.noteNearly]}>
                       <Text style={[styles.noteText, level === 'full' ? styles.noteTextFull : styles.noteTextNearly]}>
@@ -188,7 +187,7 @@ export default function StorageScreen() {
                                 removalOn: status.removalAt ? longDate(new Date(status.removalAt)) : undefined,
                                 forSale: payments?.available ?? PLUS_FOR_SALE,
                               })
-                            : `Nearly full: ${formatBytes(limit - used)} left. When it is full, new documents and saved chats can't be added.`}
+                            : "Nearly full. When it's full, you can't add documents or save chats."}
                       </Text>
                       {!isPlus && (
                         <TouchableOpacity onPress={() => router.push(plusPage('storage') as any)} accessibilityRole="link">
@@ -209,7 +208,7 @@ export default function StorageScreen() {
               </Muted>
             </Card>
 
-            <Muted>Sizes are of the files as they were added, and saved chats count too. Deleting a document or a saved chat frees its space.</Muted>
+            <Muted>Saved chats count too. Delete a document or chat to free space.</Muted>
           </>
         )}
       </ScrollView>

@@ -152,11 +152,11 @@ export function PersonSheet({ state, familyId, tree, graph, meId, onClose, onSav
     setProblem(null);
     const details = { name: name.trim(), gender, birthDate: null as string | null };
     if (asksDetails) {
-      if (!details.name) { setProblem('Type their name.'); return; }
+      if (!details.name) { setProblem('Enter their name.'); return; }
       if (details.name.length > 80) { setProblem('That name is too long.'); return; }
       if (nickname.trim().length > 40) { setProblem('A nickname can be at most 40 characters.'); return; }
       const iso = toIsoDate(birth);
-      if (iso === 'invalid') { setProblem('That date of birth doesn\'t look right. Type the day, month and full year, like 26081962.'); return; }
+      if (iso === 'invalid') { setProblem('That date doesn\'t look right. Type it like 26081962.'); return; }
       if (iso === 'future') { setProblem('That date of birth is in the future.'); return; }
       details.birthDate = iso;
     }
@@ -193,7 +193,7 @@ export function PersonSheet({ state, familyId, tree, graph, meId, onClose, onSav
       }
       onSaved();
     } catch (err: any) {
-      setProblem(err?.message || 'Could not save. Please try again.');
+      setProblem(err?.message || "Couldn't save. Try again.");
       setSaving(false);
     }
   };
@@ -215,8 +215,7 @@ export function PersonSheet({ state, familyId, tree, graph, meId, onClose, onSav
         <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           {mode === 'add' && (
             <Text style={styles.intro}>
-              They don't need an account. You can mark documents as theirs, and ask about them by relation or nickname — "Nani's
-              pension papers".
+              They don't need an account. Then you can ask about them, like "Nani's pension papers".
             </Text>
           )}
 
@@ -228,9 +227,9 @@ export function PersonSheet({ state, familyId, tree, graph, meId, onClose, onSav
               label="Nickname (optional)"
               value={nickname}
               onChangeText={setNickname}
-              placeholder="What the family calls them, like Pinky or Maa"
+              placeholder="Like Pinky or Maa"
               maxLength={40}
-              hint={'Everyone in the family sees it, and Ask understands it: "Pinky\'s passport".'}
+              hint={'Everyone in the family sees it. You can ask for "Pinky\'s passport".'}
             />
           )}
 
@@ -294,7 +293,7 @@ export function PersonSheet({ state, familyId, tree, graph, meId, onClose, onSav
                   <Chip key={g.label} label={g.label} on={gender === g.value} onPress={() => setGender(g.value)} />
                 ))}
               </View>
-              <Text style={styles.hint}>Used only to name relations: mother or father, aunt or uncle.</Text>
+              <Text style={styles.hint}>Used only to name relations, like aunt or uncle.</Text>
               <Field
                 label="Date of birth (optional)"
                 value={birth}
@@ -302,7 +301,7 @@ export function PersonSheet({ state, familyId, tree, graph, meId, onClose, onSav
                 placeholder="DD/MM/YYYY"
                 keyboardType="number-pad"
                 maxLength={10}
-                hint="Shows their age, and tells elder from younger."
+                hint="Shows their age and who is older."
               />
             </>
           )}

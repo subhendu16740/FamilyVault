@@ -62,9 +62,9 @@ export const environmentLabel: string =
 /** Longer form, for Settings, where there is room to be explicit. */
 export const environmentDescription: string =
   environmentKind === 'production'
-    ? 'Production — real family documents'
+    ? 'Live copy with real documents'
     : environmentKind === 'development'
-      ? 'Development database — test data only'
+      ? 'Test copy with test data only'
       : projectRef
-        ? `Unrecognised Supabase project (${projectRef})`
-        : 'EXPO_PUBLIC_SUPABASE_URL is not set — this build cannot reach a backend';
+        ? `Unknown project (${projectRef})`
+        : 'EXPO_PUBLIC_SUPABASE_URL is not set. This copy has no backend.';

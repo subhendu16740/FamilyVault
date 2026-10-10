@@ -20,6 +20,7 @@ import { chunkText } from './chunking.ts';
 import { extractPdfLayoutText } from './pdf-text.ts';
 import { extractMetadata, parseFlexibleDate, type ExtractedMeta } from './metadata.ts';
 import { cleanText } from './text.ts';
+import { inVaultFolder, MAX_DOCUMENT_TEXT } from './limits.ts';
 
 /** Bumped when extraction changes enough that stored text should be redone. */
 export const EXTRACTOR_VERSION = 'pdfjs-layout-2';
@@ -61,6 +62,8 @@ const OCR_SPACE_API_KEY = Deno.env.get('OCR_SPACE_API_KEY') ?? '';
 
 export interface IngestRequest {
   familyId: string;
+  /** The vault's folder (its storage_namespace): the only place a file is read from (050). */
+  namespace: string;
   documentId: string;
   storagePath: string;
   /** Text the client already extracted (Tesseract on web, ML Kit on native). */
@@ -92,9 +95,15 @@ export interface IngestResult {
  */
 export async function ingestDocument(
   supabase: SupabaseClient,
-  { familyId, documentId, storagePath, providedText }: IngestRequest,
+  { familyId, namespace, documentId, storagePath, providedText }: IngestRequest,
 ): Promise<IngestResult> {
   console.log(`[ingest] Starting: doc=${documentId}, path=${storagePath}, pre-extracted=${!!providedText}`);
+
+  // The service role reads any file, so only this vault's are read: an
+  // address anywhere else is another family's file (050).
+  if (!inVaultFolder(storagePath, namespace)) {
+    throw new Error(`Not in this vault's folder: ${storagePath}`);
+  }
 
   let extractedText = '';
 
@@ -153,6 +162,11 @@ export async function ingestDocument(
   // enough to fail the whole ingestion. Cleaned once, here, so the stored
   // text, every chunk and every metadata value are safe.
   extractedText = cleanText(extractedText);
+  // One document never fills the shared database (050).
+  if (extractedText.length > MAX_DOCUMENT_TEXT) {
+    console.warn(`[ingest] Keeping the first ${MAX_DOCUMENT_TEXT} of ${extractedText.length} chars`);
+    extractedText = extractedText.slice(0, MAX_DOCUMENT_TEXT);
+  }
 
   // Nothing readable. Say so rather than storing "[Document: name]" as a
   // chunk: a placeholder is indistinguishable from a real passage at search
@@ -227,6 +241,10 @@ export async function reextractDocument(
   documentId: string,
   storagePath: string,
 ): Promise<{ chars: number; chunks: number; empty: boolean; extractor: PdfExtractor; layoutError?: string }> {
+  // The vault's schema is its folder's name: nothing outside it is read (050).
+  if (!inVaultFolder(storagePath, schema)) {
+    throw new Error(`Not in this vault's folder: ${storagePath}`);
+  }
   const { data: fileData, error: dlError } = await supabase.storage
     .from('documents')
     .download(storagePath);
@@ -238,7 +256,7 @@ export async function reextractDocument(
     ? await extractTextFromPdf(fileData)
     : { text: await fileData.text(), extractor: 'layout' };
   const { extractor, layoutError } = pdf;
-  const text = cleanText(pdf.text);
+  const text = cleanText(pdf.text).slice(0, MAX_DOCUMENT_TEXT);
 
   // A scan OCR could not read. Leave the document exactly as it was: its
   // existing text and chunks are no worse than what this pass produced, and

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
-  StyleSheet, Alert, ActivityIndicator,
+  StyleSheet, ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
@@ -22,10 +22,14 @@ export default function SetupFamilyScreen() {
   const [familyName, setFamilyName] = useState('');
   const [description, setDescription] = useState('');
   const [loading, setLoading] = useState(false);
+  // Said on the screen, not in an alert: an alert shows nothing in a browser.
+  // `plus`: refused because on Free a person creates one family (050).
+  const [problem, setProblem] = useState<{ message: string; plus: boolean } | null>(null);
 
   const handleCreate = async () => {
+    setProblem(null);
     if (!familyName.trim()) {
-      Alert.alert('Required', 'Please enter a family name.');
+      setProblem({ message: 'Enter a family name.', plus: false });
       return;
     }
     if (!user) return;
@@ -38,7 +42,7 @@ export default function SetupFamilyScreen() {
       switchFamily(familyId);
       router.replace('/home' as any);
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to create family.');
+      setProblem({ message: err?.message || "Couldn't create the family. Try again.", plus: err?.hint === 'family_limit' });
     } finally {
       setLoading(false);
     }
@@ -65,7 +69,7 @@ export default function SetupFamilyScreen() {
           </LinearGradient>
           <Text style={styles.title}>Create Your Family Vault</Text>
           <Text style={styles.subtitle}>
-            A vault you share: everyone you invite sees its documents. Your personal vault stays yours alone.
+            Everyone you invite can see its documents. Your personal vault stays yours.
           </Text>
         </View>
 
@@ -103,6 +107,20 @@ export default function SetupFamilyScreen() {
           </View>
         </View>
 
+        {problem && (
+          <View style={styles.problem} accessibilityRole="alert">
+            <Feather name="alert-circle" size={16} color={color.danger} style={styles.problemIcon} />
+            <View style={styles.problemTextWrap}>
+              <Text style={styles.problemText}>{problem.message}</Text>
+              {problem.plus && (
+                <Text style={styles.problemLink} accessibilityRole="link" onPress={() => router.push('/plus' as any)}>
+                  See Family Plus ›
+                </Text>
+              )}
+            </View>
+          </View>
+        )}
+
         {/* Create Button */}
         <TouchableOpacity
           onPress={handleCreate}
@@ -127,9 +145,9 @@ export default function SetupFamilyScreen() {
         <View style={styles.infoCard}>
           <Feather name="lock" size={16} color={color.primary} style={styles.infoIcon} />
           <View style={styles.infoTextWrap}>
-            <Text style={styles.infoTitle}>Just for your family</Text>
+            <Text style={styles.infoTitle}>Your family's own space</Text>
             <Text style={styles.infoSub}>
-              Your family gets its own space. In AskLocker, only the people in your family can open its documents.
+              Only your family can open its documents in AskLocker.
             </Text>
           </View>
         </View>
@@ -213,6 +231,19 @@ const styles = StyleSheet.create({
     marginBottom: space.xl,
   },
   btnDisabled: { opacity: 0.7 },
+  problem: {
+    flexDirection: 'row',
+    gap: space.sm,
+    alignItems: 'flex-start',
+    backgroundColor: '#FEF2F2',
+    borderRadius: radius.control,
+    padding: space.md,
+    marginBottom: space.lg,
+  },
+  problemIcon: { marginTop: 2 },
+  problemTextWrap: { flex: 1, gap: space.xs },
+  problemText: { ...type.caption, color: '#991B1B' },
+  problemLink: { ...type.caption, fontWeight: '600', color: color.primary },
   createBtnText: { ...type.button, color: '#FFFFFF' },
   infoCard: {
     flexDirection: 'row',

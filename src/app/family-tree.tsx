@@ -57,8 +57,8 @@ export default function FamilyTreeScreen() {
         if (cancelled) return;
         setTree({ people: [], links: [], nicknames: false });
         setProblem(isMissingMigration(err)
-          ? { unavailable: true, text: 'The family tree is not switched on yet.' }
-          : { unavailable: false, text: err?.message ?? 'Could not load the family tree.' });
+          ? { unavailable: true, text: "The family tree isn't switched on yet." }
+          : { unavailable: false, text: err?.message ?? "Couldn't load the family tree." });
       });
     // Badges come a moment later: the dates live in each document's details.
     fetchExpiringDocuments(currentFamily.id)
@@ -105,8 +105,8 @@ export default function FamilyTreeScreen() {
               <Card>
                 <CardTitle icon="git-branch">Start your family tree</CardTitle>
                 <Body>
-                  Add parents, children and grandparents — they don't need an account. Mark documents as theirs, and
-                  ask about them by relation, like "Nani's pension papers".
+                  Add your family, even people without an account. Then ask about them by relation, like "Nani's
+                  pension papers".
                 </Body>
                 {isAdmin
                   ? <PrimaryButton label="Add someone" icon="user-plus" onPress={() => setSheet({ mode: 'add' })} />

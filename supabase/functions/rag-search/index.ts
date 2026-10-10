@@ -14,6 +14,7 @@ import { digitsFromWords, restoreCodes } from '../_shared/numbers.ts';
 import { takeInTurn, uniqueRelatives } from '../_shared/vaults.ts';
 import { USED_PASSAGES_RULE, passagesUsed, splitUsedPassages } from '../_shared/used-passages.ts';
 import { allowanceJson, givenBack, parseAllowance, questionLimitMessage, type QuestionAllowance } from '../_shared/questions.ts';
+import { MAX_QUESTION_CHARS } from '../_shared/limits.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -134,8 +135,11 @@ Deno.serve(async (req) => {
 
   try {
     const {
-      family_id, family_ids, scope, query, history: rawHistory, language: rawLanguage, voice: rawVoice,
+      family_id, family_ids, scope, query: rawQuery, history: rawHistory, language: rawLanguage, voice: rawVoice,
     } = await req.json();
+    // A question, not a document: Ask's box takes 500 characters, and nothing
+    // longer is sent on to the AI service (050).
+    const query = typeof rawQuery === 'string' ? rawQuery.trim().slice(0, MAX_QUESTION_CHARS) : '';
 
     // Voice assistant (optional). `language` is a BCP-47 tag for the
     // question and the wanted answer; `voice` means the answer will be read
@@ -214,10 +218,14 @@ Deno.serve(async (req) => {
     // Each person's questions this month (049): counted before any AI step
     // runs, so two at once cannot both take the last one, and given back
     // below whenever no answer comes of it. A database without 049, or a
-    // count that cannot be made, answers as before: no limit.
+    // count that cannot be made, answers as before: no limit. Since 050 a
+    // try is counted for the day as well, and never given back, so questions
+    // that find nothing still stop at the day's tries.
     const claim = await claimQuestion(userId);
     if (claim && !claim.allowed) {
-      console.log(`[rag] Question limit reached (${claim.allowance.used}/${claim.allowance.ceiling})`);
+      console.log(claim.allowance.reason === 'tries'
+        ? `[rag] Tries for today used up (${claim.allowance.tries}/${claim.allowance.triesLimit})`
+        : `[rag] Question limit reached (${claim.allowance.used}/${claim.allowance.ceiling})`);
       return jsonResponse({
         answer: questionLimitMessage(claim.allowance, language),
         sources: [],

@@ -39,7 +39,7 @@ export default function LoginScreen() {
         <Text style={styles.lead}>Sign in with your Google account.</Text>
         <GoogleSignIn onSignedIn={() => router.replace('/home' as any)} />
         <Text style={styles.note}>
-          New to AskLocker? The same button makes your account. There is no password to remember.
+          New here? The same button creates your account.
         </Text>
 
         {!isProduction && <PasswordSignIn onSignedIn={() => router.replace('/home' as any)} />}

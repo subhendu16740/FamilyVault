@@ -316,7 +316,7 @@ async function retryStuckDocuments(
     if (Date.now() >= deadline) break;
     try {
       const result = await ingestDocument(supabase, {
-        familyId, documentId: doc.id, storagePath: doc.storage_path,
+        familyId, namespace: schema, documentId: doc.id, storagePath: doc.storage_path,
       });
       if (result.empty && result.retryable) {
         // Not the document: OCR was needed and could not run — no key is set,

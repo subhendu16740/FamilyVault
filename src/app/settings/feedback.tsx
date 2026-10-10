@@ -35,8 +35,8 @@ export default function FeedbackScreen() {
       setTopic(null);
     } catch (err) {
       setError(isMissingMigration(err)
-        ? 'Feedback is not switched on yet. Please try again later.'
-        : (err as Error)?.message || 'Could not send your message. Please try again.');
+        ? "Feedback isn't ready yet. Please try again later."
+        : (err as Error)?.message || "Couldn't send your message. Please try again.");
     } finally {
       setSending(false);
     }
@@ -49,7 +49,7 @@ export default function FeedbackScreen() {
         {sent ? (
           <Card>
             <CardTitle icon="check-circle">Thank you</CardTitle>
-            <Body>Your message has been sent to the AskLocker team.</Body>
+            <Body>We've got your message.</Body>
             <SecondaryButton label="Write another message" onPress={() => setSent(false)} />
           </Card>
         ) : (
@@ -78,7 +78,7 @@ export default function FeedbackScreen() {
               onChangeText={(t) => { setMessage(t); setError(null); }}
               multiline
               maxLength={4000}
-              placeholder="Tell us what happened, or what you would like."
+              placeholder="Tell us what happened, or what you'd like."
             />
             {error && <Status kind="error">{error}</Status>}
             <PrimaryButton label="Send" icon="send" onPress={send} busy={sending} disabled={!message.trim()} />

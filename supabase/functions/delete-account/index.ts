@@ -52,7 +52,7 @@ const needsMigration = (error: { code?: string; message?: string }) =>
 
 const NEEDS_MIGRATION = {
   status: "needs_migration",
-  error: "Deleting an account needs a database update that has not been applied here yet (migration 029).",
+  error: "Deleting your account from the app is not switched on yet.",
 };
 
 // Storage's remove() takes a list; keep each call small.
@@ -155,7 +155,7 @@ Deno.serve(async (req) => {
     if (dataErr) {
       if (needsMigration(dataErr)) return json(503, NEEDS_MIGRATION);
       console.error("[delete-account] delete_account_data failed:", dataErr.code, dataErr.message);
-      return json(500, { error: "Your account could not be deleted. Nothing more was removed; please try again." });
+      return json(500, { error: "Your account couldn't be deleted, and nothing more was removed. Please try again." });
     }
     const outcome = (result ?? {}) as { deleted_namespaces?: string[]; families_deleted?: number; families_left?: number };
 
@@ -174,7 +174,7 @@ Deno.serve(async (req) => {
     if (authErr) {
       console.error("[delete-account] deleteUser failed:", authErr.message);
       return json(500, {
-        error: "Your documents and details are deleted, but the sign-in could not be removed. Please try again.",
+        error: "Your documents and details are deleted, but your sign-in wasn't. Please try again.",
       });
     }
 

@@ -54,7 +54,7 @@ export default function PersonScreen() {
   const [linkEmail, setLinkEmail] = useState('');
   const [linking, setLinking] = useState(false);
   const [linkError, setLinkError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(joined ? 'Their two entries are one now: everything that was marked as either is theirs.' : null);
+  const [notice, setNotice] = useState<string | null>(joined ? 'Their two entries are now one. Documents marked as either are theirs.' : null);
   // Asked to be this person, not answered yet (037).
   const [invite, setInvite] = useState<PendingInvite | null>(null);
   const [withdrawing, setWithdrawing] = useState(false);
@@ -69,7 +69,7 @@ export default function PersonScreen() {
       .catch((err) => {
         if (cancelled) return;
         setTree({ people: [], links: [], nicknames: false });
-        setProblem(isMissingMigration(err) ? 'The family tree is not switched on yet.' : err?.message ?? 'Could not load this person.');
+        setProblem(isMissingMigration(err) ? "The family tree isn't switched on yet." : err?.message ?? "Couldn't load this person.");
       });
     fetchPersonDocuments(currentFamily.id, id)
       .then((d) => { if (!cancelled) setDocs(d); })
@@ -114,7 +114,7 @@ export default function PersonScreen() {
       setConfirmRemove(false);
       router.replace('/family-tree' as any);
     } catch (err: any) {
-      setProblem(err?.message || 'Could not take them out of the tree.');
+      setProblem(err?.message || "Couldn't take them out of the tree.");
       setConfirmRemove(false);
       setRemoving(false);
     }
@@ -147,8 +147,8 @@ export default function PersonScreen() {
         case 'linked':
           setLinkOpen(false);
           setNotice(outcome.status === 'invited'
-            ? `Invitation sent to ${outcome.email}. ${first(person.name)} joins this family as this person once they accept — until then: Pending approval.`
-            : `${first(person.name)} is on AskLocker now, in this family as a viewer, and got a notification.`);
+            ? `Invitation sent to ${outcome.email}. Until ${first(person.name)} accepts, they show as Pending approval.`
+            : `${first(person.name)} is now in this family as a viewer.`);
           scroll.current?.scrollTo({ y: 0, animated: true });   // the news is at the top; the button was at the bottom
           load();
           break;
@@ -157,7 +157,7 @@ export default function PersonScreen() {
           router.replace({ pathname: '/person/[id]', params: { id: outcome.memberId, joined: '1' } } as any);
           break;
         case 'no_account':
-          setLinkError(`No AskLocker account uses ${address} yet. Ask ${first(person.name)} to sign in to AskLocker once with Google, using this email, then link again.`);
+          setLinkError(`No account uses ${address} yet. Ask ${first(person.name)} to sign in to AskLocker with Google using this email, then try again.`);
           break;
         case 'invalid_email':
           setLinkError("That doesn't look like an email address.");
@@ -168,7 +168,7 @@ export default function PersonScreen() {
           break;
       }
     } catch (err: any) {
-      setLinkError(err?.message || 'Could not link them. Please try again.');
+      setLinkError(err?.message || "Couldn't link them. Try again.");
     } finally {
       setLinking(false);
     }
@@ -182,7 +182,7 @@ export default function PersonScreen() {
       setInvite(null);
       setNotice('Invitation withdrawn.');
     } catch (err: any) {
-      setProblem(err?.message || 'Could not withdraw the invitation.');
+      setProblem(err?.message || "Couldn't withdraw the invitation.");
     } finally {
       setWithdrawing(false);
     }
@@ -219,7 +219,7 @@ export default function PersonScreen() {
               {!!person.userId && (
                 <View style={styles.accountPill}>
                   <Feather name="smartphone" size={12} color={color.primary} />
-                  <Text style={styles.accountText}>{isMe ? 'You are on AskLocker' : 'On AskLocker (has an account)'}</Text>
+                  <Text style={styles.accountText}>{isMe ? "You're on AskLocker" : 'On AskLocker'}</Text>
                 </View>
               )}
               {!person.userId && !!invite && (
@@ -238,7 +238,7 @@ export default function PersonScreen() {
               {card === undefined ? (
                 <ActivityIndicator color={color.primary} />
               ) : card === 'off' ? (
-                <Muted>Emergency cards are not switched on yet.</Muted>
+                <Muted>Emergency cards aren't switched on yet.</Muted>
               ) : card ? (
                 <>
                   <View style={styles.emergencyRow}>
@@ -257,8 +257,8 @@ export default function PersonScreen() {
               ) : (
                 <>
                   <Muted>
-                    {isMe ? 'You have' : `${first(person.name)} has`} no emergency card yet: blood group, allergies, medicines,
-                    their doctor and who to call, ready to show a doctor.
+                    {isMe ? 'You have' : `${first(person.name)} has`} no emergency card yet. It keeps blood group, allergies
+                    and who to call ready for a doctor.
                   </Muted>
                   {canEdit && (
                     <SecondaryButton
@@ -395,11 +395,10 @@ export default function PersonScreen() {
             <Pressable style={styles.dialog} onPress={() => {}}>
               <Text style={styles.dialogTitle}>Link {person ? first(person.name) : 'them'} to their account</Text>
               <Text style={styles.dialogText}>
-                {person ? `If ${first(person.name)} is` : 'If they are'} on AskLocker, enter the email of the Google account
-                they sign in with. They get an invitation, and once they accept they join this family as a viewer and keep
-                everything here: their place in the tree, their documents and their emergency card.
+                {person ? `Enter the email ${first(person.name)} signs in with.` : 'Enter the email they sign in with.'} Once
+                they accept, they join as a viewer and keep everything here.
               </Text>
-              <Muted>Already added in Manage Family? Linking makes the two entries one.</Muted>
+              <Muted>Already added in Manage Family? Linking merges the two.</Muted>
               <Field
                 label="Their email"
                 placeholder="The email they sign in with"
@@ -431,7 +430,7 @@ export default function PersonScreen() {
           <Pressable style={styles.dialog} onPress={() => {}}>
             <Text style={styles.dialogTitle}>Take {person ? first(person.name) : 'them'} out of the tree?</Text>
             <Text style={styles.dialogText}>
-              Their links to the family go too. Their documents stay in the family, no longer marked as theirs.
+              Their links go too. Their documents stay, no longer marked as theirs.
             </Text>
             <View style={styles.dialogButtons}>
               <TouchableOpacity style={styles.cancelBtn} onPress={() => setConfirmRemove(false)} disabled={removing} accessibilityRole="button">

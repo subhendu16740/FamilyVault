@@ -43,13 +43,13 @@ export default function SecurityScreen() {
     try {
       if (on) {
         await lock.turnOn();
-        setLockStatus({ kind: 'ok', text: 'Fingerprint sign-in is on. Next time, sign in with your fingerprint or face — no Google needed.' });
+        setLockStatus({ kind: 'ok', text: 'Fingerprint sign-in is on. Next time, use your fingerprint or face to sign in.' });
       } else {
         await lock.turnOff();
         setLockStatus({ kind: 'ok', text: 'Fingerprint sign-in is off on this device.' });
       }
     } catch (err: any) {
-      setLockStatus({ kind: 'error', text: err?.message || 'That did not work. Please try again.' });
+      setLockStatus({ kind: 'error', text: err?.message || "That didn't work. Please try again." });
     } finally {
       setLockBusy(false);
     }
@@ -62,7 +62,7 @@ export default function SecurityScreen() {
       await signOutEverywhere();
       router.replace('/login' as any);
     } catch (err: any) {
-      setSignOutError(err?.message || 'Could not sign out everywhere. Please try again.');
+      setSignOutError(err?.message || "Couldn't sign out everywhere. Please try again.");
       setSigningOut(false);
     }
   };
@@ -88,8 +88,8 @@ export default function SecurityScreen() {
           )}
           {noGoogle && (
             <Body>
-              AskLocker now signs in with Google only. Next time, choose Continue with Google and pick the Google
-              account for {user?.email}: it opens this same account, with everything in it.
+              AskLocker now uses Google to sign in. Next time, tap Continue with Google and choose {user?.email}.
+              You'll get this same account, with everything in it.
             </Body>
           )}
         </Card>
@@ -102,13 +102,12 @@ export default function SecurityScreen() {
             {lock.supported ? (
               <>
                 <Body>
-                  Sign in with your fingerprint or face (or this device's PIN) — no Google, no password. AskLocker also
-                  locks itself when it opens and after {lockAfterText} away, and your fingerprint opens it. Turn it on on
-                  each phone or computer you use.
+                  Sign in with your fingerprint, face or device PIN. AskLocker also locks when it opens and after
+                  {lockAfterText} away. Turn it on for each device you use.
                 </Body>
                 <Muted>
-                  Your fingerprint and face never leave your device. Your device keeps a passkey for AskLocker, and may
-                  call it that. Google sign-in always works too.
+                  Your fingerprint and face stay on your device, which may call this a passkey. Google sign-in still
+                  works.
                 </Muted>
                 <OnOff value={lock.enabled} onChange={setLock} label="Fingerprint sign-in" />
                 {lockStatus && <Status kind={lockStatus.kind}>{lockStatus.text}</Status>}
@@ -122,12 +121,12 @@ export default function SecurityScreen() {
         <Card>
           <CardTitle icon="smartphone">Sign out on every device</CardTitle>
           <Body>
-            Use this if you lost a phone, or signed in on someone else's computer. You will need to sign in again here too.
+            Use this if you lose a phone or sign in on someone else's computer. You'll be signed out here too.
           </Body>
           {signOutError && <Status kind="error">{signOutError}</Status>}
           {confirmAll ? (
             <>
-              <Body>Are you sure? Every phone and computer will be signed out.</Body>
+              <Body>Sign out of every phone and computer?</Body>
               <DangerButton label="Yes, sign out everywhere" onPress={signOutAll} busy={signingOut} icon="log-out" />
               <SecondaryButton label="Cancel" onPress={() => setConfirmAll(false)} />
             </>
@@ -139,8 +138,8 @@ export default function SecurityScreen() {
         <Card>
           <CardTitle icon="user-x">Delete your account</CardTitle>
           <Body>
-            Deletes your account straight away, with your saved chats, your personal vault and any family nobody else
-            looks after. The next screen shows exactly what goes before anything happens.
+            Deletes your account, saved chats, personal vault and any family only you manage. You'll see exactly what
+            goes before anything happens.
           </Body>
           <DangerButton
             label="Delete account"

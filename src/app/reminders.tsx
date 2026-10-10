@@ -32,7 +32,7 @@ export default function RemindersScreen() {
     setError(null);
     fetchExpiringDocuments(currentFamily.id)
       .then((found) => { if (!cancelled) setItems(found); })
-      .catch((err) => { if (!cancelled) { setItems([]); setError(err?.message ?? 'Could not load your documents.'); } });
+      .catch((err) => { if (!cancelled) { setItems([]); setError(err?.message ?? "Couldn't load your documents."); } });
     return () => { cancelled = true; };
   }, [currentFamily?.id, isFree]));
 
@@ -46,11 +46,10 @@ export default function RemindersScreen() {
         <View style={styles.plusCard}>
           <Text style={styles.plusCardTag}>★ Family Plus</Text>
           <Text style={styles.plusCardText}>
-            AskLocker reminds the whole family 90, 30 and 7 days before a passport, licence or policy expires, and on the day.
+            Your family gets a reminder 90, 30 and 7 days before a document expires, and on the day.
           </Text>
           <Text style={styles.plusCardNote}>
-            Reminders appear under the bell on Home{Platform.OS === 'web' ? ', and as notifications on any phone or computer where you turn them on' : ''}, while your family has Family Plus.
-            This page, with every expiry date in one list, is part of Family Plus.
+            They show under the bell on Home{Platform.OS === 'web' ? ', and on any device where you turn them on' : ''}.
           </Text>
           {Platform.OS === 'web' && (
             <TouchableOpacity
@@ -76,7 +75,7 @@ export default function RemindersScreen() {
           </View>
         ) : error ? (
           <View style={styles.emptyCard}>
-            <Text style={styles.emptyTitle}>Could not load your documents</Text>
+            <Text style={styles.emptyTitle}>Couldn't load your documents</Text>
             <Text style={styles.muted}>{error}</Text>
           </View>
         ) : items.length === 0 ? (
@@ -84,7 +83,7 @@ export default function RemindersScreen() {
             <Feather name="calendar" size={24} color="#9CA3AF" />
             <Text style={styles.emptyTitle}>No expiry dates found yet</Text>
             <Text style={styles.muted}>
-              When a passport, licence or policy with an expiry date is added, it shows here.
+              Documents with an expiry date show up here.
             </Text>
           </View>
         ) : (

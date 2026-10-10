@@ -7,6 +7,8 @@
 //
 // rag-search counts one through claim_question() before it answers, and
 // gives it back when no answer came; Ask shows what question_status() says.
+// Since 050 each try is counted for the day too (10 a day on Free, 100 on
+// Plus), answered or not, and a try is never given back.
 // Shared by both, so the app and the answer say the same thing. Pure
 // TypeScript: no Deno, no React, so the QA self-test pins it in Node.
 // ────────────────────────────────────────────────────────────────
@@ -25,6 +27,11 @@ export interface QuestionAllowance {
   plus: boolean;
   /** The day the count starts again, YYYY-MM-DD. */
   resetsOn: string | null;
+  /** Why a question was refused (050): the month's answers, or the day's tries. */
+  reason?: 'month' | 'tries' | null;
+  /** Questions tried today, and the most a day (050). */
+  tries?: number | null;
+  triesLimit?: number | null;
 }
 
 const num = (v: unknown): number | null => (v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v));
@@ -44,6 +51,10 @@ export function parseAllowance(raw: unknown): QuestionAllowance | null {
     left,
     plus: r.plus === true,
     resetsOn: typeof r.resets_on === 'string' ? r.resets_on.slice(0, 10) : null,
+    // 050's, only when the database said them.
+    ...(r.reason === 'tries' || r.reason === 'month' ? { reason: r.reason } : {}),
+    ...(num(r.tries) != null ? { tries: num(r.tries) } : {}),
+    ...(num(r.tries_limit) != null ? { triesLimit: num(r.tries_limit) } : {}),
   };
 }
 
@@ -70,18 +81,31 @@ const isHindi = (language?: string) => (language ?? 'en').split('-')[0].toLowerC
  */
 export function questionLimitMessage(a: QuestionAllowance, language?: string): string {
   const hi = isHindi(language);
+  if (a.reason === 'tries') {
+    // The day's tries (050): answered or not, so asking again and again
+    // cannot spend the AI service's day for everyone.
+    const t = a.triesLimit ?? a.tries ?? 0;
+    if (hi) {
+      return a.plus
+        ? `आज के लिए ${t} सवालों की सीमा पूरी हो गई। कल फिर से पूछ सकते हैं।`
+        : `Free में आज के लिए ${t} सवालों की सीमा पूरी हो गई। हर सवाल गिना जाता है, जवाब मिले या नहीं। कल फिर से पूछ सकते हैं।`;
+    }
+    return a.plus
+      ? `You've reached today's limit of ${t} questions. You can ask again tomorrow.`
+      : `You've reached today's limit of ${t} questions on Free. Every question counts, answered or not. You can ask again tomorrow.`;
+  }
   const day = resetDay(a.resetsOn, hi ? 'hi' : 'en');
   const n = a.ceiling ?? a.used;
   if (hi) {
     const again = day ? ` ये ${day} को फिर से मिलेंगे।` : ' ये अगले महीने फिर से मिलेंगे।';
     return a.plus
-      ? `आपने इस महीने ${n} सवाल पूछ लिए हैं, जो एक व्यक्ति के लिए सबसे ज़्यादा हैं।${again}`
-      : `आपने इस महीने के अपने ${n} मुफ़्त सवाल पूछ लिए हैं।${again} Family Plus में हर महीने सवालों की कोई सीमा नहीं है।`;
+      ? `इस महीने के लिए ${n} सवालों की सीमा पूरी हो गई।${again}`
+      : `इस महीने के आपके ${n} मुफ़्त सवाल पूरे हो गए।${again} Family Plus में सवालों की कोई मासिक सीमा नहीं है।`;
   }
   const again = day ? ` They start again on ${day}.` : ' They start again next month.';
   return a.plus
-    ? `You have asked ${n} questions this month, the most one person can ask.${again}`
-    : `You have asked your ${n} free questions for this month.${again} With Family Plus there is no monthly limit.`;
+    ? `You've reached the fair-use limit of ${n} questions this month.${again}`
+    : `You've used your ${n} free questions for this month.${again} Family Plus has no monthly limit.`;
 }
 
 /**
@@ -93,11 +117,11 @@ export function questionsLeftText(a: QuestionAllowance): string | null {
     // Plus: say nothing until fair use is close.
     if (a.ceiling == null || a.left == null || a.left > 50) return null;
     return a.left === 0
-      ? `You have asked the most questions one person can this month`
+      ? `You've reached this month's fair-use limit`
       : `${a.left} of ${a.ceiling} questions left this month`;
   }
   const left = a.left ?? Math.max(a.limit - a.used, 0);
-  if (left === 0) return `You have used your ${a.limit} free questions this month`;
+  if (left === 0) return `You've used your ${a.limit} free questions this month`;
   return `${left} of ${a.limit} free question${a.limit === 1 ? '' : 's'} left this month`;
 }
 
@@ -109,5 +133,10 @@ export function givenBack(a: QuestionAllowance): QuestionAllowance {
 
 /** As the database writes it, for a response the app reads with parseAllowance(). */
 export function allowanceJson(a: QuestionAllowance): Record<string, unknown> {
-  return { used: a.used, limit: a.limit, ceiling: a.ceiling, left: a.left, plus: a.plus, resets_on: a.resetsOn };
+  return {
+    used: a.used, limit: a.limit, ceiling: a.ceiling, left: a.left, plus: a.plus, resets_on: a.resetsOn,
+    ...(a.reason ? { reason: a.reason } : {}),
+    ...(a.tries != null ? { tries: a.tries } : {}),
+    ...(a.triesLimit != null ? { tries_limit: a.triesLimit } : {}),
+  };
 }

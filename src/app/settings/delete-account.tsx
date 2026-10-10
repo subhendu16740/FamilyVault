@@ -48,7 +48,7 @@ export default function DeleteAccountScreen() {
         setPlan([]);
         setProblem({
           unavailable: err instanceof AccountDeletionError && err.status === 'unavailable',
-          text: err?.message || 'Could not check what would be deleted.',
+          text: err?.message || "Couldn't check what would be deleted.",
         });
       });
     return () => { cancelled = true; };
@@ -72,7 +72,7 @@ export default function DeleteAccountScreen() {
       forgetPushOnThisDevice().catch(() => undefined);   // the server's rows went with the account
       setDone(true);
     } catch (err: any) {
-      setFailed(err?.message || 'Your account could not be deleted. Please try again.');
+      setFailed(err?.message || "Couldn't delete your account. Please try again.");
     } finally {
       setDeleting(false);
     }
@@ -85,7 +85,7 @@ export default function DeleteAccountScreen() {
         <ScrollView contentContainerStyle={screenStyles.body}>
           <Card>
             <CardTitle icon="check-circle">Your account has been deleted</CardTitle>
-            <Body>Your account and everything listed on the last screen are gone. Thank you for using AskLocker.</Body>
+            <Body>Everything on the last screen is gone. Thank you for using AskLocker.</Body>
             {/* Signing out here takes the app back to the sign-in screen. */}
             <PrimaryButton label="Done" onPress={() => { signOutThisDevice().catch(() => undefined); }} />
           </Card>
@@ -117,11 +117,10 @@ export default function DeleteAccountScreen() {
             <Card>
               <CardTitle icon="alert-triangle">This cannot be undone</CardTitle>
               <Body>
-                Your account is deleted straight away; there is no waiting period.
-                Short-term copies in our providers' backups and logs expire on their own.
+                Your account is deleted right away. Copies in our providers' backups and logs expire on their own.
               </Body>
               <Muted>
-                Also deleted: your profile, saved chats and notifications, and your Gmail connection if you made one.
+                Your profile, saved chats, notifications and any Gmail connection go too.
               </Muted>
             </Card>
 
@@ -130,8 +129,8 @@ export default function DeleteAccountScreen() {
                 <CardTitle icon="trash-2">Deleted with your account</CardTitle>
                 <Muted>
                   {going.length === 1
-                    ? 'Nobody else looks after this family, so it is deleted too, with every document and file in it.'
-                    : 'Nobody else looks after these families, so they are deleted too, with every document and file in them.'}
+                    ? 'Only you manage this family, so it goes too, with every document in it.'
+                    : 'Only you manage these families, so they go too, with every document in them.'}
                 </Muted>
                 {going.map((f) => (
                   <View key={f.familyId} style={styles.family}>
@@ -144,7 +143,7 @@ export default function DeleteAccountScreen() {
                 ))}
                 {othersLoseAFamily && (
                   <Body>
-                    To keep a family for its other members, make one of them an admin in Manage Family first.
+                    To keep a family for the others, make one of them an admin first.
                   </Body>
                 )}
                 {othersLoseAFamily && (
@@ -156,7 +155,7 @@ export default function DeleteAccountScreen() {
             {leaving.length > 0 && (
               <Card>
                 <CardTitle icon="log-out">Families you leave</CardTitle>
-                <Muted>These keep their documents, as when anyone leaves a family. You stay in their family tree by name, without your account, and your emergency card there is deleted.</Muted>
+                <Muted>These keep their documents. You stay in their family tree by name, and your emergency card is deleted.</Muted>
                 {leaving.map((f) => (
                   <View key={f.familyId} style={styles.family}>
                     <Text style={styles.familyName}>{f.name}</Text>
@@ -168,7 +167,7 @@ export default function DeleteAccountScreen() {
                   </View>
                 ))}
                 {leaving.some((f) => f.yourDocuments > 0) && (
-                  <Body>If you don't want to leave a document behind, delete it from the family first: once you have gone, nobody there can delete it.</Body>
+                  <Body>Delete any documents you want gone first. Once you leave, nobody can delete them.</Body>
                 )}
               </Card>
             )}

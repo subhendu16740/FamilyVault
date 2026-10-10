@@ -39,7 +39,7 @@ export function LockOffer({ style }: { style?: StyleProp<ViewStyle> }) {
       await lock.turnOn();
       setTurnedOn(true);
     } catch (err: any) {
-      setProblem(err?.message || 'That did not work. Please try again.');
+      setProblem(err?.message || "That didn't work. Try again.");
     } finally {
       setBusy(false);
     }
@@ -57,7 +57,7 @@ export function LockOffer({ style }: { style?: StyleProp<ViewStyle> }) {
         <View style={styles.news}>
           <Feather name="check-circle" size={16} color="#15803D" />
           <Text style={styles.newsText}>
-            Fingerprint sign-in is on. Next time, your fingerprint or face signs you in — no Google needed.
+            Fingerprint sign-in is on. Next time, sign in with your fingerprint or face.
           </Text>
         </View>
         <TouchableOpacity style={styles.secondary} onPress={() => setClosed(true)} accessibilityRole="button">
@@ -78,8 +78,8 @@ export function LockOffer({ style }: { style?: StyleProp<ViewStyle> }) {
         <View style={styles.text}>
           <Text style={styles.title}>Sign in with your fingerprint</Text>
           <Text style={styles.sub}>
-            Turn it on once, and next time your fingerprint or face (or this device's PIN) signs you in — no Google
-            needed. AskLocker also locks itself after {lockAfterText} away. Your fingerprint never leaves the device.
+            Turn it on, and next time your fingerprint or face signs you in. AskLocker also locks after{' '}
+            {lockAfterText} away. Your fingerprint never leaves this device.
           </Text>
         </View>
       </View>
@@ -92,7 +92,7 @@ export function LockOffer({ style }: { style?: StyleProp<ViewStyle> }) {
           <Text style={styles.secondaryText}>Not now</Text>
         </TouchableOpacity>
       </View>
-      <Text style={styles.later}>Settings › Security turns it on or off at any time.</Text>
+      <Text style={styles.later}>You can change this in Settings › Security.</Text>
     </View>
     </View>
   );

@@ -17,7 +17,7 @@ import {
   type RagSearchResult, type RagHistoryTurn, type IndexStatus, type SavedChatMessage,
 } from '../../lib/api';
 import { plusPage } from '../../lib/family-plan';
-import { parseAllowance, questionsLeftText, resetDay, type QuestionAllowance } from '../../lib/plans';
+import { QUESTION_INPUT_MAX, limitHint, parseAllowance, questionsLeftText, resetDay, type QuestionAllowance } from '../../lib/plans';
 import type { Database } from '../../lib/database.types';
 import { usePreferences } from '../../lib/preferences';
 import { phrase } from '../../lib/voice-languages';
@@ -123,8 +123,10 @@ export default function SearchScreen() {
       return;
     }
     showSaveNotice('error', isMissingMigration(err)
-      ? 'Saving chats is not switched on yet.'
-      : 'Could not save this chat. Please try again.', 7000);
+      ? "Saving chats isn't available yet."
+      : limitHint(err) === 'chat_limit'
+        ? (err as Error).message      // 50 a person in a vault (050), in the database's words
+        : "Couldn't save this chat. Try again.", 7000);
   };
 
   const startNewChat = () => {
@@ -190,7 +192,7 @@ export default function SearchScreen() {
       lastSaved.current = messages;
       setSavedId(id);
       setChatFull(null);
-      showSaveNotice('ok', 'Saved. Find it again with the clock at the top.');
+      showSaveNotice('ok', 'Saved. Tap the clock at the top to find it.');
     } catch (err) {
       saveFailed(err);
     } finally {
@@ -403,8 +405,8 @@ export default function SearchScreen() {
       const allowance = parseAllowance(result.questions);
       if (allowance) setQuestions(allowance);
       if (result.question_limit) {
-        // This month's questions are used up: said aloud in voice mode, and,
-        // like an apology, never counted as a voice chat.
+        // This month's questions, or today's tries (050), are used up: said
+        // aloud in voice mode, and, like an apology, never counted as a voice chat.
         if (voiceWanted) {
           heardIds.current.add(aiPlaceholder.id);
           speakMessage(aiPlaceholder.id, result.answer, result.answer_language);
@@ -577,10 +579,10 @@ export default function SearchScreen() {
                   {voiceMode
                     ? t('empty_sub')
                     : askAll
-                      ? 'I can find information across all your vaults: your personal vault and your families.'
+                      ? "I'll search all your vaults."
                       : pickedVault
-                        ? `I can find information in ${vaultName(pickedVault.families)}.`
-                        : "I can find information across all your family's uploaded documents."}
+                        ? `I'll search ${vaultName(pickedVault.families)}.`
+                        : "I'll search all your documents."}
                 </Text>
               </View>
 
@@ -667,7 +669,7 @@ export default function SearchScreen() {
                               : ''}
                             {msg.debug.models?.answer ? ` · ${shortModel(msg.debug.models.answer)}` : ''}
                             {msg.debug.history_turns > 0 && !msg.debug.client_sent_sources ? ' · old client' : ''}
-                            {msg.debug.index_rebuilding ? ' · index rebuilding — run Settings › Search' : ''}
+                            {msg.debug.index_rebuilding ? ' · index rebuilding, see Settings › Search' : ''}
                             {msg.debug.embedded === false && !msg.debug.index_rebuilding
                               ? ` · no query vector${msg.debug.embed_error ? `: ${msg.debug.embed_error}` : ', keywords only'}`
                               : ''}
@@ -714,11 +716,11 @@ export default function SearchScreen() {
             <ActivityIndicator size="small" color="#2A3D66" />
             <Text style={styles.indexStripText} numberOfLines={1}>
               {indexFix.reextracting
-                ? 'Improving search… reading your PDFs again, tables and all'
+                ? 'Improving search… rereading your PDFs'
                 : indexFix.rechunking
-                  ? 'Improving search across languages… re-reading your documents'
-                  : `Improving search across languages… ${indexFix.done_count}` +
-                    `${indexFix.total_count > 0 ? ` of ${indexFix.total_count}` : ''} passages`}
+                  ? 'Improving search… rereading your documents'
+                  : `Improving search… ${indexFix.done_count}` +
+                    `${indexFix.total_count > 0 ? ` of ${indexFix.total_count}` : ''} done`}
             </Text>
           </View>
         )}
@@ -734,8 +736,7 @@ export default function SearchScreen() {
           <View style={[styles.indexStrip, styles.indexStripError]}>
             <Feather name="alert-triangle" size={14} color="#9A6200" />
             <Text style={[styles.indexStripText, styles.indexStripErrorText]} numberOfLines={2}>
-              Not searchable, nothing could be read from {indexFix.unindexed.length === 1 ? 'it' : 'them'}:{' '}
-              {indexFix.unindexed.join(', ')}. Try uploading again.
+              We couldn't read {indexFix.unindexed.join(', ')}. Try uploading again.
             </Text>
           </View>
         )}
@@ -754,8 +755,8 @@ export default function SearchScreen() {
             <Feather name={noVoiceLeft ? 'mic-off' : 'mic'} size={14} color={color.primary} />
             <Text style={styles.indexStripText}>
               {noVoiceLeft
-                ? `You have used your ${voiceQuota.limit} free voice chats. Type to ask; answers stay on the screen.`
-                : `You have ${voiceQuota.left} of ${voiceQuota.limit} free voice chats left.`}
+                ? `You've used all ${voiceQuota.limit} free voice chats. Type to ask instead.`
+                : `${voiceQuota.left} of ${voiceQuota.limit} free voice chats left.`}
             </Text>
             <TouchableOpacity onPress={() => router.push(plusPage('voice') as any)} accessibilityRole="link" hitSlop={8}>
               <Text style={styles.voiceStripLink}>Family Plus ›</Text>
@@ -799,7 +800,7 @@ export default function SearchScreen() {
         {hasMessages && (
           <View style={styles.saveBar}>
             {savedId && saveStopped ? (
-              <View style={[styles.saveBtn, styles.saveBtnStopped]} accessibilityLabel="New answers in this chat are not being saved">
+              <View style={[styles.saveBtn, styles.saveBtnStopped]} accessibilityLabel="New answers aren't being saved">
                 <Feather name="alert-circle" size={16} color="#9A6200" />
                 <Text style={[styles.saveBtnText, styles.saveBtnTextStopped]}>Not saving new answers</Text>
               </View>
@@ -852,6 +853,7 @@ export default function SearchScreen() {
               placeholder={voiceMode ? voicePlaceholder() : 'Ask about your documents...'}
               placeholderTextColor={voiceNotice ? '#B45309' : '#9CA3AF'}
               returnKeyType="send"
+              maxLength={QUESTION_INPUT_MAX}
               style={[styles.input, voiceMode && styles.inputLarge]}
               editable={!isAsking && voiceState !== 'listening'}
             />
@@ -916,7 +918,7 @@ export default function SearchScreen() {
       <VaultSheet
         visible={searchInOpen}
         title="Search in"
-        intro="All my vaults searches every document you can see. Pick one vault and the answer comes sooner."
+        intro="Pick one vault for a faster answer."
         choices={searchInChoices}
         selected={pickedVault ? pickedVault.family_id : 'all'}
         onSelect={chooseSearchIn}
