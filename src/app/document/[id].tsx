@@ -20,6 +20,7 @@ import type { FamilyDocumentDetailRow } from '../../lib/database.types';
 import { ScreenHeader } from '../../components/screen-header';
 import { ShareSheet } from '../../components/share-sheet';
 import { color, radius, shadow, size, space, type } from '../../constants/design';
+import { categoryForAnalytics, track } from '../../lib/analytics';
 
 // Share makes a link that expires (036) for the web app's /s page, which
 // only the web app knows the address of: not offered in the phone app yet.
@@ -83,6 +84,11 @@ export default function DocumentViewerScreen() {
       .catch((err) => console.error('Doc fetch error:', err))
       .finally(() => setLoading(false));
   }, [currentFamily?.id, id]);
+
+  // What kinds of documents people come back to: its category, nothing else.
+  useEffect(() => {
+    if (doc?.id) track('document_opened', { category: categoryForAnalytics({ name: doc.category_name }) });
+  }, [doc?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!doc?.storage_path) return;
