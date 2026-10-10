@@ -124,7 +124,7 @@ export default function NotificationsScreen() {
         <View style={styles.center}>
           <Feather name="bell-off" size={32} color="#D1D5DB" />
           <Text style={styles.emptyTitle}>Notifications are off</Text>
-          <Text style={styles.emptySubtitle}>Nothing has been deleted. Turn them on to see your alerts.</Text>
+          <Text style={styles.emptySubtitle}>Turn them back on to see your alerts. Nothing was deleted.</Text>
           <TouchableOpacity
             style={styles.turnOnBtn}
             onPress={() => setNotificationsEnabled(true)}

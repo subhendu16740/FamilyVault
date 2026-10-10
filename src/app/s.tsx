@@ -59,12 +59,12 @@ export default function SharedDocumentScreen() {
             </View>
             <Text style={styles.heading}>
               {state === 'gone' ? 'This link no longer opens'
-                : state === 'unavailable' ? 'Share links are not switched on yet'
-                : 'Could not open this link'}
+                : state === 'unavailable' ? "Share links aren't switched on yet"
+                : "Couldn't open this link"}
             </Text>
             <Text style={styles.muted}>
-              {state === 'gone' ? 'It has expired, was turned off, or was opened too many times. Ask whoever sent it for a new one.'
-                : state === 'unavailable' ? 'Try again later, or ask whoever sent it.'
+              {state === 'gone' ? 'It may have expired or been turned off. Ask the sender for a new one.'
+                : state === 'unavailable' ? 'Try again later, or ask the sender.'
                 : 'Check your connection and try again.'}
             </Text>
           </View>
@@ -92,8 +92,8 @@ export default function SharedDocumentScreen() {
         )}
 
         <Text style={styles.footer}>
-          {typeof state === 'object' ? 'Only this one document is shared, and only until the date above. ' : ''}
-          AskLocker keeps a family's documents in one place, easy to find.
+          {typeof state === 'object' ? 'Only this document is shared, until the date above. ' : ''}
+          AskLocker keeps a family's documents in one place.
         </Text>
       </ScrollView>
     </SafeAreaView>

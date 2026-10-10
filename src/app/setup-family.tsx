@@ -29,7 +29,7 @@ export default function SetupFamilyScreen() {
   const handleCreate = async () => {
     setProblem(null);
     if (!familyName.trim()) {
-      setProblem({ message: 'Please enter a family name.', plus: false });
+      setProblem({ message: 'Enter a family name.', plus: false });
       return;
     }
     if (!user) return;
@@ -42,7 +42,7 @@ export default function SetupFamilyScreen() {
       switchFamily(familyId);
       router.replace('/home' as any);
     } catch (err: any) {
-      setProblem({ message: err?.message || 'Failed to create family.', plus: err?.hint === 'family_limit' });
+      setProblem({ message: err?.message || "Couldn't create the family. Try again.", plus: err?.hint === 'family_limit' });
     } finally {
       setLoading(false);
     }
@@ -69,7 +69,7 @@ export default function SetupFamilyScreen() {
           </LinearGradient>
           <Text style={styles.title}>Create Your Family Vault</Text>
           <Text style={styles.subtitle}>
-            A vault you share: everyone you invite sees its documents. Your personal vault stays yours alone.
+            Everyone you invite can see its documents. Your personal vault stays yours.
           </Text>
         </View>
 
@@ -145,9 +145,9 @@ export default function SetupFamilyScreen() {
         <View style={styles.infoCard}>
           <Feather name="lock" size={16} color={color.primary} style={styles.infoIcon} />
           <View style={styles.infoTextWrap}>
-            <Text style={styles.infoTitle}>Just for your family</Text>
+            <Text style={styles.infoTitle}>Your family's own space</Text>
             <Text style={styles.infoSub}>
-              Your family gets its own space. In AskLocker, only the people in your family can open its documents.
+              Only your family can open its documents in AskLocker.
             </Text>
           </View>
         </View>

@@ -75,11 +75,11 @@ export function Avatar({ name, me, size = 36, onApp = false }: { name: string; m
 /** One line that explains the badge, shown above the tree. */
 export function OnAppKey() {
   return (
-    <View style={styles.key} accessible accessibilityLabel="A green phone on someone's picture means they are on AskLocker, with their own account.">
+    <View style={styles.key} accessible accessibilityLabel="A green phone means they have an AskLocker account.">
       <View style={[styles.onApp, styles.keyBadge]}>
         <Feather name="smartphone" size={9} color="#FFFFFF" />
       </View>
-      <Text style={styles.keyText}>On AskLocker (has an account)</Text>
+      <Text style={styles.keyText}>On AskLocker</Text>
     </View>
   );
 }

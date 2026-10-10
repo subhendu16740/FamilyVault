@@ -37,9 +37,9 @@ type DocumentCategory = Database['public']['Tables']['document_categories']['Row
 type Notice = { tone: 'error' | 'info' | 'success'; text: string };
 
 const GROUPS = [
-  { key: 'suggested', title: 'Suggested', hint: 'These look like documents worth keeping.' },
-  { key: 'maybe', title: 'Maybe', hint: 'Could be documents. Worth a look.' },
-  { key: 'unlikely', title: 'Probably not', hint: 'Marketing, pictures inside emails, very large files.' },
+  { key: 'suggested', title: 'Suggested', hint: 'These look like documents.' },
+  { key: 'maybe', title: 'Maybe', hint: 'These might be documents.' },
+  { key: 'unlikely', title: 'Probably not', hint: 'Ads, email images and very large files.' },
 ] as const;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -143,7 +143,7 @@ export default function GmailImportScreen() {
       // Each project needs its own Google client and key (PROD before its own
       // setup, say): say so up front, not after a press of "Connect".
       if (!s.configured) {
-        setUnavailable(`Gmail import is not set up on this server yet${s.missing?.length ? ` (missing ${s.missing.join(', ')})` : ''}.`);
+        setUnavailable(`Gmail import isn't set up yet${s.missing?.length ? ` (missing ${s.missing.join(', ')})` : ''}.`);
         return;
       }
       setUnavailable(null);
@@ -174,13 +174,13 @@ export default function GmailImportScreen() {
         setNotice({
           tone: 'info',
           text: googleError === 'access_denied'
-            ? 'Gmail was not connected: permission was not given.'
-            : 'Gmail was not connected. Please try again.',
+            ? "Gmail isn't connected because access wasn't allowed."
+            : "Gmail isn't connected. Try again.",
         });
       } else {
         try {
           const { email } = await gmailFinishConnect(state, code);
-          setNotice({ tone: 'success', text: `Connected to ${email}. Press "Find documents" to look through it.` });
+          setNotice({ tone: 'success', text: `Connected to ${email}. Tap Find documents to start.` });
         } catch (err) {
           setNotice({ tone: 'error', text: readable(err) });
         }
@@ -195,7 +195,7 @@ export default function GmailImportScreen() {
 
   const connect = async () => {
     if (Platform.OS !== 'web') {
-      setNotice({ tone: 'info', text: 'Open AskLocker in a web browser to connect Gmail. The phone app cannot do it yet.' });
+      setNotice({ tone: 'info', text: 'To connect Gmail, open AskLocker in a web browser.' });
       return;
     }
     setConnecting(true);
@@ -208,7 +208,7 @@ export default function GmailImportScreen() {
       if (err instanceof GmailApiError && err.status === 'origin_not_allowed') {
         setNotice({
           tone: 'error',
-          text: `Gmail can't return to this address (${err.origin ?? window.location.origin}) yet. Add it to the GMAIL_RETURN_ORIGINS secret in Supabase, or open AskLocker from an address that is listed there.`,
+          text: `Gmail can't return to ${err.origin ?? window.location.origin} yet. Add it to GMAIL_RETURN_ORIGINS in Supabase, or open AskLocker from a listed address.`,
         });
       } else if (err instanceof GmailApiError && ['not_configured', 'needs_migration', 'unavailable'].includes(err.status)) {
         setUnavailable(err.message);
@@ -226,7 +226,7 @@ export default function GmailImportScreen() {
       setItems([]);
       setSelected(new Set());
       setProgress(null);
-      setNotice({ tone: 'info', text: 'Gmail is disconnected. Documents you imported stay in your vault.' });
+      setNotice({ tone: 'info', text: 'Gmail disconnected. Your imported documents stay in your vault.' });
       await loadStatus();
     } catch (err) {
       setNotice({ tone: 'error', text: readable(err) });
@@ -327,9 +327,9 @@ export default function GmailImportScreen() {
       }
       const parts = [
         imported ? `Imported ${imported} document${imported === 1 ? '' : 's'}` : '',
-        duplicates ? `${duplicates} ${duplicates === 1 ? 'was' : 'were'} already in your vault` : '',
-        unreadable ? `${unreadable} saved without readable text` : '',
-        failed ? `${failed} could not be imported` : '',
+        duplicates ? `${duplicates} already in your vault` : '',
+        unreadable ? `${unreadable} saved, but we couldn't read the text` : '',
+        failed ? `${failed} couldn't be imported` : '',
       ].filter(Boolean);
       setNotice({ tone: failed ? 'info' : 'success', text: `${parts.join('. ') || 'Nothing was imported'}.` });
     } catch (err) {
@@ -396,7 +396,7 @@ export default function GmailImportScreen() {
               )}
             </View>
           ) : item.status === 'failed' ? (
-            <Text style={styles.itemError}>{item.error ?? 'Could not be imported.'} Tick it to try again.</Text>
+            <Text style={styles.itemError}>{item.error ?? "Couldn't import this."} Tick it to try again.</Text>
           ) : (
             <View style={styles.itemFooter}>
               {!!item.reason && <Text style={styles.itemReason} numberOfLines={1}>{item.reason}</Text>}
@@ -456,15 +456,15 @@ export default function GmailImportScreen() {
             <Text style={styles.cardTitle}>{status?.expired ? 'Gmail access has expired' : 'Find documents in your email'}</Text>
             <Text style={styles.cardText}>
               {status?.expired
-                ? `Google stopped AskLocker's access to ${status.email}. Connect again to carry on where you left off.`
-                : 'AskLocker looks through your Gmail for attachments that look like documents (policies, statements, tickets, certificates) and shows you a list. Nothing is imported until you choose it.'}
+                ? `Google ended access to ${status.email}. Reconnect to pick up where you left off.`
+                : "We'll find attachments in your Gmail that look like documents. Nothing is imported unless you tick it."}
             </Text>
             {!status?.expired && (
               <View style={styles.promises}>
                 {[
-                  'Looks only at emails with a PDF or photo attached',
-                  'What it finds is shown to you, not your family',
-                  'Disconnect any time: AskLocker forgets what it found',
+                  'Only checks emails with a PDF or photo',
+                  "Your family doesn't see what it finds",
+                  'Disconnecting clears the list',
                 ].map((line) => (
                   <View key={line} style={styles.promiseRow}>
                     <Feather name="check" size={14} color="#16A34A" />
@@ -476,7 +476,7 @@ export default function GmailImportScreen() {
             {!status?.expired && (
               <Text style={styles.plusNote}>
                 <Text style={styles.plusNoteTag}>★ Family Plus</Text>
-                {'  '}Part of Family Plus, for the whole family.
+                {'  '}For everyone in your family.
               </Text>
             )}
             <TouchableOpacity onPress={connect} disabled={connecting} activeOpacity={0.85} style={styles.fullWidth}>
@@ -487,7 +487,7 @@ export default function GmailImportScreen() {
               </LinearGradient>
             </TouchableOpacity>
             <Text style={styles.fineprint}>
-              Google may warn that this app isn't verified yet. That is expected while AskLocker's Gmail access is in testing.
+              Google may say this app isn't verified yet. That's expected while we're in testing.
             </Text>
           </View>
         ) : (
@@ -522,7 +522,7 @@ export default function GmailImportScreen() {
                       ? `Checked ${status.scan.messages_scanned} emails with attachments · ${status.found} possible documents`
                       : status.scan?.started_at
                         ? `Paused after ${status.scan.messages_scanned} emails · ${status.found} found so far`
-                        : 'Look through your Gmail for documents.'}
+                        : 'Search your Gmail for documents.'}
                   </Text>
                   <TouchableOpacity onPress={scan} disabled={busy} activeOpacity={0.85}>
                     <LinearGradient colors={['#2A3D66', '#4A6491']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.scanBtn}>
@@ -579,7 +579,7 @@ export default function GmailImportScreen() {
 
             {!scanning && status.scan?.finished_at && items.length === 0 && (
               <View style={styles.card}>
-                <Text style={styles.cardText}>No documents turned up in this mailbox.</Text>
+                <Text style={styles.cardText}>No documents found in this mailbox.</Text>
               </View>
             )}
           </>
@@ -636,7 +636,7 @@ export default function GmailImportScreen() {
           <View style={styles.dialog}>
             <Text style={styles.dialogTitle}>Disconnect Gmail?</Text>
             <Text style={styles.dialogMsg}>
-              AskLocker will lose access to {status?.email} and forget the list it found. Documents you already imported stay in your vault.
+              AskLocker will lose access to {status?.email} and clear the list. Imported documents stay in your vault.
             </Text>
             <View style={styles.dialogBtns}>
               <TouchableOpacity style={styles.dialogBtnOutline} onPress={() => setConfirmDisconnect(false)}>

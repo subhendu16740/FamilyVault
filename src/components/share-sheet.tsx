@@ -80,7 +80,7 @@ export function ShareSheet({ visible, onClose, familyId, documentId, fileName }:
   const load = useCallback(() => {
     fetchShareLinks(familyId, documentId)
       .then(setLinks)
-      .catch((err) => { setLinks([]); setProblem(err?.message ?? 'Could not load the links.'); });
+      .catch((err) => { setLinks([]); setProblem(err?.message ?? "Couldn't load the links."); });
   }, [familyId, documentId]);
 
   useEffect(() => {
@@ -118,10 +118,10 @@ export function ShareSheet({ visible, onClose, familyId, documentId, fileName }:
         setPlusLink(true);
         setDays(7);
       } else {
-        setProblem('Share links are not switched on yet.');
+        setProblem("Share links aren't switched on yet.");
       }
     } catch (err: any) {
-      setProblem(err?.message || 'Could not make a link. Please try again.');
+      setProblem(err?.message || "Couldn't make a link. Try again.");
     } finally {
       setMaking(false);
     }
@@ -133,7 +133,7 @@ export function ShareSheet({ visible, onClose, familyId, documentId, fileName }:
       await navigator.clipboard.writeText(made.url);
       setCopied(true);
     } catch {
-      setProblem('Could not copy. Select the link and copy it yourself.');
+      setProblem("Couldn't copy. Select the link and copy it.");
     }
   };
 
@@ -152,7 +152,7 @@ export function ShareSheet({ visible, onClose, familyId, documentId, fileName }:
       await revokeShareLink(id);
       setLinks((prev) => (Array.isArray(prev) ? prev.filter((l) => l.id !== id) : prev));
     } catch (err: any) {
-      setProblem(err?.message || 'Could not turn the link off. Please try again.');
+      setProblem(err?.message || "Couldn't turn off the link. Try again.");
     }
   };
 
@@ -172,12 +172,12 @@ export function ShareSheet({ visible, onClose, familyId, documentId, fileName }:
 
         <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
           {links === 'unavailable' ? (
-            <Muted>Share links are not switched on yet.</Muted>
+            <Muted>Share links aren't switched on yet.</Muted>
           ) : (
             <>
               <Text style={styles.intro}>
-                Anyone with the link can open this document — no account needed — until it expires. You can turn it
-                off at any time.
+                Anyone with the link can open this document without an account. You or a family admin can turn it
+                off any time.
               </Text>
 
               {made ? (
@@ -185,7 +185,7 @@ export function ShareSheet({ visible, onClose, familyId, documentId, fileName }:
                   <Text style={styles.linkBox} selectable numberOfLines={2}>{made.url}</Text>
                   <PrimaryButton label={copied ? 'Copied' : 'Copy link'} icon={copied ? 'check' : 'copy'} onPress={copy} />
                   {canShareOut && <SecondaryButton label="Send it…" icon="share-2" onPress={shareOut} />}
-                  <Muted>It works until {longDate(new Date(made.expiresAt))}. This is the only time it is shown.</Muted>
+                  <Muted>Works until {longDate(new Date(made.expiresAt))}. Copy it now. It won't be shown again.</Muted>
                 </View>
               ) : (
                 <>
@@ -235,7 +235,7 @@ export function ShareSheet({ visible, onClose, familyId, documentId, fileName }:
               {links === null ? (
                 <ActivityIndicator color={color.primary} />
               ) : links.length === 0 ? (
-                <Muted>None are working now.</Muted>
+                <Muted>No working links.</Muted>
               ) : (
                 links.map((l) => (
                   <View key={l.id} style={styles.row}>

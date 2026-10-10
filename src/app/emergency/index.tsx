@@ -38,14 +38,14 @@ export default function EmergencyCardsScreen() {
       .catch((err) => {
         if (cancelled) return;
         setTree({ people: [], links: [], nicknames: false });
-        setProblem(isMissingMigration(err) ? 'The family tree is not switched on yet.' : err?.message ?? 'Could not load the family.');
+        setProblem(isMissingMigration(err) ? "The family tree isn't switched on yet." : err?.message ?? "Couldn't load the family.");
       });
     fetchEmergencyCards(currentFamily.id)
       .then((c) => { if (!cancelled) setCards(c); })
       .catch((err) => {
         if (cancelled) return;
         setCards([]);
-        setProblem(isMissingMigration(err) ? 'Emergency cards are not switched on yet.' : err?.message ?? 'Could not load the emergency cards.');
+        setProblem(isMissingMigration(err) ? "Emergency cards aren't switched on yet." : err?.message ?? "Couldn't load the emergency cards.");
       });
     return () => { cancelled = true; };
   }, [currentFamily?.id]);
@@ -72,8 +72,7 @@ export default function EmergencyCardsScreen() {
         ) : (
           <>
             <Muted>
-              Blood group, allergies, medicines, the doctor and who to call, for each person in the family. Open one
-              to show a doctor; every number is one tap from your phone.
+              Health details and who to call, for everyone in the family. Open a card to show a doctor.
             </Muted>
             <View style={styles.list}>
               {everyone.map((p, i) => {

@@ -122,25 +122,25 @@ export default function DocumentViewerScreen() {
       setActionLoading(true);
       try {
         const { data: { user } } = await supabase.auth.getUser();
-        if (!user) throw new Error('Not authenticated');
+        if (!user) throw new Error("You're signed out. Sign in again.");
         await deleteDocument(currentFamily.id, doc.id, user.id, doc.storage_path);
         // Opened from a link there is no history, and staying on a document
         // that no longer exists is the worst place to be left.
         if (router.canGoBack()) router.back();
         else router.replace('/home' as any);
       } catch (err: any) {
-        Alert.alert('Delete failed', err.message || 'Could not delete document.');
+        Alert.alert('Delete failed', err.message || "Couldn't delete this document. Try again.");
       } finally {
         setActionLoading(false);
       }
     };
 
     if (Platform.OS === 'web') {
-      if (confirm(`Delete "${doc.file_name}"? This cannot be undone.`)) doDelete();
+      if (confirm(`Delete "${doc.file_name}"? This can't be undone.`)) doDelete();
     } else {
       Alert.alert(
         'Delete Document',
-        `Delete "${doc.file_name}"? This cannot be undone.`,
+        `Delete "${doc.file_name}"? This can't be undone.`,
         [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: doDelete }],
       );
     }
@@ -167,7 +167,7 @@ export default function DocumentViewerScreen() {
     setActionLoading(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
+      if (!user) throw new Error("You're signed out. Sign in again.");
       const updates: { fileName?: string; categoryId?: string; belongsToMember?: string } = {};
       if (editName && editName !== doc.file_name) updates.fileName = editName;
       if (editCategoryId && editCategoryId !== doc.category_id) updates.categoryId = editCategoryId;
@@ -181,7 +181,7 @@ export default function DocumentViewerScreen() {
       }
       setEditVisible(false);
     } catch (err: any) {
-      Alert.alert('Update failed', err.message || 'Could not update document.');
+      Alert.alert('Update failed', err.message || "Couldn't save your changes. Try again.");
     } finally {
       setActionLoading(false);
     }

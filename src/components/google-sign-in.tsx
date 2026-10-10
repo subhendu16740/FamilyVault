@@ -52,7 +52,7 @@ export function GoogleSignIn({ onSignedIn }: { onSignedIn: () => void }) {
         if (cancelled) return;
         setBusy(false);
         if (error) {
-          setProblem(`Google sign-in did not work: ${error}`);
+          setProblem(`Google sign-in didn't work: ${error}`);
           setRound((r) => r + 1);
         } else {
           onSignedIn();
@@ -74,7 +74,7 @@ export function GoogleSignIn({ onSignedIn }: { onSignedIn: () => void }) {
     noteSignInStarted();
     const { error } = await signInWithGoogle();
     setBusy(false);
-    if (error) setProblem(`Google sign-in did not work: ${error}`);
+    if (error) setProblem(`Google sign-in didn't work: ${error}`);
     else onSignedIn();
   };
 

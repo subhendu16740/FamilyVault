@@ -256,7 +256,7 @@ export default function HomeScreen() {
             <View style={styles.emptyState}>
               <Feather name="file-plus" size={32} color="#D1D5DB" />
               <Text style={styles.emptyTitle}>No documents yet</Text>
-              <Text style={styles.emptySubtitle}>Upload your first document to get started</Text>
+              <Text style={styles.emptySubtitle}>Upload one to get started</Text>
             </View>
           ) : (
             <View style={styles.docList}>

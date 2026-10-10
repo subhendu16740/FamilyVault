@@ -85,48 +85,48 @@ export default function FamilyScreen() {
   const familyName = currentFamily?.name || 'Family';
 
   const handleRemoveMember = (memberId: string, name: string) => {
-    showConfirm('Remove Member', `Remove ${name} from ${familyName} Vault? The documents they added stay in the vault, and nobody else can delete them.`, async () => {
+    showConfirm('Remove Member', `Remove ${name} from ${familyName} Vault? Documents they added stay, and nobody else can delete them.`, async () => {
       try {
         await removeFamilyMember(memberId);
         refreshMembers().catch(() => {});
       } catch (err: any) {
-        setNotice(err.message || `Could not remove ${name}.`);
+        setNotice(err.message || `Couldn't remove ${name}.`);
       }
     });
   };
 
   const handleMakeAdmin = (memberId: string, name: string) => {
-    showConfirm('Make Admin', `Make ${name} an admin of ${familyName} Vault?\nThey will be able to add and remove members.`, async () => {
+    showConfirm('Make Admin', `Make ${name} an admin of ${familyName} Vault?\nThey'll be able to invite and remove members.`, async () => {
       try {
         await updateMemberRole(memberId, 'admin');
         refreshMembers().catch(() => {});
       } catch (err: any) {
-        setNotice(err.message || `Could not make ${name} an admin.`);
+        setNotice(err.message || `Couldn't make ${name} an admin.`);
       }
     }, false);
   };
 
   const handleWithdraw = (invite: PendingInvite) => {
     const who = invite.personName ? `${invite.personName} (${invite.email})` : invite.email;
-    showConfirm('Withdraw invitation', `Withdraw the invitation to ${who}? They will not be able to join ${familyName} with it.`, async () => {
+    showConfirm('Withdraw invitation', `Withdraw the invitation to ${who}?`, async () => {
       try {
         await cancelInvitation(invite.id);
         loadPending();
       } catch (err: any) {
-        setNotice(err.message || 'Could not withdraw the invitation.');
+        setNotice(err.message || "Couldn't withdraw the invitation.");
       }
     }, true, 'Withdraw');
   };
 
   const handleLeave = () => {
     if (!currentFamily || !user) return;
-    showConfirm('Leave Family', `Leave ${familyName} Vault? You will no longer see its documents. Documents you added stay, and nobody else can delete them, so delete any you want gone first. An admin can invite you again.`, async () => {
+    showConfirm('Leave Family', `Leave ${familyName} Vault? You'll lose access to its documents. Documents you added stay, and nobody can delete them. Delete any you want gone first.`, async () => {
       try {
         await leaveFamily(currentFamily.id, user.id);
         await refreshFamilies();
         router.replace('/home' as any);
       } catch (err: any) {
-        setNotice(err.message || 'Could not leave this family.');
+        setNotice(err.message || "Couldn't leave this family.");
       }
     }, true, 'Leave');
   };
@@ -140,7 +140,7 @@ export default function FamilyScreen() {
     if (!currentFamily) return;
     const address = email.trim().toLowerCase();
     if (!address) {
-      setAddError('Enter the email address they sign in with.');
+      setAddError('Enter the email they sign in with.');
       return;
     }
     setAdding(true);
@@ -154,8 +154,8 @@ export default function FamilyScreen() {
         case 'invited':
         case 'added':
           setNotice(outcome.status === 'invited'
-            ? `Invitation sent to ${outcome.email}. They join ${familyName} once they accept — until then they show here as Pending approval.`
-            : `${outcome.displayName} was added to ${familyName} and can now see its documents.`);
+            ? `Invitation sent to ${outcome.email}. They show as Pending approval until they accept.`
+            : `${outcome.displayName} joined ${familyName} and can see its documents.`);
           setShowAddMember(false);
           setEmail('');
           setSelectedRelation('');
@@ -167,10 +167,10 @@ export default function FamilyScreen() {
           setAddError(`${outcome.displayName} is already in this family.`);
           break;
         case 'already_invited':
-          setAddError(`${address} has been invited already. They join once they accept.`);
+          setAddError(`${address} is already invited.`);
           break;
         case 'no_account':
-          setAddError(`No AskLocker account uses ${address} yet. Ask them to sign in to AskLocker once with Google, using this email, then add them again.`);
+          setAddError(`No account uses ${address} yet. Ask them to sign in to AskLocker with Google using this email, then try again.`);
           break;
         case 'invalid_email':
           setAddError("That doesn't look like an email address.");
@@ -185,7 +185,7 @@ export default function FamilyScreen() {
           break;
       }
     } catch (err: any) {
-      setAddError(err.message || 'Could not add this member. Please try again.');
+      setAddError(err.message || "Couldn't send the invitation. Try again.");
     } finally {
       setAdding(false);
     }
@@ -234,7 +234,7 @@ export default function FamilyScreen() {
       </View>
       <View style={styles.memberInfo}>
         <Text style={styles.treeTitle}>Create a family</Text>
-        <Text style={styles.treeSub}>A vault to share documents with the people you invite</Text>
+        <Text style={styles.treeSub}>Share documents with your family</Text>
       </View>
       <Feather name="chevron-right" size={16} color="#9CA3AF" />
     </TouchableOpacity>
@@ -249,7 +249,7 @@ export default function FamilyScreen() {
           <Feather name="users" size={32} color="#D1D5DB" />
           <Text style={styles.noFamilyTitle}>No Family Yet</Text>
           <Text style={styles.noFamilySub}>
-            Create a family to share and manage documents together — or ask your family's admin to invite you, using the email you sign in with. An invitation shows here, and on Home.
+            Create a family to share documents, or ask your family's admin to invite you. Invitations show up here.
           </Text>
           <TouchableOpacity
             onPress={() => router.push('/setup-family' as any)}
@@ -275,7 +275,7 @@ export default function FamilyScreen() {
   if (isPersonalVault(currentFamily)) {
     return (
       <SafeAreaView style={styles.safe} edges={['top']}>
-        <ScreenHeader title="Personal vault" subtitle="Just for you" />
+        <ScreenHeader title="Personal vault" subtitle="Yours alone" />
         <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
           <InvitationCards style={styles.invites} />
           {notice && (
@@ -290,11 +290,10 @@ export default function FamilyScreen() {
               <Feather name="lock" size={16} color={color.primary} />
             </View>
             <View style={styles.memberInfo}>
-              <Text style={styles.treeTitle}>Your documents, just for you</Text>
+              <Text style={styles.treeTitle}>Nobody else can join it</Text>
               <Text style={styles.personalText}>
-                Nobody else using AskLocker can open your personal vault, and nobody can be invited to it. To keep documents with your
-                family, create a family and invite them, or accept an invitation from one. Each time you upload, you
-                choose where the document goes, and Ask searches all your vaults at once.
+                To share documents, create a family or accept an invitation. When you upload, you pick where each
+                document goes. Ask searches all your vaults at once.
               </Text>
             </View>
           </View>
@@ -333,11 +332,11 @@ export default function FamilyScreen() {
           <View style={styles.fullNote}>
             <Feather name="users" size={16} color="#7A5200" />
             <Text style={styles.fullNoteText}>
-              {familyName} is full: a family can have {maxMembers} members
-              {pending.length > 0 ? ', and invitations waiting for an answer count too' : ''}. To invite someone else,{' '}
-              {pending.length > 0 ? 'withdraw an invitation or remove a member' : 'remove a member'}. Anyone can still be
-              added to the family tree, without an account.
-              {plan !== 'plus' && limits.members.plus > maxMembers ? ` With Family Plus, up to ${limits.members.plus} members can sign in.` : ''}
+              {familyName} is full at {maxMembers} members
+              {pending.length > 0 ? ', counting invitations' : ''}. To invite someone,{' '}
+              {pending.length > 0 ? 'withdraw an invitation or remove a member' : 'remove a member'}. You can still add
+              anyone to the family tree.
+              {plan !== 'plus' && limits.members.plus > maxMembers ? ` Family Plus allows up to ${limits.members.plus} members.` : ''}
             </Text>
             {plan !== 'plus' && limits.members.plus > maxMembers && (
               <TouchableOpacity onPress={() => router.push(plusPage('members') as any)} accessibilityRole="link" hitSlop={8}>
@@ -359,7 +358,7 @@ export default function FamilyScreen() {
           </View>
           <View style={styles.memberInfo}>
             <Text style={styles.treeTitle}>Family tree</Text>
-            <Text style={styles.treeSub}>Everyone in the family, and whose documents are whose</Text>
+            <Text style={styles.treeSub}>Everyone in the family, and their documents</Text>
           </View>
           <Feather name="chevron-right" size={16} color="#9CA3AF" />
         </TouchableOpacity>
@@ -484,7 +483,7 @@ export default function FamilyScreen() {
           <View style={styles.emptyState}>
             <Feather name="users" size={32} color="#D1D5DB" />
             <Text style={styles.emptyTitle}>No members yet</Text>
-            <Text style={styles.emptySubtitle}>Add your family members to get started</Text>
+            <Text style={styles.emptySubtitle}>Invite your family to get started</Text>
           </View>
         )}
 
@@ -520,10 +519,10 @@ export default function FamilyScreen() {
             </View>
 
             <Text style={styles.sheetIntro}>
-              They need a AskLocker account. Enter the email they sign in with: they get an invitation, and join as a viewer once they accept. Until then they show here as Pending approval.
+              Enter the email they use for AskLocker. They join as a viewer when they accept. Until then they show as Pending approval.
             </Text>
             <Text style={styles.sheetIntro}>
-              Already in the family tree? Open them there and choose Link to their AskLocker account instead, so they keep their place in the tree, their documents and their emergency card.
+              Already in the family tree? Open them there and tap Link to their AskLocker account instead. They keep their documents and emergency card.
             </Text>
 
             {/* Email */}
@@ -580,7 +579,7 @@ export default function FamilyScreen() {
                 style={styles.fieldInput}
               />
               <Text style={styles.fieldHint}>
-                Shown in this family instead of their account name
+                Shown instead of their account name
               </Text>
             </View>
 

@@ -131,7 +131,7 @@ export function AppLockScreen() {
           >
             <Text style={styles.googleText}>Use Google instead</Text>
           </TouchableOpacity>
-          <Text style={styles.small}>This signs you out. Sign in again with Google and AskLocker opens; fingerprint sign-in stays on for next time.</Text>
+          <Text style={styles.small}>This signs you out. Fingerprint sign-in stays on for next time.</Text>
         </View>
       </SafeAreaView>
     </Modal>
