@@ -22,6 +22,7 @@ import { digitsFromWords, restoreCodes } from '../../supabase/functions/_shared/
 import { takeInTurn, uniqueRelatives } from '../../supabase/functions/_shared/vaults.ts';
 import { passagesUsed, splitUsedPassages } from '../../supabase/functions/_shared/used-passages.ts';
 import { toSpeech } from '../../src/lib/speech-text.ts';
+import { BUILT_IN_CATEGORIES, categoryOrder, countedCategory, suggestCategory } from '../../supabase/functions/_shared/doc-category.ts';
 import { acceptedCurrencies, connectionCountry, hmacSha256Hex, payerCurrency, payerCurrencyMessage, paymentSignatureOk, plusOrderAmount, plusOrderDescription, sameText, webhookSignatureOk, ORDER_ID, PAYMENT_ID } from '../../supabase/functions/_shared/razorpay.ts';
 import { createHmac } from 'node:crypto';
 import {
@@ -781,6 +782,46 @@ await test('razorpay: the server sets the price, and only Razorpay\'s signature 
   assert.ok(sameText('abc', 'abc') && !sameText('abc', 'abd') && !sameText('abc', 'ab'));
   assert.ok(ORDER_ID.test('order_Specimen000001') && !ORDER_ID.test('order_x') && !ORDER_ID.test('pay_Specimen000001'));
   assert.ok(PAYMENT_ID.test('pay_Specimen000001') && !PAYMENT_ID.test('pay_ bad'));
+});
+
+await test('categories: Upload suggests one from the file, never a default, and counts only built-in names', async () => {
+  assert.equal(BUILT_IN_CATEGORIES.length, 23);
+  const cases = [
+    ['Passport_Asha_Verma.pdf', null, 'Passport'],
+    ['scan_1.jpg', 'Government of India  Aadhaar  1234 5678 9012  Asha Verma', 'National ID / Aadhaar'],
+    ['IMG_2031.jpg', 'INCOME TAX DEPARTMENT  GOVT. OF INDIA  Permanent Account Number Card  ABCDE1234F', 'PAN Card'],
+    ['photo.jpg', 'INCOME TAX DEPARTMENT  ASHA VERMA  ABCDE1234F', 'PAN Card'],
+    ['ITR-V_2026.pdf', null, 'Tax Returns'],
+    ['ack.pdf', 'Acknowledgement Number 1234  Assessment Year 2026-27  PAN ABCDE1234F', 'Tax Returns'],
+    ['health_policy_verma.pdf', null, 'Health Insurance'],
+    ['Car insurance 2026.pdf', null, 'Vehicle Insurance'],
+    ['ticket.pdf', 'ELECTRONIC RESERVATION SLIP  PNR 4512345678', 'Visa / Travel Docs'],
+    ['visa_application.pdf', 'Passport No. Z1234567', 'Visa / Travel Docs'],
+    ['electricity_bill_sept.pdf', null, 'Utility Bills'],
+    ['Rent Agreement Flat 4B.pdf', null, 'Property Documents'],
+    ['Discharge Summary.pdf', null, 'Medical Records'],
+    ['fixed_deposit_receipt.pdf', null, 'Bank Statements'],
+    ['gas_booking_receipt.jpg', null, 'Utility Bills'],
+    ['Salary slip Aug.pdf', null, 'Employment Letters'],
+    ['Class 10 marksheet.jpg', null, 'Educational Certificates'],
+    ['IMG_2031.jpg', null, null],
+    ['resume.pdf', null, null],
+    ['policy.pdf', null, null],
+    ['citrus_farm.pdf', null, null],
+    ['', '', null],
+  ];
+  for (const [name, text, want] of cases) assert.equal(suggestCategory(name, text), want, `${name} / ${text}`);
+  // Counting: built-in names as they are; a family's own category never by name.
+  assert.equal(countedCategory('Passport'), 'Passport');
+  assert.equal(countedCategory('Passport', true), 'Passport');
+  assert.equal(countedCategory('Passport', false), 'Other');
+  assert.equal(countedCategory("Mom's reports", false), 'Other');
+  assert.equal(countedCategory('Something new'), 'Other');
+  assert.equal(countedCategory(null), 'None');
+  // Upload's order: the common ones, then other built-ins, then a family's own.
+  assert.ok(categoryOrder('Passport') < categoryOrder('Medical Records'));
+  assert.ok(categoryOrder('Medical Records') < categoryOrder('Voter ID'));
+  assert.ok(categoryOrder('Voter ID') < categoryOrder(''));
 });
 
 await test('razorpay: the server picks rupees or dollars from where the payer connects, not from a setting', async () => {

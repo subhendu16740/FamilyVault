@@ -28,7 +28,7 @@ import { toSpeech } from '../../lib/speech-text';
 import { ScreenHeader, HeaderIconButton, HeaderActions } from '../../components/screen-header';
 import { VaultPill, VaultSheet, type VaultChoice } from '../../components/vault-sheet';
 import { color, size, space, type } from '../../constants/design';
-import { track } from '../../lib/analytics';
+import { categoryForAnalytics, track } from '../../lib/analytics';
 
 type DocumentCategory = Database['public']['Tables']['document_categories']['Row'];
 
@@ -405,6 +405,12 @@ export default function SearchScreen() {
             : m
         )
       );
+      // The kinds of documents answers come from: each source's category only.
+      if (!result.question_limit) {
+        for (const s of new Map((result.sources ?? []).map((x) => [x.id, x])).values()) {
+          track('document_used_in_answer', { category: categoryForAnalytics({ name: s.category_name }) });
+        }
+      }
       const allowance = parseAllowance(result.questions);
       if (allowance) setQuestions(allowance);
       if (result.question_limit) {

@@ -1744,7 +1744,16 @@ so storage policies live only in `019`.
   bottom of the screen) — and
   nothing is chosen for them (a private paper must never land in a shared
   vault by default), except from a person's page, which is that person's
-  vault. "Whose document" follows the chosen vault's tree
+  vault. **A category is suggested, never defaulted**
+  (`suggestCategory()`, `_shared/doc-category.ts`, pinned by the
+  self-test): from the file's name and the text read off a photo, the
+  built-in category it most likely is ("Passport_Asha.pdf" → Passport) is
+  picked with "Picked from the file", and nothing at all when nothing
+  says, so a document is never filed as whatever came first. Until
+  October 2026 Upload pre-picked the first category in the list, "Bank
+  Statements", and showed only the first 12, so Passport and PAN Card could
+  not be picked; the common ten now show first, the rest behind More, and
+  tapping the chosen one clears it. "Whose document" follows the chosen vault's tree
   (`useDocumentOwners(familyId)`), and Save names the vault ("Save to
   Personal vault").
 - **Ask searches every vault by default** (`scope: 'all'`), or the one picked
@@ -2352,7 +2361,12 @@ rule again once pinned chunks are mixed in.
   7 October 2026.
 - **Usage counts — PostHog, named events only.** Which screens are opened
   and which actions are taken (a document added, a question asked, a link
-  made, Plus paid for), so the team can see what is used. Only through
+  made, Plus paid for), so the team can see what is used. **What kinds of
+  documents** families keep and come back to is the main thing it watches:
+  `document_added` (the category, and `category_source`: Upload's
+  suggestion kept, changed, picked with none, or no category),
+  `document_opened` and `document_used_in_answer` (each source an answer
+  used, once per document), all by category only. Only through
   `track()` in `src/lib/analytics.ts`, whose `AnalyticsEvents` lists every
   event and every property: adding one means changing that list, where a
   reviewer sees it. Never a document, file name, question, answer, person's
