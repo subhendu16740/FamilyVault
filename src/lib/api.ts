@@ -1638,7 +1638,7 @@ export async function fetchVoiceStatus(familyId: string): Promise<VoiceStatus | 
 // ─── Questions each month (049) ──────────────────────────────────
 //
 // On the free plan each person asks 20 questions a month; on Family Plus
-// there is no monthly limit (fair use: 500 a month each). rag-search counts
+// there is no monthly limit (fair use: 150 a month each, 053). rag-search counts
 // each question before it answers, gives it back when no answer came, and
 // says where the count stands in its response; question_status() says the
 // same without asking anything. Before 049, or offline, nothing is counted

@@ -289,6 +289,9 @@ export default function GmailImportScreen() {
     let duplicates = 0;
     let failed = 0;
     let unreadable = 0;
+    // The day's limit on documents added (050): the import stops there, and
+    // what is left stays ticked for tomorrow.
+    let limitReached: string | null = null;
     // Gmail may ask us to slow down; wait as asked, twice at most.
     const importOne = async (item: GmailItem, categoryId: string): Promise<GmailImportResult> => {
       for (let attempt = 0; ; attempt++) {
@@ -304,7 +307,16 @@ export default function GmailImportScreen() {
       for (const [index, item] of queue.entries()) {
         if (!mounted.current || stopRequested.current) break;
         const categoryId = categoryFor[item.id] ?? categoryIdByName.get(item.category_guess ?? '') ?? otherCategoryId;
-        const result = await importOne(item, categoryId);
+        let result: GmailImportResult;
+        try {
+          result = await importOne(item, categoryId);
+        } catch (err) {
+          if (err instanceof GmailApiError && err.status === 'upload_limit') {
+            limitReached = err.message;
+            break;
+          }
+          throw err;
+        }
         if (result.status === 'imported') {
           imported++;
           if (result.unreadable) unreadable++;
@@ -332,7 +344,12 @@ export default function GmailImportScreen() {
         unreadable ? `${unreadable} saved, but we couldn't read the text` : '',
         failed ? `${failed} couldn't be imported` : '',
       ].filter(Boolean);
-      setNotice({ tone: failed ? 'info' : 'success', text: `${parts.join('. ') || 'Nothing was imported'}.` });
+      if (limitReached) {
+        const done = parts.length ? `${parts.join('. ')}. ` : '';
+        setNotice({ tone: 'info', text: `${done}${limitReached} The rest stay ticked.` });
+      } else {
+        setNotice({ tone: failed ? 'info' : 'success', text: `${parts.join('. ') || 'Nothing was imported'}.` });
+      }
     } catch (err) {
       setNotice({ tone: 'error', text: readable(err) });
     } finally {

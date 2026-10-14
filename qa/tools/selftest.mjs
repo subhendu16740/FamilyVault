@@ -679,9 +679,9 @@ await test('plans: every limit is finite, and a full vault says why and what to 
     members: { free: 4, plus: 8 },
     voiceAnswers: { free: 10, plus: null },
     questions: { free: 20, plus: null },
-    questionsFairUse: 500,
-    questionTriesPerDay: { free: 10, plus: 100 },
-    uploadsPerDay: { free: 50, plus: 500 },
+    questionsFairUse: 150,
+    questionTriesPerDay: { free: 10, plus: 50 },
+    uploadsPerDay: { free: 50, plus: 100 },
     familiesPerPerson: 1,
     businessesPerPerson: 1,
     invitesPerDay: { free: 20, plus: 20 },
@@ -858,11 +858,11 @@ await test('questions each month: the count, and the words when they are used up
   const few = parseAllowance({ used: 17, limit: 20, ceiling: 20, left: 3, plus: false, resets_on: '2026-11-01' });
   assert.equal(questionsLeftText(few), '3 of 20 free questions left this month');
   // Plus: nothing said until fair use is near; then its own words.
-  const plus = parseAllowance({ used: 12, limit: null, ceiling: 500, left: 488, plus: true, resets_on: '2026-11-01' });
+  const plus = parseAllowance({ used: 12, limit: null, ceiling: 150, left: 138, plus: true, resets_on: '2026-11-01' });
   assert.equal(questionsLeftText(plus), null);
-  const plusFull = parseAllowance({ allowed: false, used: 500, limit: null, ceiling: 500, plus: true, resets_on: '2026-12-01' });
+  const plusFull = parseAllowance({ allowed: false, used: 150, limit: null, ceiling: 150, plus: true, resets_on: '2026-12-01' });
   assert.equal(questionLimitMessage(plusFull),
-    "You've reached the fair-use limit of 500 questions this month. They start again on 1 December.");
+    "You've reached the fair-use limit of 150 questions this month. They start again on 1 December.");
   // A question given back: one fewer used, one more left; never below zero.
   assert.deepEqual(givenBack(few), { ...few, used: 16, left: 4 });
   assert.equal(givenBack({ ...few, used: 0, left: 20 }).used, 0);

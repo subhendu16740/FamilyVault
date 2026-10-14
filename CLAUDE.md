@@ -725,7 +725,7 @@ tabs. `(tabs)` is a layout group, so routes are `/home`, `/search`, `/upload`.
 | `dates.ts` | `parseDocumentDate()`: expiry dates exactly as ingest stores them (DD/MM/YYYY and kin, YYYY-MM-DD, "19 October 2026") |
 | `emergency.ts` | The emergency card's shape, blood groups (`bloodGroupLabel()`: "A−", "Bombay (hh)"), `telHref()`, and `cardProblem()` — the same checks and messages as `save_emergency_card()`, so the form can say what is wrong before saving |
 | `family-people.ts` | Whose a document can be: everyone in the tree, you first (`useDocumentOwners()`, members only before 031), and a person's expiry badge (`badgeFromExpiries()`) |
-| `plans.ts` | What each plan allows (038–048): the limits as 039–048 set them — storage (on Free 200 MB for a family and 100 MB for a personal vault, `freePersonal`; 10 GB on Plus), 4 members on Free and 8 on Plus, 10 voice chats and 20 questions a month for each person on Free (049; fair use 500 on Plus) (`DEFAULT_PLAN_LIMITS`, used only when the database cannot be asked), Family Plus's prices, monthly and yearly (`PLUS_PRICE`; `localPlusPrice()` / `localPlusPrices()` show rupees in India, dollars elsewhere, by the device's time zone; the yearly one against twelve months, crossed out, and the months it saves: `plusTwelveMonths()`, `plusYearlySaving()`), `storageLevel()`, and the words for a full vault (`storageFullMessage()`; for a chat, `chatStorageFullMessage()`), which live in `supabase/functions/_shared/plan-text.ts` so Gmail import says the same; 050's file limit and the words for its refusals (`MAX_FILE_BYTES`, `fileTooLargeMessage()`, `limitHint()`, `QUESTION_INPUT_MAX`) come from `_shared/limits.ts`. Whether Plus can be bought is the payments function's answer (044: `usePaymentsStatus()`, `plusForSale()`); `PLUS_FOR_SALE` (false) is only what the words assume before it answers |
+| `plans.ts` | What each plan allows (038–048): the limits as 039–048 set them — storage (on Free 200 MB for a family and 100 MB for a personal vault, `freePersonal`; 10 GB on Plus), 4 members on Free and 8 on Plus, 10 voice chats and 20 questions a month for each person on Free (049; fair use 150 on Plus, 053) (`DEFAULT_PLAN_LIMITS`, used only when the database cannot be asked), Family Plus's prices, monthly and yearly (`PLUS_PRICE`; `localPlusPrice()` / `localPlusPrices()` show rupees in India, dollars elsewhere, by the device's time zone; the yearly one against twelve months, crossed out, and the months it saves: `plusTwelveMonths()`, `plusYearlySaving()`), `storageLevel()`, and the words for a full vault (`storageFullMessage()`; for a chat, `chatStorageFullMessage()`), which live in `supabase/functions/_shared/plan-text.ts` so Gmail import says the same; 050's file limit and the words for its refusals (`MAX_FILE_BYTES`, `fileTooLargeMessage()`, `limitHint()`, `QUESTION_INPUT_MAX`) come from `_shared/limits.ts`. Whether Plus can be bought is the payments function's answer (044: `usePaymentsStatus()`, `plusForSale()`); `PLUS_FOR_SALE` (false) is only what the words assume before it answers |
 | `family-plan.ts` | Is the current family on Family Plus? `useFamilyPlan()` (from `family_storage_status()`, kept a minute per family): `isFree`, `closed` and `trial` (051), and `routeFor(feature, route)`, which sends a free family to `/plus?feature=…` instead of a starred feature. Unknown (before 038, offline) gates nothing. `usePaymentsStatus()`: can Family Plus be bought here (044). `useOnPlus()`: is the signed-in person on Plus in any vault (from `question_status()`, a minute, shared; `forgetOnPlus()` after paying), for the ★ before their name |
 | `file-types.ts` | What a picked file is (`detectFileType()`: MIME type, then name, never a web `blob:` uri) and whether the vault can keep it (PDF, JPG, PNG) |
 | `app-info.ts` | Version, release date and commit (stamped into `extra` by `app.config.ts` at build time), and the support contact Help shows |
@@ -1553,8 +1553,8 @@ so storage policies live only in `019`.
   tokens, and Groq's free day is about 25 questions for everyone), so each
   person has a monthly allowance: `plan_limits.questions_per_month`, 20 on
   Free, NULL on Plus — no monthly limit, up to a fair-use ceiling,
-  `questions_fair_use`, 500 a month for one person, which the Plus page and
-  Help say plainly. A month is a calendar month in India time
+  `questions_fair_use`, 150 a month for one person (500 before 053), which
+  the Plus page and Help say plainly. A month is a calendar month in India time
   (`question_month()`); the count starts again on the 1st.
 - **A person is on Plus for questions when any vault they are in is on
   Plus** (`person_on_plus()`): everyone in a Plus family asks without a
@@ -1616,9 +1616,9 @@ so storage policies live only in `019`.
   no document pointed outside its folder (checked 9 October 2026).
 - **Per person, per day (India time), in `daily_usage`**, counted only by
   `claim_daily()` (service role): documents added (`plan_limits.uploads_per_day`,
-  50 on Free, 500 on Plus; HINT `upload_limit`), documents the server reads
-  (twice that, `start_document_read()`), and questions tried
-  (`question_tries_per_day`, 10 on Free, 100 on Plus). A try counts whether
+  50 on Free, 100 on Plus since 053; HINT `upload_limit`), documents the
+  server reads (twice that, `start_document_read()`), and questions tried
+  (`question_tries_per_day`, 10 on Free, 50 on Plus since 053). A try counts whether
   or not an answer came: 049 gives back a question that found nothing or
   met a busy AI service, but the judge had already spent its tokens, so
   asking nonsense on repeat, or many questions at once, used to cost the
@@ -1968,8 +1968,8 @@ so storage policies live only in `019`.
   `person_plans()` (the plans of their vaults, and Free) feeds 049's
   `person_on_plus()` / `question_allowance()` and 050's
   `person_daily_limit()`. No plan is best at everything — Family Plus has
-  500 questions each, the business plans 100 — so joining a business never lowers
-  what a Family Plus member had. Voice follows the vault asked in, as
+  150 questions each and 100 uploads a day, Business Plus 100 and 300 — so
+  joining a business never lowers what a Family Plus member had. Voice follows the vault asked in, as
   before. Expiry reminders and 30-day links come with any paid plan.
   `plan_limits.invites_per_day` replaces 050's fixed 20, and
   `businesses_per_person` (1 on Free) counts businesses apart from
@@ -2007,6 +2007,28 @@ so storage policies live only in `019`.
   opened what, export as a zip, self-serve Business checkout with GST
   invoices, an Employees area, business terms and a DPA, and a review of
   schema-per-vault at thousands of vaults.
+
+### Family Plus, sized for a family (053)
+
+- **Family Plus beat the business plans on almost every number** — 500
+  questions a person a month against Business Plus's 100, 500 uploads a day
+  against 300, 100 question tries a day against 30 — so a small office could
+  keep its paperwork in a family vault for a tenth of the price, with only
+  the terms to say otherwise. 053 sets numbers no family comes near: **150
+  questions a person a month, 100 uploads a day, 50 tries a day**. Members (8)
+  and space (10 GB) stay: joint families are big, and years of papers need
+  the room.
+- **Each number changes only where it is still the old one**, so a number
+  changed in the Table editor since is kept; safe to run twice. No function
+  or grant changes. `DEFAULT_PLAN_LIMITS` follows, and the self-test pins it.
+- **Gmail import stops at the day's limit** rather than failing file after
+  file (see [Gmail import](#gmail-import--your-own-mailbox-your-tick-026)).
+- **What else keeps a business in a business vault** is not built yet: a GST
+  invoice in the business's name (with self-serve business checkout), a
+  line in the terms that family plans are for personal and household use,
+  and a nudge on Home when a family vault holds many invoices with a GSTIN
+  (the server already reads them in every vault). Never a block: a family
+  that runs a shop from home has business papers too.
 
 ## Edge Functions
 
@@ -2239,6 +2261,15 @@ rules sort the rest (`_shared/gmail-rules.ts`).
   is refused, and so is a file that does not fit, in the same words as an
   upload (`_shared/plan-text.ts`). The app sends a free family to the Plus
   page before it gets that far.
+- **It counts toward the day's uploads, and stops there** (050, 053). Each
+  imported file is a document added by the person importing
+  (`insert_family_document()`), so 100 a day on Family Plus. At the limit
+  `gmail-import` answers 429 `upload_limit` before fetching anything from
+  Gmail, a file refused for it partway goes back to the list (`found`, not
+  `failed`), and the app stops, says how many came in and keeps the rest
+  ticked: a first import of 300 attachments takes three days, three taps.
+  The cap stays on purpose: imported photos are read by OCR.space, whose
+  500 a day is shared by everyone.
 
 ### PDF text — read by position, not by content-stream order
 

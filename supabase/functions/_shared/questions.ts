@@ -2,7 +2,7 @@
 //
 // A question is the most expensive thing AskLocker does, so each person has
 // a monthly allowance: 20 on Free (plan_limits.questions_per_month), and on
-// Family Plus no monthly limit, up to a fair-use ceiling of 500
+// Family Plus no monthly limit, up to a fair-use ceiling of 150 (053)
 // (questions_fair_use). A month is a calendar month in India time.
 //
 // rag-search counts one through claim_question() before it answers, and

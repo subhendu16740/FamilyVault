@@ -4,6 +4,9 @@
 // reading a PDF is the expensive part — so the app calls this once per
 // ticked file and shows progress. For each:
 //
+//   0. stop at the person's limit of documents a day (050), before anything
+//      is fetched: 429 upload_limit, and the file stays on the list for
+//      tomorrow (the app keeps the rest ticked)
 //   1. claim the item (its owner only, and not while already importing)
 //   2. look the part up in Gmail again: attachment ids change on every
 //      fetch, so none was stored
@@ -37,6 +40,26 @@ const CONTENT_TYPES = { pdf: 'application/pdf', jpg: 'image/jpeg', png: 'image/p
 /** A failure the person can act on, shown on the item. */
 class ImportProblem extends Error {}
 
+/**
+ * Today's limit on documents added (050), asked before anything is fetched.
+ * Gmail imports count like any upload, and past the limit every file would
+ * be downloaded, stored and then refused, one by one. Null: there is room,
+ * or the count cannot be read (before 050), and insert_family_document()
+ * decides as always. Gmail import is for vaults on Plus, so its words are
+ * Plus's, as the database writes them.
+ */
+async function uploadLimitReached(userId: string): Promise<string | null> {
+  const [{ data: limit, error: limitErr }, { data: day, error: dayErr }] = await Promise.all([
+    supabase.rpc('person_daily_limit', { p_user_id: userId, p_what: 'uploads' }),
+    supabase.rpc('usage_day'),
+  ]);
+  if (limitErr || dayErr || typeof limit !== 'number' || !day) return null;
+  const { data: row } = await supabase
+    .from('daily_usage').select('uploads').eq('user_id', userId).eq('day', day).maybeSingle();
+  if (((row as { uploads?: number } | null)?.uploads ?? 0) < limit) return null;
+  return `You have reached today's limit of ${limit} documents. You can add more tomorrow.`;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -48,6 +71,10 @@ Deno.serve(async (req) => {
     const auth = await requireFamilyMember(req, supabase, family_id, { upload: true });
     if (!auth.ok) return auth.response;
     const userId = auth.member.userId;
+
+    // 0. Room for one more today? The rest wait for tomorrow, still ticked.
+    const reached = await uploadLimitReached(userId);
+    if (reached) return json(429, { status: 'upload_limit', error: reached });
 
     // 1. Claim it: the owner's, found or failed before, not imported already
     //    — or left 'importing' by an attempt that died over five minutes ago.
@@ -154,6 +181,13 @@ Deno.serve(async (req) => {
     });
     if (insertErr || !documentId) {
       await supabase.storage.from('documents').remove([storagePath]);
+      if (insertErr?.hint === 'upload_limit') {
+        // The day's limit, reached since the check above: not this file's
+        // fault, so it goes back to the list for tomorrow, not "failed".
+        await supabase.from('gmail_import_items').update({ status: 'found', error: null }).eq('id', item.id);
+        claimedId = null;
+        return json(429, { status: 'upload_limit', error: insertErr.message });
+      }
       throw new ImportProblem(`Could not add the document: ${insertErr?.message ?? 'no id returned'}`);
     }
 

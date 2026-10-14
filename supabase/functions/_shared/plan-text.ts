@@ -13,7 +13,7 @@
 // the people who sign in; anyone can be in the family tree. Each person on
 // Free has 10 voice chats (041–043) and 20 questions a month (049); on Family
 // Plus, voice without a limit and questions without a monthly limit (fair
-// use: 500 a month each). A share link lasts 1 or 7 days on Free, and up to
+// use: 150 a month each, 053). A share link lasts 1 or 7 days on Free, and up to
 // 30 days on Family Plus (049).
 //
 // A year costs eleven months: one month free. The yearly price is shown
@@ -122,9 +122,9 @@ export const DEFAULT_PLAN_LIMITS: PlanLimits = {
   members: { free: 4, plus: 8 },
   voiceAnswers: { free: 10, plus: null },
   questions: { free: 20, plus: null },
-  questionsFairUse: 500,
-  questionTriesPerDay: { free: 10, plus: 100 },
-  uploadsPerDay: { free: 50, plus: 500 },
+  questionsFairUse: 150,
+  questionTriesPerDay: { free: 10, plus: 50 },
+  uploadsPerDay: { free: 50, plus: 100 },
   familiesPerPerson: 1,
   businessesPerPerson: 1,
   invitesPerDay: { free: 20, plus: 20 },
